@@ -532,6 +532,8 @@ export const BrowserTab = memo(BrowserTabImpl);
 
 const styles = StyleSheet.create({
   web: { backgroundColor: colors.bg },
-  shown: { opacity: 1, zIndex: 1 },
-  hidden: { opacity: 0, zIndex: 0 },
+  // Không đặt zIndex: khung bọc thẻ có thể bị gộp (view flattening) lên cùng cấp với dock/thanh địa chỉ,
+  // zIndex khi đó đẩy trang web đè lên che mất dock. Thẻ ẩn đã trong suốt và không nhận chạm nên thứ tự không quan trọng.
+  shown: { opacity: 1 },
+  hidden: { opacity: 0 },
 });
