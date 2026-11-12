@@ -16,9 +16,24 @@ interface Props {
   prefs: ShieldPrefs;
   onToggle: (key: keyof ShieldPrefs, value: boolean) => void;
   onReload: () => void;
+  /** Số phần tử cậu tự ẩn trên trang này */
+  customHidden: number;
+  onStartPick: () => void;
+  onClearCustom: () => void;
 }
 
-export function ShieldSheet({ visible, onClose, site, counts, prefs, onToggle, onReload }: Props) {
+export function ShieldSheet({
+  visible,
+  onClose,
+  site,
+  counts,
+  prefs,
+  onToggle,
+  onReload,
+  customHidden,
+  onStartPick,
+  onClearCustom,
+}: Props) {
   const { accent, accentSoft, onAccent } = useTheme();
   const anyOn = prefs.ads || prefs.gambling || prefs.popups;
 
@@ -94,6 +109,42 @@ export function ShieldSheet({ visible, onClose, site, counts, prefs, onToggle, o
       </View>
 
       {site ? (
+        <View style={styles.group}>
+          <Pressable
+            onPress={() => {
+              onClose();
+              onStartPick();
+            }}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.linkRow, customHidden > 0 && styles.divider, pressed && { opacity: 0.7 }]}
+          >
+            <Ionicons name="hand-left-outline" size={20} color={accent} />
+            <View style={{ flex: 1 }}>
+              <Txt weight="medium" size={15}>
+                Chạm để ẩn quảng cáo
+              </Txt>
+              <Txt size={13} color={colors.textMuted}>
+                Chọn quảng cáo còn sót, Ryx nhớ và ẩn vĩnh viễn trên trang này
+              </Txt>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+          </Pressable>
+          {customHidden > 0 && (
+            <Pressable
+              onPress={onClearCustom}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons name="trash-outline" size={20} color={colors.danger} />
+              <Txt weight="medium" size={15} style={{ flex: 1 }}>
+                Bỏ {customHidden} phần tử đã tự ẩn
+              </Txt>
+            </Pressable>
+          )}
+        </View>
+      ) : null}
+
+      {site ? (
         <Pressable
           onPress={() => {
             onReload();
@@ -129,6 +180,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     marginBottom: 12,
   },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingVertical: 8 },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.12)' },
   reload: {
     height: 50,
     borderRadius: 25,

@@ -48,9 +48,18 @@ interface Props {
   onPopupBlocked: (url: string) => void;
   /** Nhấn giữ ảnh/video trong trang. */
   onMediaLongPress: (m: MediaPress) => void;
+  /** Đang ở chế độ "Chạm để ẩn quảng cáo" và trang báo phần tử vừa chọn. */
+  onPick: (p: PickedElement) => void;
   /** Bật script chẩn đoán video (Tuỳ chỉnh → Nâng cao). */
   diag: boolean;
   insetBottom: number;
+}
+
+export interface PickedElement {
+  selector: string;
+  tag: string;
+  w: number;
+  h: number;
 }
 
 export interface MediaPress {
@@ -72,6 +81,7 @@ function BrowserTabImpl({
   onOpenInNewTab,
   onPopupBlocked,
   onMediaLongPress,
+  onPick,
   diag,
   insetBottom,
 }: Props) {
@@ -394,6 +404,11 @@ function BrowserTabImpl({
       } catch {
         return;
       }
+      if (msg.type === 'ryx:pick') {
+        const p = msg as unknown as Partial<PickedElement>;
+        if (p.selector) onPick({ selector: p.selector, tag: p.tag ?? '', w: p.w ?? 0, h: p.h ?? 0 });
+        return;
+      }
       if (msg.type === 'ryx:media') {
         const m = msg as unknown as { kind?: string; src?: string; poster?: string; link?: string; url?: string };
         onMediaLongPress({
@@ -450,7 +465,7 @@ function BrowserTabImpl({
       if (delta.ads || delta.gambling || delta.popups) record(delta);
       patchTab(tab.id, { pageCounts: next });
     },
-    [patchTab, record, tab.id, stopWatch, onMediaLongPress],
+    [patchTab, record, tab.id, stopWatch, onMediaLongPress, onPick],
   );
 
   if (!tab.sourceUrl) return null;

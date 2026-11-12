@@ -52,4 +52,16 @@ export const AD_DOMAINS: string[] = [
   'adtimaserver.vn',
   'ambientplatform.vn',
   'adnetwork.vn',
+  // Mạng quảng cáo/popunder thấy trong Nhật ký (đổi tên miền thường xuyên)
+  'magsrv.com',
+  'badlandlispyippee.com',
+  'chestgoingpunch.com',
+  'lethargyplatingsatin.com',
+  'marvelous-respond.com',
+  'divisiondrearilyunfiled.com',
+  'loosesection.com',
+  'playhubconnect.com',
+  'u5s5.com',
+  'anym8.com',
+  'fhvfd.com',
 ];

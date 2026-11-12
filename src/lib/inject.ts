@@ -1,10 +1,20 @@
-import { AD_SELECTORS, GAMBLING_SELECTORS, POPUP_SELECTORS } from '@/filters';
+import {
+  AD_DOMAINS,
+  AD_SELECTORS,
+  GAMBLING_DOMAINS,
+  GAMBLING_HOST_KEYWORDS,
+  GAMBLING_SELECTORS,
+  POPUP_SELECTORS,
+  SITE_AD_SELECTORS,
+} from '@/filters';
 import type { ShieldPrefs } from '@/state/settings';
 import type { SiteThemes } from '@/state/site-themes';
 
 export interface InjectConfig {
   defaults: ShieldPrefs;
   sites: Record<string, Partial<ShieldPrefs>>;
+  /** Phần tử tự ẩn theo trang (bộ chọn CSS) */
+  hides: Record<string, string[]>;
 }
 
 /**
@@ -19,6 +29,8 @@ export function buildInjectedScript(cfg: InjectConfig, themes: SiteThemes = {}):
     cfg,
     themes,
     sel: { ads: AD_SELECTORS, gambling: GAMBLING_SELECTORS, popups: POPUP_SELECTORS },
+    site: SITE_AD_SELECTORS,
+    hosts: { ads: AD_DOMAINS, gambling: GAMBLING_DOMAINS, gkw: GAMBLING_HOST_KEYWORDS },
   });
   return `(function(){
 try {
@@ -37,7 +49,25 @@ function valid(list){
   for (var i = 0; i < list.length; i++) { try { document.createDocumentFragment().querySelector(list[i]); out.push(list[i]); } catch (e) {} }
   return out.join(',');
 }
-var SEL = { ads: valid(D.sel.ads), gambling: valid(D.sel.gambling), popups: valid(D.sel.popups) };
+var HKEY = (location.hostname || '').replace(/^www\\./, '');
+var SITE_SEL = D.site[HKEY] || [];
+var SEL = { ads: valid(D.sel.ads.concat(SITE_SEL)), gambling: valid(D.sel.gambling), popups: valid(D.sel.popups) };
+/* Tên miền quảng cáo/cờ bạc: dùng để chặn script & iframe ngay lúc trang định chèn vào */
+var AD_H = {}, GB_H = {};
+D.hosts.ads.forEach(function(h){ AD_H[h] = 1; });
+D.hosts.gambling.forEach(function(h){ GB_H[h] = 1; });
+function inSet(host, set){ var h = host; while (h && h.indexOf('.') > 0) { if (set[h]) return true; h = h.slice(h.indexOf('.') + 1); } return false; }
+function hostKind(u){
+  var s = String(u || ''); var i = s.indexOf('//');
+  if (i < 0 || i > 6) return null;
+  var h = '';
+  for (var j = i + 2; j < s.length; j++) { var c = s.charAt(j); if (c === '/' || c === '?' || c === '#' || c === ':') break; h += c; }
+  h = h.toLowerCase(); if (!h) return null;
+  if (inSet(h, GB_H)) return 'gambling';
+  for (var i = 0; i < D.hosts.gkw.length; i++) if (h.indexOf(D.hosts.gkw[i]) >= 0) return 'gambling';
+  if (inSet(h, AD_H)) return 'ads';
+  return null;
+}
 var counts = { ads: 0, gambling: 0, popups: 0 };
 var P = prefs();
 
@@ -57,6 +87,8 @@ function applyHide(){
   ['ads','gambling','popups'].forEach(function(k){
     if (P[k] && SEL[k]) css += SEL[k] + '{display:none!important;visibility:hidden!important;}';
   });
+  var mine = valid((CFG.hides || {})[HKEY] || []);
+  if (mine) css += mine + '{display:none!important;}';
   styleEl('ryx-hide').textContent = css;
 }
 
@@ -66,7 +98,14 @@ function scan(){
     if (!P[k] || !SEL[k]) return;
     var els; try { els = document.querySelectorAll(SEL[k]); } catch (e) { return; }
     for (var i = 0; i < els.length; i++) {
-      if (!els[i].__ryxSeen) { els[i].__ryxSeen = 1; counts[k]++; changed = true; }
+      if (!els[i].__ryxSeen) {
+        els[i].__ryxSeen = 1; counts[k]++; changed = true;
+        /* Banner video: ẩn luôn khung bọc (link/banner) để không chừa ô trống */
+        if (els[i].tagName === 'VIDEO') {
+          var box = els[i].closest('a,[class*="banner"],[class*="catfish"],[id*="catfish"],[class*="ads"]');
+          if (box) box.style.setProperty('display', 'none', 'important');
+        }
+      }
     }
   });
   if (changed) schedulePost();
@@ -83,6 +122,28 @@ window.open = function(){
   if (P.popups && Date.now() - lastTap > 1000) { counts.popups++; schedulePost(); return null; }
   return nativeOpen.apply(window, arguments);
 };
+
+/* Chặn script/iframe quảng cáo ngay lúc trang chèn vào (trước khi tải) */
+function blockedNode(n){
+  if (!n || n.nodeType !== 1) return null;
+  var tag = n.tagName;
+  if (tag !== 'SCRIPT' && tag !== 'IFRAME') return null;
+  var kind = hostKind(n.src || n.getAttribute('src'));
+  if (!kind) return null;
+  if (kind === 'gambling' ? !P.gambling : !P.ads) return null;
+  return kind;
+}
+function guard(orig){
+  return function(n){
+    var kind = blockedNode(n);
+    if (kind) { counts[kind]++; schedulePost(); return n; }
+    return orig.apply(this, arguments);
+  };
+}
+try {
+  Node.prototype.appendChild = guard(Node.prototype.appendChild);
+  Node.prototype.insertBefore = guard(Node.prototype.insertBefore);
+} catch (e) {}
 
 /* Chế độ tối */
 var DARK_CSS = 'html{background:#fff!important;filter:invert(0.9) hue-rotate(180deg)!important;}' +
@@ -184,7 +245,62 @@ document.addEventListener('touchcancel', lpCancel, { passive: true, capture: tru
 /* Sau khi nhấn giữ thì bỏ cú "bấm" đi kèm, để trang không mở link/quảng cáo */
 document.addEventListener('click', function(e){ if (Date.now() - lpFired < 800) { e.preventDefault(); e.stopPropagation(); } }, true);
 
+/* "Chạm để ẩn quảng cáo": chọn phần tử, app hỏi lại rồi lưu bộ chọn cho trang này */
+var pickOn = false, picked = null;
+function pickCss(){
+  styleEl('ryx-pick').textContent = pickOn ?
+    '[data-ryx-pick]{outline:3px solid #F87171!important;outline-offset:-3px!important;background-color:rgba(248,113,113,.18)!important;}iframe,video{pointer-events:none!important;}' : '';
+}
+function mark(el){
+  if (picked) picked.removeAttribute('data-ryx-pick');
+  picked = el || null;
+  if (picked) picked.setAttribute('data-ryx-pick', '');
+}
+function esc(x){ return (window.CSS && CSS.escape) ? CSS.escape(x) : x; }
+function goodToken(t){ return !!t && t.length < 40 && !/[0-9]{3,}/.test(t) && t.indexOf('ryx') < 0; }
+function selFor(el){
+  if (el.tagName === 'IFRAME' && el.src) {
+    var s = String(el.src), i = s.indexOf('//');
+    if (i >= 0) { var h = s.slice(i + 2).split('/')[0].split('?')[0]; if (h) return 'iframe[src*="' + h + '"]'; }
+  }
+  var parts = [], cur = el;
+  for (var d = 0; cur && cur.nodeType === 1 && cur !== document.body && cur !== root && d < 6; d++) {
+    if (cur.id && goodToken(cur.id)) { parts.unshift('#' + esc(cur.id)); break; }
+    var p = cur.tagName.toLowerCase();
+    var cls = (typeof cur.className === 'string' ? cur.className : '').split(' ').filter(goodToken).slice(0, 2);
+    if (cls.length) p += '.' + cls.map(esc).join('.');
+    var par = cur.parentElement;
+    if (par && !cls.length) {
+      var same = 0, idx = 0;
+      for (var k = 0; k < par.children.length; k++) { if (par.children[k].tagName === cur.tagName) { same++; if (par.children[k] === cur) idx = same; } }
+      if (same > 1) p += ':nth-of-type(' + idx + ')';
+    }
+    parts.unshift(p);
+    try { if (document.querySelectorAll(parts.join(' > ')).length === 1) break; } catch (e) {}
+    cur = par;
+  }
+  return parts.join(' > ');
+}
+function reportPick(){
+  if (!picked) return;
+  var r = picked.getBoundingClientRect();
+  send({ type: 'ryx:pick', selector: selFor(picked), tag: picked.tagName.toLowerCase(), w: Math.round(r.width), h: Math.round(r.height) });
+}
+function pickSwallow(e){ if (pickOn) { e.stopImmediatePropagation(); } }
+['pointerdown', 'mousedown', 'touchstart', 'touchend', 'mouseup', 'pointerup'].forEach(function(t){ window.addEventListener(t, pickSwallow, true); });
+window.addEventListener('click', function(e){
+  if (!pickOn) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  var t = e.target; if (!t || t === document.body || t === root) return;
+  mark(t); reportPick();
+}, true);
+
 window.__ryx = {
+  pick: function(on){ pickOn = !!on; if (!pickOn) mark(null); pickCss(); },
+  pickParent: function(){
+    if (picked && picked.parentElement && picked.parentElement !== document.body && picked.parentElement !== root) { mark(picked.parentElement); }
+    reportPick();
+  },
   update: function(c){ CFG = c; P = prefs(); applyAll(); post(); },
   report: post
 };

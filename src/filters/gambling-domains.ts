@@ -74,4 +74,8 @@ export const GAMBLING_HOST_KEYWORDS: string[] = [
   'qh88',
   'fi88',
   'zbet',
+  'cm88',
+  'qq88',
+  'sc88',
+  'i9bet',
 ];

@@ -16,5 +16,12 @@ export const GAMBLING_SELECTORS_MANUAL: string[] = [
 
 export const GAMBLING_SELECTORS: string[] = [
   ...GAMBLING_SELECTORS_MANUAL,
-  ...GAMBLING_HOST_KEYWORDS.flatMap((k) => [`a[href*="${k}"]`, `iframe[src*="${k}"]`]),
+  ...GAMBLING_HOST_KEYWORDS.flatMap((k) => [
+    `a[href*="${k}"]`,
+    `iframe[src*="${k}"]`,
+    // Banner video cờ bạc tải từ chính trang (vd /static/media/mobile-new88-….mp4)
+    `video[src*="${k}"]`,
+    `video[poster*="${k}"]`,
+    `video:has(source[src*="${k}"])`,
+  ]),
 ];
