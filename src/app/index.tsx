@@ -1,10 +1,15 @@
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Linking, Share, StyleSheet, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
+import { ActionSheetIOS, Alert, Linking, Share, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ADDRESS_BAR_HEIGHT, AddressBar } from '@/components/address-bar';
-import { BrowserTab } from '@/components/browser-tab';
+import { BrowserTab, type MediaPress } from '@/components/browser-tab';
+import { PopupBanner, type BlockedPopup } from '@/components/popup-banner';
+import { log } from '@/lib/logger';
+import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { Dock, dockMetrics } from '@/components/dock';
 import { MenuSheet, type MenuAction } from '@/components/menu-sheet';
 import { NewTabPage } from '@/components/new-tab-page';
@@ -12,7 +17,7 @@ import { ShieldSheet } from '@/components/shield-sheet';
 import { buildInjectedScript, type InjectConfig } from '@/lib/inject';
 import { captureTab } from '@/lib/tab-shots';
 import { useSiteThemes } from '@/state/site-themes';
-import { resolveInput, siteKey } from '@/lib/url';
+import { getHost, resolveInput, siteKey } from '@/lib/url';
 import { useKeyboardHeight } from '@/lib/use-keyboard-height';
 import { useSettings, type DockButtonId, type ShieldPrefs } from '@/state/settings';
 import { useStats } from '@/state/stats';
@@ -33,6 +38,13 @@ export default function BrowserScreen() {
   const [addrFocused, setAddrFocused] = useState(false);
   const [shieldOpen, setShieldOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [blockedPopup, setBlockedPopup] = useState<BlockedPopup | null>(null);
+
+  const onPopupBlocked = useCallback((url: string) => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setBlockedPopup({ key: Date.now(), url, host: getHost(url) || url });
+  }, []);
+  const closePopupBanner = useCallback(() => setBlockedPopup(null), []);
 
   const hasPage = !active.home && !!active.url;
   const site = hasPage ? siteKey(active.url) : '';
@@ -69,14 +81,52 @@ export default function BrowserScreen() {
   const webRef = () => refs.current.get(active.id);
 
   const goBack = () => {
-    if (active.home && active.sourceUrl) patchTab(active.id, { home: false });
-    else webRef()?.goBack();
+    if (active.home) {
+      if (active.sourceUrl) patchTab(active.id, { home: false });
+    } else if (active.canGoBack) webRef()?.goBack();
+    // Hết lịch sử trong trang: lùi về trang Thẻ mới (giống Safari quay về trang bắt đầu)
+    else patchTab(active.id, { home: true });
   };
 
   const goHome = () => patchTab(active.id, { home: true });
   const reload = () => webRef()?.reload();
 
   const openInNewTab = useCallback((url: string) => newTab(url), [newTab]);
+
+  // Nhấn giữ ảnh/video trong trang
+  const onMediaLongPress = useCallback(
+    (m: MediaPress) => {
+      const isVideo = m.kind === 'video';
+      const save = (url: string, kind: 'image' | 'video') => {
+        void saveMediaToPhotos(url, kind, m.pageUrl)
+          .then(() => {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert(kind === 'video' ? 'Đã lưu video vào Ảnh' : 'Đã lưu ảnh vào Ảnh');
+          })
+          .catch((e: unknown) => {
+            Alert.alert('Không lưu được', e instanceof SaveMediaError ? e.message : String(e));
+          });
+      };
+      const items: { label: string; run: () => void }[] = [];
+      if (m.src) items.push({ label: isVideo ? 'Lưu video vào Ảnh' : 'Lưu vào Ảnh', run: () => save(m.src, m.kind) });
+      if (isVideo && m.poster) items.push({ label: 'Lưu ảnh bìa video', run: () => save(m.poster, 'image') });
+      if (m.src) items.push({ label: isVideo ? 'Sao chép link video' : 'Sao chép link ảnh', run: () => void Clipboard.setStringAsync(m.src) });
+      if (!isVideo && /^https?:/.test(m.src)) items.push({ label: 'Mở ảnh trong thẻ mới', run: () => newTab(m.src) });
+      if (m.link) items.push({ label: 'Mở link trong thẻ mới', run: () => newTab(m.link) });
+      if (!items.length) return;
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: isVideo ? 'Video' : 'Ảnh',
+          message: getHost(m.src) || undefined,
+          options: [...items.map((i) => i.label), 'Huỷ'],
+          cancelButtonIndex: items.length,
+        },
+        (i) => items[i]?.run(),
+      );
+    },
+    [newTab],
+  );
 
   const share = () => {
     if (active.url) Share.share({ url: active.url, message: active.url }).catch(() => {});
@@ -85,8 +135,10 @@ export default function BrowserScreen() {
   const onDockPress = (id: DockButtonId) => {
     switch (id) {
       case 'back':
+        log.debug('nav', `Bấm lùi (trang có lịch sử lùi: ${active.canGoBack ? 'có' : 'không'})`, active.url ?? '');
         return goBack();
       case 'forward':
+        log.debug('nav', `Bấm tiến (trang có lịch sử tiến: ${active.canGoForward ? 'có' : 'không'})`, active.url ?? '');
         return webRef()?.goForward();
       case 'tabs':
         // Chụp thẻ đang mở trước để màn quản lý thẻ có ảnh mới nhất
@@ -133,7 +185,7 @@ export default function BrowserScreen() {
 
   const toggle = (key: keyof ShieldPrefs, value: boolean) => setSitePref(site, key, value);
 
-  const canGoBack = active.home ? !!active.sourceUrl : active.canGoBack;
+  const canGoBack = active.home ? !!active.sourceUrl : true;
   const canGoForward = !active.home && active.canGoForward;
 
   return (
@@ -149,6 +201,9 @@ export default function BrowserScreen() {
             prefsFor={prefsFor}
             record={record}
             onOpenInNewTab={openInNewTab}
+            onPopupBlocked={onPopupBlocked}
+            onMediaLongPress={onMediaLongPress}
+            diag={settings.diagVideo}
             insetBottom={webBottomInset}
           />
         ))}
@@ -193,6 +248,16 @@ export default function BrowserScreen() {
           onFocusChange={setAddrFocused}
         />
       </View>
+
+      <PopupBanner
+        popup={blockedPopup}
+        bottom={chromeBottom + GAP}
+        onOpen={(url) => {
+          setBlockedPopup(null);
+          newTab(url);
+        }}
+        onClose={closePopupBanner}
+      />
 
       <ShieldSheet
         visible={shieldOpen}

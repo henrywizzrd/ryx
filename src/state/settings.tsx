@@ -32,6 +32,8 @@ export interface Settings {
   dockButtons: DockButtonId[];
   shield: ShieldPrefs;
   siteOverrides: Record<string, Partial<ShieldPrefs>>;
+  /** Ghi chi tiết trình phát video vào Nhật ký (chỉ bật khi cần dò lỗi) */
+  diagVideo: boolean;
 }
 
 export const MAX_DOCK_BUTTONS = 5;
@@ -45,6 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dockButtons: ['back', 'forward', 'tabs', 'menu'],
   shield: { gambling: true, ads: true, popups: true, dark: true },
   siteOverrides: {},
+  diagVideo: false,
 };
 
 const STORAGE_KEY = 'ryx.settings.v1';

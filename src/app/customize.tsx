@@ -291,6 +291,19 @@ export default function CustomizeScreen() {
           </Pressable>
         </Section>
 
+        <Section title="Nâng cao" hint="Chỉ bật khi video trên một trang không chạy và cần gửi Nhật ký để dò lỗi. Bật/tắt xong tải lại trang.">
+          <View style={[styles.card, { paddingHorizontal: 14 }]}>
+            <ToggleRow
+              icon="pulse-outline"
+              title="Chẩn đoán video"
+              subtitle="Ghi trạng thái trình phát vào Nhật ký"
+              value={settings.diagVideo}
+              onChange={(v) => update({ diagVideo: v })}
+              last
+            />
+          </View>
+        </Section>
+
         <Pressable
           onPress={confirmReset}
           disabled={JSON.stringify(settings) === JSON.stringify(DEFAULT_SETTINGS)}

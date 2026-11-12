@@ -44,7 +44,21 @@ interface Props {
   prefsFor: (site: string) => ShieldPrefs;
   record: (delta: Partial<Counts>) => void;
   onOpenInNewTab: (url: string) => void;
+  /** Đã chặn một cửa sổ bật lên (để app hiện thông báo kèm nút "Vẫn mở"). */
+  onPopupBlocked: (url: string) => void;
+  /** Nhấn giữ ảnh/video trong trang. */
+  onMediaLongPress: (m: MediaPress) => void;
+  /** Bật script chẩn đoán video (Tuỳ chỉnh → Nâng cao). */
+  diag: boolean;
   insetBottom: number;
+}
+
+export interface MediaPress {
+  kind: 'image' | 'video';
+  src: string;
+  poster: string;
+  link: string;
+  pageUrl: string;
 }
 
 
@@ -56,6 +70,9 @@ function BrowserTabImpl({
   prefsFor,
   record,
   onOpenInNewTab,
+  onPopupBlocked,
+  onMediaLongPress,
+  diag,
   insetBottom,
 }: Props) {
   const { patchTab, refs } = useTabs();
@@ -214,14 +231,34 @@ function BrowserTabImpl({
   const onOpenWindow = useCallback(
     (e: WebViewOpenWindowEvent) => {
       const url = e.nativeEvent.targetUrl;
-      const cat = shouldBlock(url, true, prefsFor(siteKey(urlRef.current)));
+      const prefs = prefsFor(siteKey(urlRef.current));
+      const cat = shouldBlock(url, true, prefs);
       if (cat) {
+        log.debug('block', `Chặn cửa sổ bật lên (${cat}): ${getHost(url)}`, url);
         countBlocked(cat === 'ads' ? 'popups' : cat);
         return;
       }
+      if (prefs.popups) {
+        // Mánh "tab-under": mở lại chính trang đang xem/vừa bấm sang thẻ mới, rồi đổi thẻ cũ thành quảng cáo
+        const clicked = lastClick.current;
+        if (url === urlRef.current || (Date.now() - clicked.at < 1500 && url === clicked.url)) {
+          log.info('block', `Chặn mở trùng trang sang thẻ mới: ${getHost(url)}`, url);
+          countBlocked('popups');
+          return;
+        }
+        // Cửa sổ sang site khác: chặn, hỏi lại cậu bằng thông báo "Vẫn mở"
+        const here = registrableDomain(getHost(urlRef.current));
+        const to = registrableDomain(getHost(url));
+        if (!to || to !== here) {
+          log.info('block', `Chặn cửa sổ bật lên sang ${getHost(url) || url}`, `${url}\nĐang ở: ${urlRef.current ?? ''}`);
+          countBlocked('popups');
+          onPopupBlocked(url);
+          return;
+        }
+      }
       onOpenInNewTab(url);
     },
-    [prefsFor, countBlocked, onOpenInNewTab],
+    [prefsFor, countBlocked, onOpenInNewTab, onPopupBlocked],
   );
 
   const onLoadStart = useCallback(
@@ -278,9 +315,14 @@ function BrowserTabImpl({
     [patchTab, tab.id],
   );
 
-  const onLoadEnd = useCallback(() => {
+  const onLoadEnd = useCallback((e: { nativeEvent: { canGoBack?: boolean; canGoForward?: boolean } }) => {
     stopWatch();
-    patchTab(tab.id, { loading: false, progress: 1 });
+    const n = e?.nativeEvent;
+    patchTab(tab.id, {
+      loading: false,
+      progress: 1,
+      ...(typeof n?.canGoBack === 'boolean' ? { canGoBack: n.canGoBack, canGoForward: !!n.canGoForward } : null),
+    });
     if (!loadStartedAt.current) return;
     if (loadFailed.current) {
       loadStartedAt.current = 0;
@@ -352,6 +394,17 @@ function BrowserTabImpl({
       } catch {
         return;
       }
+      if (msg.type === 'ryx:media') {
+        const m = msg as unknown as { kind?: string; src?: string; poster?: string; link?: string; url?: string };
+        onMediaLongPress({
+          kind: m.kind === 'video' ? 'video' : 'image',
+          src: m.src ?? '',
+          poster: m.poster ?? '',
+          link: m.link ?? '',
+          pageUrl: m.url ?? urlRef.current ?? '',
+        });
+        return;
+      }
       if (msg.type === 'ryx:diag') {
         const d = describeDiag(msg as Record<string, unknown>);
         log[d.level]('video', d.text, d.detail);
@@ -397,7 +450,7 @@ function BrowserTabImpl({
       if (delta.ads || delta.gambling || delta.popups) record(delta);
       patchTab(tab.id, { pageCounts: next });
     },
-    [patchTab, record, tab.id, stopWatch],
+    [patchTab, record, tab.id, stopWatch, onMediaLongPress],
   );
 
   if (!tab.sourceUrl) return null;
@@ -406,7 +459,9 @@ function BrowserTabImpl({
     <View
       ref={shotRef}
       collapsable={false}
-      style={[StyleSheet.absoluteFill, { display: visible ? 'flex' : 'none' }]}
+      // Không dùng display:none: thẻ ẩn có thể bị dựng lại từ đầu và quay về trang đầu tiên, mất lịch sử lùi/tiến
+      pointerEvents={visible ? 'auto' : 'none'}
+      style={[StyleSheet.absoluteFill, visible ? styles.shown : styles.hidden]}
     >
     <WebView
       ref={setRef}
@@ -417,10 +472,10 @@ function BrowserTabImpl({
       style={styles.web}
       containerStyle={StyleSheet.absoluteFill}
       // Chẩn đoán chạy từ đầu trang chính (bắt được cả script lỗi lúc tải), rồi tới script chính của Ryx
-      injectedJavaScriptBeforeContentLoaded={FRAME_DIAG_SCRIPT + '\n' + script}
+      injectedJavaScriptBeforeContentLoaded={diag ? FRAME_DIAG_SCRIPT + '\n' + script : script}
       // Script chẩn đoán video chạy cả trong iframe (trình phát thường nằm trong iframe)
-      injectedJavaScript={FRAME_DIAG_SCRIPT}
-      injectedJavaScriptForMainFrameOnly={false}
+      injectedJavaScript={diag ? FRAME_DIAG_SCRIPT : undefined}
+      injectedJavaScriptForMainFrameOnly={!diag}
       onShouldStartLoadWithRequest={onShouldStart}
       onOpenWindow={onOpenWindow}
       onLoadStart={onLoadStart}
@@ -454,4 +509,6 @@ export const BrowserTab = memo(BrowserTabImpl);
 
 const styles = StyleSheet.create({
   web: { backgroundColor: colors.bg },
+  shown: { opacity: 1, zIndex: 1 },
+  hidden: { opacity: 0, zIndex: 0 },
 });

@@ -145,6 +145,45 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 window.addEventListener('load', scan);
 
+/* Nhấn giữ ảnh/video → app hiện menu (Lưu vào Ảnh, Sao chép link…) */
+styleEl('ryx-lp').textContent = 'img,video{-webkit-touch-callout:none!important;}';
+var lp = null, lpX = 0, lpY = 0, lpFired = 0;
+function mediaAt(t){
+  if (!t || !t.closest) return null;
+  var v = t.closest('video'); if (v) return v;
+  var im = t.closest('img'); if (im) return im;
+  /* Lớp nút phủ lên video của trình phát */
+  var box = t.closest('[class*="player"],[id*="player"]');
+  if (box) { var vv = box.querySelector('video'); if (vv) return vv; }
+  return null;
+}
+document.addEventListener('touchstart', function(e){
+  if (!e.touches || e.touches.length !== 1) return;
+  var m = mediaAt(e.target); if (!m) return;
+  lpX = e.touches[0].clientX; lpY = e.touches[0].clientY;
+  clearTimeout(lp);
+  lp = setTimeout(function(){
+    lp = null; lpFired = Date.now();
+    var isV = m.tagName === 'VIDEO';
+    var so = isV && m.querySelector ? m.querySelector('source') : null;
+    var src = isV ? (m.currentSrc || m.src || (so ? so.src : '')) : (m.currentSrc || m.src || '');
+    var a = m.closest('a');
+    send({ type: 'ryx:media', kind: isV ? 'video' : 'image', src: String(src || ''), poster: isV ? String(m.poster || '') : '', link: a ? a.href : '', url: location.href });
+  }, 550);
+}, { passive: true, capture: true });
+function lpCancel(e){
+  if (!lp) return;
+  if (e.type === 'touchmove' && e.touches && e.touches[0]) {
+    if (Math.abs(e.touches[0].clientX - lpX) < 10 && Math.abs(e.touches[0].clientY - lpY) < 10) return;
+  }
+  clearTimeout(lp); lp = null;
+}
+document.addEventListener('touchmove', lpCancel, { passive: true, capture: true });
+document.addEventListener('touchend', lpCancel, { passive: true, capture: true });
+document.addEventListener('touchcancel', lpCancel, { passive: true, capture: true });
+/* Sau khi nhấn giữ thì bỏ cú "bấm" đi kèm, để trang không mở link/quảng cáo */
+document.addEventListener('click', function(e){ if (Date.now() - lpFired < 800) { e.preventDefault(); e.stopPropagation(); } }, true);
+
 window.__ryx = {
   update: function(c){ CFG = c; P = prefs(); applyAll(); post(); },
   report: post
