@@ -1,77 +1,133 @@
-# Build bản Release (chạy độc lập, không cần laptop) để ký bằng Sideloadly/ESign rồi cài lên iPhone.
-# Chạy tay: tab Actions -> "Build iOS IPA" -> Run workflow. Xong thì tải file ở mục "Artifacts" cuối trang.
-# Code JS thay đổi sau này không cần build lại: dùng `npx eas-cli@latest update --channel production`.
-# Chỉ build lại khi thêm thư viện native hoặc đổi app.json (nhớ tăng "version" khi đó).
-name: Build iOS IPA (Release, unsigned)
+# Ryx: build & cập nhật tự động theo thẻ trong lời nhắn commit
+#  - [build]  : build bản iOS Release (chưa ký) rồi đưa lên mục Releases của repo → tải về, ký bằng ESign / Sideloadly
+#               (hoặc tab Actions -> "Ryx build & update" -> Run workflow)
+#  - [update] : KHÔNG build lại, chỉ đẩy code JS/ảnh mới lên Expo (EAS Update, kênh production)
+#               → app đã cài tự tải bản mới khi mở
+#  - Commit không có thẻ: không chạy gì.
+# Cần secret EXPO_TOKEN (Settings → Secrets and variables → Actions) cho [update].
+# Thêm thư viện native / đổi app.json / đổi icon: tăng "version" trong app.json rồi [build] lại.
+name: Ryx build & update
 
 on:
   workflow_dispatch:
+  push:
+
+env:
+  # projectId EAS của zyx: ryx KHÔNG được dùng chung (bản cập nhật sẽ đi nhầm sang project zyx)
+  ZYX_PROJECT_ID: 7f4dcbef-7a9b-43e4-8cd6-6b6674c0ad03
 
 jobs:
-  build:
+  ios:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Check EAS Update config
+      - name: Kiểm tra cấu hình EAS Update
         run: |
           node -e '
             const e = require("./app.json").expo;
+            const id = e.extra && e.extra.eas && e.extra.eas.projectId;
             const url = e.updates && e.updates.url;
-            if (!url) {
-              console.error("::error::app.json chưa có updates.url → app build ra sẽ KHÔNG nhận được cập nhật qua mạng. Chạy `npx eas-cli@latest update:configure` trước rồi push lại.");
-              process.exit(1);
-            }
-            console.log("updates.url:", url, "| runtimeVersion:", JSON.stringify(e.runtimeVersion), "| version:", e.version);
+            const fail = (m) => { console.error("::error::" + m); process.exit(1); };
+            if (!id || !url) fail("app.json chưa liên kết project EAS (thiếu extra.eas.projectId hoặc updates.url). Chạy `npx eas-cli@latest init` rồi `npx eas-cli@latest update:configure`, commit lại.");
+            if (id === process.env.ZYX_PROJECT_ID) fail("app.json đang dùng projectId của zyx. Xoá extra.eas.projectId + updates.url, chạy lại `npx eas-cli@latest init` để tạo project ryx riêng.");
+            if (!url.endsWith(id)) fail("updates.url không khớp projectId: " + url + " / " + id);
+            console.log("OK · slug", e.slug, "· version", e.version, "· projectId", id);
           '
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
 
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      - name: Install JS dependencies
-        run: npm ci
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
 
-      - name: Generate native iOS project
-        run: npx expo prebuild --platform ios --clean --no-install
+      - run: npm ci
 
-      - name: Install CocoaPods
-        run: cd ios && pod install
+      - run: npx expo prebuild --platform ios --clean --no-install
 
-      - name: Build Release .app without code signing
+      - run: cd ios && pod install
+
+      - name: Build Release (không ký)
         run: |
           set -o pipefail
+          xcodebuild -version
           WS=$(ls -d ios/*.xcworkspace | head -1)
           SCHEME=$(basename "$WS" .xcworkspace)
-          echo "Workspace: $WS  Scheme: $SCHEME"
-          xcodebuild \
-            -workspace "$WS" \
-            -scheme "$SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build | tail -n 200
+          echo "Workspace: $WS · Scheme: $SCHEME"
+          xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -archivePath build/Ryx.xcarchive archive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" > xcodebuild.log 2>&1 \
+            || { echo "=== CÁC DÒNG LỖI ==="; grep -nE "error:|\*\* ARCHIVE FAILED|fatal" xcodebuild.log | head -n 60; echo "=== 80 DÒNG CUỐI ==="; tail -n 80 xcodebuild.log; exit 1; }
 
-      - name: Package .ipa
+      - name: Lưu log build iOS (để xem lỗi)
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ios-build-log
+          path: xcodebuild.log
+          if-no-files-found: ignore
+
+      - name: Đóng gói IPA
         run: |
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/*.app Payload/
+          cp -R build/Ryx.xcarchive/Products/Applications/*.app Payload/
           VERSION=$(node -p 'require("./app.json").expo.version')
-          zip -qry "Ryx-${VERSION}-unsigned.ipa" Payload
-          echo "IPA_NAME=Ryx-${VERSION}-unsigned.ipa" >> "$GITHUB_ENV"
+          IPA="Ryx-${VERSION}-build${{ github.run_number }}-unsigned.ipa"
+          zip -qry "$IPA" Payload
+          echo "IPA=$IPA" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      # Đưa lên mục Releases (trang chính repo → Releases ở cột phải): tải thẳng file .ipa, không bị nén zip
+      - name: Tạo Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ryx-build-${{ github.run_number }}
+        run: |
+          gh release create "$TAG" "$IPA" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Ryx ${VERSION} · build ${{ github.run_number }}" \
+            --notes "Bản build từ nhánh \`$GITHUB_REF_NAME\` (commit $GITHUB_SHA).
+          - iPhone: tải \`$IPA\`, ký và cài bằng ESign / Sideloadly.
+          - Bản này nhận cập nhật qua mạng (kênh production, runtime ${VERSION}): commit có [update] là app tự cập nhật khi mở lại."
+
+  # Cập nhật qua mạng (EAS Update): app đã cài tự tải bản mới, không cần cài lại.
+  # Chỉ dùng cho thay đổi JS / ảnh. Thêm thư viện native, đổi icon, tên app, quyền... thì phải [build] lại.
+  update:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[update]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Kiểm tra cấu hình + secret
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          [ -n "$EXPO_TOKEN" ] || { echo "::error::Thiếu secret EXPO_TOKEN (Settings → Secrets and variables → Actions)"; exit 1; }
+          node -e '
+            const e = require("./app.json").expo;
+            const id = e.extra && e.extra.eas && e.extra.eas.projectId;
+            if (!id || !(e.updates && e.updates.url)) { console.error("::error::app.json chưa liên kết project EAS"); process.exit(1); }
+            if (id === process.env.ZYX_PROJECT_ID) { console.error("::error::app.json đang dùng projectId của zyx"); process.exit(1); }
+          '
+
+      - uses: actions/setup-node@v5
         with:
-          name: Ryx-ios-release
-          path: ${{ env.IPA_NAME }}
-          retention-days: 30
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Đẩy bản cập nhật lên kênh production
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          MSG: ${{ github.event.head_commit.message }}
+          CI: 1
+        run: npx --yes eas-cli@latest update --channel production --platform ios --message "$MSG" --non-interactive
