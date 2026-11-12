@@ -105,6 +105,22 @@ setTimeout(report, 2500);
 if (TOP) {
   var tapAt = 0;
   var PSEL = 'video,[class*="player"],[id*="player"],[class*="fp-"],[class*="jw-"],[class*="vjs"],[class*="plyr"]';
+  /* Tự tải thử 1 KB đầu của video trình phát để xem máy chủ trả gì (mã lỗi, chuyển hướng tới đâu) */
+  var probed = {};
+  function probe(v){
+    var src = String(v.currentSrc || v.src || '');
+    if (!/^https?:/.test(src) || v.readyState > 0 || probed[src]) return;
+    probed[src] = 1;
+    var t0 = Date.now();
+    var o = { src: src.slice(0, 250) };
+    try {
+      of.call(window, src, { headers: { Range: 'bytes=0-1023' }, credentials: 'include' }).then(function(res){
+        o.status = res.status; o.redirected = res.redirected; o.final = String(res.url).slice(0, 250);
+        o.type = res.headers.get('content-type') || ''; o.range = res.headers.get('content-range') || res.headers.get('content-length') || '';
+        o.ms = Date.now() - t0; send('probe', o);
+      }, function(err){ o.err = String((err && err.message) || err); o.ms = Date.now() - t0; send('probe', o); });
+    } catch (e) { o.err = String(e); send('probe', o); }
+  }
   function snapshot(since, why, tapped){
       var res = [];
       try {
@@ -120,7 +136,10 @@ if (TOP) {
         for (var i = 0; i < ps.length && nodes.length < 8; i++) {
           var n = ps[i]; if ((n.offsetWidth || 0) < 200) continue;
           var d = n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (typeof n.className === 'string' && n.className ? '.' + n.className.split(' ').filter(Boolean).slice(0, 3).join('.') : '');
-          if (n.tagName === 'VIDEO') d += ' src=' + String(n.currentSrc || n.src || '-').slice(0, 80) + ' rs=' + n.readyState;
+          if (n.tagName === 'VIDEO') {
+            d += ' rs=' + n.readyState + ' ns=' + n.networkState + (n.error ? ' err=' + n.error.code : '') + ' src=' + String(n.currentSrc || n.src || '-').slice(0, 200);
+            probe(n);
+          }
           nodes.push(d.slice(0, 160));
         }
       } catch (e3) {}
@@ -179,6 +198,12 @@ export function describeDiag(m: DiagMsg): { level: 'info' | 'warn' | 'error'; te
       return {
         level: 'info',
         text: m.why === 'auto' ? `Trạng thái trình phát 12 s sau khi mở trang (${String(m.requests)} tài nguyên)` : `Sau khi bấm trình phát 10 s: trang tải ${String(m.requests)} tài nguyên`,
+        detail,
+      };
+    case 'probe':
+      return {
+        level: m.err || (typeof m.status === 'number' && m.status >= 400) ? 'error' : 'info',
+        text: m.err ? `Thử tải video của trình phát: lỗi (${String(m.err)})` : `Thử tải video của trình phát: máy chủ trả ${String(m.status)}`,
         detail,
       };
     case 'js_error':
