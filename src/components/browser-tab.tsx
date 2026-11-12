@@ -13,9 +13,10 @@ import type {
 import { shouldBlock, type BlockCategory } from '@/lib/blocker';
 import { buildUpdateCall, type InjectConfig } from '@/lib/inject';
 import { PageError } from '@/components/page-error';
+import { describeDiag, FRAME_DIAG_SCRIPT } from '@/lib/frame-diag';
 import { log } from '@/lib/logger';
 import { captureTab, registerShotTarget } from '@/lib/tab-shots';
-import { getHost, siteKey } from '@/lib/url';
+import { getHost, registrableDomain, siteKey } from '@/lib/url';
 import { useHistoryActions } from '@/state/history';
 import { setSiteTheme } from '@/state/site-themes';
 import type { ShieldPrefs } from '@/state/settings';
@@ -63,6 +64,10 @@ function BrowserTabImpl({
   const loadStartedAt = useRef(0);
   /** Link trang chính đang được mở (để log và trang lỗi hiện đúng địa chỉ bị lỗi). */
   const lastTarget = useRef<string | null>(tab.sourceUrl ?? null);
+  /** URL do chính Ryx yêu cầu mở (gõ địa chỉ, lịch sử…) → luôn cho qua. */
+  const sourceRef = useRef(tab.sourceUrl);
+  /** Trang đã hiện xong: từ lúc này trang tự chuyển sang site khác mà không phải bấm link là đáng ngờ. */
+  const pageReady = useRef(false);
   const loadFailed = useRef(false);
   const lastProgress = useRef(0);
   const shotRef = useRef<HostInstance>(null);
@@ -111,6 +116,9 @@ function BrowserTabImpl({
   useEffect(() => {
     urlRef.current = tab.url;
   }, [tab.url]);
+  useEffect(() => {
+    sourceRef.current = tab.sourceUrl;
+  }, [tab.sourceUrl]);
 
   // Không bọc useCallback: React Compiler tự ghi nhớ hàm này
   const setRef = (r: WebViewHandle | null) => {
@@ -153,6 +161,22 @@ function BrowserTabImpl({
         }
         return true;
       }
+      // Quảng cáo cướp tab: trang đã hiện xong rồi tự chuyển (không phải bấm link) sang một site khác
+      if (
+        isTopFrame &&
+        prefs.popups &&
+        pageReady.current &&
+        req.navigationType === 'other' &&
+        url !== sourceRef.current
+      ) {
+        const from = registrableDomain(getHost(urlRef.current));
+        const to = registrableDomain(getHost(url));
+        if (from && to && from !== to) {
+          log.info('block', `Chặn trang tự chuyển sang ${getHost(url)}`, `${url}\nĐang ở: ${urlRef.current ?? ''}`);
+          countBlocked('popups');
+          return false;
+        }
+      }
       const cat = shouldBlock(url, isTopFrame, prefs);
       if (cat) {
         log.debug('block', `Chặn ${cat}: ${getHost(url)}`, url);
@@ -182,6 +206,7 @@ function BrowserTabImpl({
     (e: { nativeEvent: WebViewNavigation }) => {
       // Mỗi lần trang chính bắt đầu tải là một trang mới → đếm lại từ đầu
       lastPageCounts.current = { ...EMPTY_COUNTS };
+      pageReady.current = false;
       loadStartedAt.current = Date.now();
       loadFailed.current = false;
       lastProgress.current = 0.05;
@@ -305,7 +330,13 @@ function BrowserTabImpl({
       } catch {
         return;
       }
+      if (msg.type === 'ryx:diag') {
+        const d = describeDiag(msg as Record<string, unknown>);
+        log[d.level]('video', d.text, d.detail);
+        return;
+      }
       if (msg.type === 'ryx:ready') {
+        pageReady.current = true;
         // Nội dung trang đã hiện & dùng được: cho thanh tiến trình xong luôn, không đợi quảng cáo/ảnh tải hết
         stopWatch();
         // Chụp ảnh thu nhỏ một lúc sau khi trang hiện (cho màn quản lý thẻ)
@@ -364,6 +395,9 @@ function BrowserTabImpl({
       style={styles.web}
       containerStyle={StyleSheet.absoluteFill}
       injectedJavaScriptBeforeContentLoaded={script}
+      // Script chẩn đoán video chạy cả trong iframe (trình phát thường nằm trong iframe)
+      injectedJavaScript={FRAME_DIAG_SCRIPT}
+      injectedJavaScriptForMainFrameOnly={false}
       onShouldStartLoadWithRequest={onShouldStart}
       onOpenWindow={onOpenWindow}
       onLoadStart={onLoadStart}
@@ -377,6 +411,8 @@ function BrowserTabImpl({
       onContentProcessDidTerminate={onProcessTerminated}
       allowsBackForwardNavigationGestures
       allowsInlineMediaPlayback
+      // Mặc định (true) có thể làm video trên iOS quay vòng mãi không phát (theo tài liệu react-native-webview)
+      mediaPlaybackRequiresUserAction={false}
       pullToRefreshEnabled
       sharedCookiesEnabled
       setSupportMultipleWindows

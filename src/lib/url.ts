@@ -25,6 +25,15 @@ export function displayHost(url: string | null | undefined): string {
   return getHost(url).replace(/^www\./, '');
 }
 
+/** Tên miền gốc, vd m.xnhau.pink → xnhau.pink, abc.com.vn → abc.com.vn. Dùng để so hai trang có cùng site không. */
+export function registrableDomain(host: string): string {
+  const parts = host.replace(/\.$/, '').split('.');
+  if (parts.length <= 2) return host;
+  const last2 = parts.slice(-2).join('.');
+  if (/^(com|net|org|edu|gov|co|ac|info|biz)\.[a-z]{2}$/.test(last2)) return parts.slice(-3).join('.');
+  return last2;
+}
+
 /** Khoá dùng để lưu tuỳ chọn theo trang. */
 export function siteKey(url: string | null | undefined): string {
   return displayHost(url);
