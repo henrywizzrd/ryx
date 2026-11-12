@@ -63,6 +63,26 @@ function BrowserTabImpl({
   const lastTarget = useRef<string | null>(tab.sourceUrl ?? null);
   const loadFailed = useRef(false);
   const lastProgress = useRef(0);
+  /** Hẹn giờ phát hiện trang "treo": đã cho mở mà mãi không thấy tiến triển. */
+  const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navStartedAt = useRef(0);
+  const halfLogged = useRef(false);
+  const stopWatch = useCallback(() => {
+    if (watchdog.current) clearTimeout(watchdog.current);
+    watchdog.current = null;
+  }, []);
+  const startWatch = useCallback((stage: string, url: string, ms: number) => {
+    stopWatch();
+    watchdog.current = setTimeout(() => {
+      const host = getHost(url) || url;
+      log.warn(
+        'nav',
+        `${host}: ${stage} sau ${Math.round(ms / 1000)} giây vẫn chưa xong`,
+        `${url}\nThường do nhà mạng chặn (kết nối bị treo) hoặc máy chủ trang quá chậm. Tiến độ hiện tại: ${Math.round(lastProgress.current * 100)}%`,
+      );
+    }, ms);
+  }, [stopWatch]);
+  useEffect(() => stopWatch, [stopWatch]);
 
   useEffect(() => {
     urlRef.current = tab.url;
@@ -93,6 +113,7 @@ function BrowserTabImpl({
       const { url, isTopFrame } = req;
       if (isTopFrame) {
         lastTarget.current = url;
+        navStartedAt.current = Date.now();
         log.debug('nav', `Mở ${getHost(url) || url}`, `${url}\nKiểu: ${req.navigationType ?? '?'}`);
       }
       if (EXTERNAL_SCHEMES.test(url)) {
@@ -114,9 +135,10 @@ function BrowserTabImpl({
         countBlocked(cat);
         return false;
       }
+      if (isTopFrame) startWatch('chưa bắt đầu kết nối', url, 10000);
       return true;
     },
-    [prefsFor, countBlocked],
+    [prefsFor, countBlocked, startWatch],
   );
 
   const onOpenWindow = useCallback(
@@ -139,6 +161,10 @@ function BrowserTabImpl({
       loadStartedAt.current = Date.now();
       loadFailed.current = false;
       lastProgress.current = 0.05;
+      halfLogged.current = false;
+      const since = navStartedAt.current ? ` (${((Date.now() - navStartedAt.current) / 1000).toFixed(1)} s sau khi bấm)` : '';
+      log.debug('web', `Bắt đầu tải ${getHost(e.nativeEvent.url) || e.nativeEvent.url}${since}`);
+      startWatch('đang kết nối / tải', e.nativeEvent.url, 15000);
       patchTab(tab.id, {
         url: e.nativeEvent.url,
         loading: true,
@@ -147,7 +173,7 @@ function BrowserTabImpl({
         pageCounts: { ...EMPTY_COUNTS },
       });
     },
-    [patchTab, tab.id],
+    [patchTab, tab.id, startWatch],
   );
 
   const onNavChange = useCallback(
@@ -172,12 +198,17 @@ function BrowserTabImpl({
       if (lastProgress.current >= 1) return;
       if (p - lastProgress.current < 0.1 && p < 1) return;
       lastProgress.current = p;
+      if (p >= 0.5 && !halfLogged.current && loadStartedAt.current) {
+        halfLogged.current = true;
+        log.debug('web', `Tải được ${Math.round(p * 100)}% sau ${((Date.now() - loadStartedAt.current) / 1000).toFixed(1)} s`);
+      }
       patchTab(tab.id, { progress: p });
     },
     [patchTab, tab.id],
   );
 
   const onLoadEnd = useCallback(() => {
+    stopWatch();
     patchTab(tab.id, { loading: false, progress: 1 });
     if (!loadStartedAt.current) return;
     if (loadFailed.current) {
@@ -189,16 +220,17 @@ function BrowserTabImpl({
     const host = getHost(urlRef.current ?? '');
     if (ms >= SLOW_LOAD_MS) log.perf('web', `Trang ${host} tải chậm: ${(ms / 1000).toFixed(1)} s`, urlRef.current);
     else log.debug('web', `Tải xong ${host} trong ${(ms / 1000).toFixed(1)} s`);
-  }, [patchTab, tab.id]);
+  }, [patchTab, tab.id, stopWatch]);
 
   const onError = useCallback((e: WebViewErrorEvent) => {
+    stopWatch();
     const { code, description, url } = e.nativeEvent;
     // -999 = điều hướng bị huỷ (người dùng bấm link khác/bị chặn): không phải lỗi thật
     if (code === -999) return;
     loadFailed.current = true;
     const target = lastTarget.current ?? url;
     log.error('web', `Không tải được ${getHost(target) || 'trang'}: ${description}`, `${target}\nMã lỗi: ${code}\nTrang trước: ${url}`);
-  }, []);
+  }, [stopWatch]);
 
   const renderError = useCallback(
     (_domain: string | undefined, code: number, desc: string) => (
@@ -251,6 +283,10 @@ function BrowserTabImpl({
       }
       if (msg.type === 'ryx:ready') {
         // Nội dung trang đã hiện & dùng được: cho thanh tiến trình xong luôn, không đợi quảng cáo/ảnh tải hết
+        stopWatch();
+        if (loadStartedAt.current) {
+          log.debug('web', `Nội dung ${getHost(msg.url) || 'trang'} sẵn sàng sau ${((Date.now() - loadStartedAt.current) / 1000).toFixed(1)} s`);
+        }
         lastProgress.current = 1;
         patchTab(tab.id, { loading: false, progress: 1 });
         return;
@@ -281,7 +317,7 @@ function BrowserTabImpl({
       if (delta.ads || delta.gambling || delta.popups) record(delta);
       patchTab(tab.id, { pageCounts: next });
     },
-    [patchTab, record, tab.id],
+    [patchTab, record, tab.id, stopWatch],
   );
 
   if (!tab.sourceUrl) return null;
