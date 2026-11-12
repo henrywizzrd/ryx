@@ -1,9 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
+import { useSyncExternalStore } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DOCK_BUTTONS } from '@/components/dock';
+import { getContentBlockerStatus, refreshContentBlocker, subscribeContentBlocker } from '@/lib/content-blocker';
 import { ToggleRow } from '@/components/toggle-row';
 import { Txt } from '@/components/txt';
 import {
@@ -277,6 +279,8 @@ export default function CustomizeScreen() {
           )}
         </Section>
 
+        <FilterStatus />
+
         <Section title="Mạng" hint="Dùng khi nhà mạng chặn trang web.">
           <Pressable
             onPress={() => router.push('/dns')}
@@ -369,3 +373,40 @@ const styles = StyleSheet.create({
   },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, minHeight: 52 },
 });
+
+/** Trạng thái bộ lọc tầng mạng (EasyList + ABPVN) và nút cập nhật ngay. */
+function FilterStatus() {
+  const { accent } = useTheme();
+  const st = useSyncExternalStore(subscribeContentBlocker, getContentBlockerStatus);
+  const when = st.updatedAt ? new Date(st.updatedAt).toLocaleDateString('vi-VN') : 'chưa tải';
+  const detail = !st.supported
+    ? 'Cần cài bản Ryx mới (1.0.2) để bật bộ lọc này.'
+    : st.busy
+      ? 'Đang tải / biên dịch bộ lọc…'
+      : `${st.ruleCount.toLocaleString('vi-VN')} luật · cập nhật ${when} · ${st.active} danh sách đang bật`;
+  return (
+    <Section
+      title="Bộ lọc quảng cáo tầng mạng"
+      hint="EasyList (kể cả trang 18+) và ABPVN cho trang Việt. Chặn quảng cáo trước khi tải, kể cả trong khung con. Tự cập nhật 3 ngày/lần."
+    >
+      <View style={[styles.card, styles.linkRow]}>
+        <Ionicons name="layers-outline" size={20} color={colors.text} />
+        <Txt size={14} style={{ flex: 1 }} color={colors.textMuted}>
+          {detail}
+        </Txt>
+        {st.supported && (
+          <Pressable
+            onPress={() => void refreshContentBlocker(true)}
+            disabled={st.busy}
+            accessibilityRole="button"
+            style={({ pressed }) => [{ paddingHorizontal: 8, minHeight: 44, justifyContent: 'center' }, (pressed || st.busy) && { opacity: 0.5 }]}
+          >
+            <Txt weight="semibold" size={14} color={accent}>
+              Cập nhật
+            </Txt>
+          </Pressable>
+        )}
+      </View>
+    </Section>
+  );
+}

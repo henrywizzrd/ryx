@@ -11,12 +11,16 @@ public class RyxNetModule: Module {
       RyxProxy.shared.onLog = { [weak self] level, message in
         self?.sendEvent("onLog", ["level": level, "message": message])
       }
+      RyxBlocker.shared.onLog = { [weak self] level, message in
+        self?.sendEvent("onLog", ["level": level, "message": message])
+      }
       // Bật càng sớm càng tốt: WebKit chỉ áp proxy cho các kết nối mở SAU khi cấu hình.
       RyxProxy.shared.startIfEnabled()
     }
 
     OnDestroy {
       RyxProxy.shared.onLog = nil
+      RyxBlocker.shared.onLog = nil
     }
 
     /// iOS 17+ mới có ProxyConfiguration cho WKWebView.
@@ -43,5 +47,30 @@ public class RyxNetModule: Module {
     Function("clearCache") {
       RyxProxy.shared.clearCache()
     }
+
+    // MARK: Content Blocking (bộ lọc quảng cáo của WebKit)
+
+    /// Biên dịch luật (JSON định dạng Safari Content Blocker). Trả nil nếu ổn, chuỗi lỗi nếu hỏng.
+    AsyncFunction("compileRules") { (id: String, json: String, promise: Promise) in
+      RyxBlocker.shared.compile(id: id, json: json) { error in promise.resolve(error) }
+    }.runOnQueue(.main)
+
+    /// Bật đúng các danh sách này cho mọi WebView. Trả số danh sách tìm thấy.
+    AsyncFunction("setActiveRules") { (ids: [String], promise: Promise) in
+      RyxBlocker.shared.setActive(ids: ids) { n in promise.resolve(n) }
+    }.runOnQueue(.main)
+
+    /// Gắn bộ lọc vào các WebView mới tạo. Trả số WebView vừa gắn.
+    AsyncFunction("attachRules") { () -> Int in
+      RyxBlocker.shared.attachAll()
+    }.runOnQueue(.main)
+
+    AsyncFunction("removeRules") { (ids: [String], promise: Promise) in
+      RyxBlocker.shared.remove(ids: ids) { promise.resolve(nil) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("listRules") { (promise: Promise) in
+      RyxBlocker.shared.listIds { ids in promise.resolve(ids) }
+    }.runOnQueue(.main)
   }
 }

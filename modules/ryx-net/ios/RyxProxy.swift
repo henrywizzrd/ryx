@@ -363,15 +363,14 @@ final class RyxProxy {
       statCacheHits += 1
       return completion(hit.ips)
     }
-    let order = provider == "google" ? ["google", "cloudflare"] : ["cloudflare", "google"]
-    queryChain(key, providers: order, type: 1) { [weak self] ips, ttl in
+    race(key, type: 1) { [weak self] ips, ttl in
       guard let self else { return completion([]) }
       if !ips.isEmpty {
         self.store(key, ips, ttl)
         return completion(ips)
       }
       // Không có IPv4 → thử IPv6
-      self.queryChain(key, providers: order, type: 28) { ips6, ttl6 in
+      self.race(key, type: 28) { ips6, ttl6 in
         if !ips6.isEmpty { self.store(key, ips6, ttl6) }
         completion(ips6)
       }
@@ -385,30 +384,82 @@ final class RyxProxy {
     if cache.count > 2000 { cache.removeAll() }
   }
 
-  private func queryChain(_ host: String, providers: [String], type: Int, completion: @escaping ([String], Int) -> Void) {
-    guard let p = providers.first else { return completion([], 0) }
-    query(host, provider: p, type: type) { [weak self] ips, ttl, failed in
-      guard let self else { return completion([], 0) }
-      if failed {
-        self.statDohFailures += 1
-        if self.loggedDohFailures < 20 {
-          self.loggedDohFailures += 1
-          self.log("warn", "Máy chủ DNS \(p) không trả lời cho \(host), thử máy chủ khác")
+  // MARK: - DoH: hỏi song song, tạm bỏ máy chủ lỗi
+
+  /// Mỗi nhà cung cấp có 2 địa chỉ; nhà mạng hay chặn riêng 1.1.1.1 nhưng chừa 1.0.0.1.
+  private static let endpoints: [String: [String]] = [
+    "google": ["https://8.8.8.8/resolve", "https://8.8.4.4/resolve"],
+    "cloudflare": ["https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query"],
+  ]
+  /// Máy chủ không trả lời bị bỏ qua trong khoảng này (đọc/ghi trên `queue`).
+  private var downUntil: [String: Date] = [:]
+  private static let downFor: TimeInterval = 600
+  /// Máy chủ đầu chưa trả lời sau khoảng này thì hỏi thêm các máy chủ còn lại.
+  private static let hedgeAfter: TimeInterval = 0.35
+
+  private func orderedEndpoints() -> [String] {
+    let first = provider == "google" ? "google" : "cloudflare"
+    let second = first == "google" ? "cloudflare" : "google"
+    let all = (Self.endpoints[first] ?? []) + (Self.endpoints[second] ?? [])
+    let now = Date()
+    let healthy = all.filter { (downUntil[$0] ?? .distantPast) <= now }
+    // Tất cả đang bị bỏ qua (mất mạng một lúc) → vẫn thử hết
+    return healthy.isEmpty ? all : healthy
+  }
+
+  private func markDown(_ endpoint: String) {
+    let wasUp = (downUntil[endpoint] ?? .distantPast) <= Date()
+    downUntil[endpoint] = Date().addingTimeInterval(Self.downFor)
+    statDohFailures += 1
+    if wasUp {
+      let host = URL(string: endpoint)?.host ?? endpoint
+      log("warn", "Máy chủ DNS \(host) không trả lời, tạm bỏ qua 10 phút")
+    }
+  }
+
+  /// Hỏi máy chủ đầu tiên; quá `hedgeAfter` chưa có kết quả thì hỏi song song các máy chủ còn lại.
+  /// Lấy kết quả về sớm nhất. Tất cả lỗi → trả rỗng (proxy sẽ dùng DNS hệ thống).
+  private func race(_ host: String, type: Int, completion: @escaping ([String], Int) -> Void) {
+    let list = orderedEndpoints()
+    let done = Flag()
+    var remaining = list.count
+    var launched = Set<Int>()
+
+    func finish(_ ips: [String], _ ttl: Int) {
+      if done.done { return }
+      done.done = true
+      completion(ips, ttl)
+    }
+    func launch(_ i: Int) {
+      if done.done || launched.contains(i) || i >= list.count { return }
+      launched.insert(i)
+      let ep = list[i]
+      query(host, endpoint: ep, type: type) { [weak self] ips, ttl, failed in
+        guard let self else { return }
+        remaining -= 1
+        if failed {
+          self.markDown(ep)
+          // Lỗi ngay thì hỏi máy chủ kế tiếp luôn, không đợi
+          for j in 0..<list.count where !launched.contains(j) { launch(j); break }
+          if remaining == 0 && launched.count == list.count { finish([], 0) }
+        } else {
+          self.downUntil[ep] = nil
+          finish(ips, ttl)
         }
-        self.queryChain(host, providers: Array(providers.dropFirst()), type: type, completion: completion)
-      } else {
-        completion(ips, ttl)
       }
+    }
+
+    guard !list.isEmpty else { return completion([], 0) }
+    launch(0)
+    queue.asyncAfter(deadline: .now() + Self.hedgeAfter) {
+      for j in 1..<max(list.count, 1) { launch(j) }
     }
   }
 
   /// Gọi DoH dạng JSON. Dùng địa chỉ IP để không phải hỏi DNS hệ thống cho chính máy chủ DNS.
-  private func query(_ host: String, provider: String, type: Int, completion: @escaping ([String], Int, Bool) -> Void) {
+  private func query(_ host: String, endpoint: String, type: Int, completion: @escaping ([String], Int, Bool) -> Void) {
     let name = host.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? host
-    let urlString = provider == "google"
-      ? "https://8.8.8.8/resolve?name=\(name)&type=\(type)"
-      : "https://1.1.1.1/dns-query?name=\(name)&type=\(type)"
-    guard let url = URL(string: urlString) else { return queue.async { completion([], 0, true) } }
+    guard let url = URL(string: "\(endpoint)?name=\(name)&type=\(type)") else { return queue.async { completion([], 0, true) } }
     var req = URLRequest(url: url)
     req.setValue("application/dns-json", forHTTPHeaderField: "Accept")
     session.dataTask(with: req) { [weak self] data, response, error in

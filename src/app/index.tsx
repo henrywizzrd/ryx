@@ -1,47 +1,32 @@
-import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
-import Ionicons from "@expo/vector-icons/Ionicons";
-import {
-  ActionSheetIOS,
-  Alert,
-  Linking,
-  Pressable,
-  Share,
-  StyleSheet,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { ActionSheetIOS, Alert, Linking, Pressable, Share, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ADDRESS_BAR_HEIGHT, AddressBar } from "@/components/address-bar";
-import {
-  BrowserTab,
-  type MediaPress,
-  type PickedElement,
-} from "@/components/browser-tab";
-import { PopupBanner, type BlockedPopup } from "@/components/popup-banner";
-import { log } from "@/lib/logger";
-import { saveMediaToPhotos, SaveMediaError } from "@/lib/save-media";
-import { Dock, dockMetrics } from "@/components/dock";
-import { Glass } from "@/components/glass";
-import { Txt } from "@/components/txt";
-import { MenuSheet, type MenuAction } from "@/components/menu-sheet";
-import { NewTabPage } from "@/components/new-tab-page";
-import { ShieldSheet } from "@/components/shield-sheet";
-import { buildInjectedScript, type InjectConfig } from "@/lib/inject";
-import { captureTab } from "@/lib/tab-shots";
-import { useSiteThemes } from "@/state/site-themes";
-import { getHost, resolveInput, siteKey } from "@/lib/url";
-import { useKeyboardHeight } from "@/lib/use-keyboard-height";
-import {
-  useSettings,
-  type DockButtonId,
-  type ShieldPrefs,
-} from "@/state/settings";
-import { useStats } from "@/state/stats";
-import { totalBlocked, useTabs } from "@/state/tabs";
-import { colors } from "@/theme";
+import { ADDRESS_BAR_HEIGHT, AddressBar } from '@/components/address-bar';
+import { BrowserTab, type MediaPress, type PickedElement } from '@/components/browser-tab';
+import { PopupBanner, type BlockedPopup } from '@/components/popup-banner';
+import { configureContentBlocker, refreshContentBlocker } from '@/lib/content-blocker';
+import { log } from '@/lib/logger';
+import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
+import { Dock, dockMetrics } from '@/components/dock';
+import { Glass } from '@/components/glass';
+import { Txt } from '@/components/txt';
+import { MenuSheet, type MenuAction } from '@/components/menu-sheet';
+import { NewTabPage } from '@/components/new-tab-page';
+import { ShieldSheet } from '@/components/shield-sheet';
+import { buildInjectedScript, type InjectConfig } from '@/lib/inject';
+import { captureTab } from '@/lib/tab-shots';
+import { useSiteThemes } from '@/state/site-themes';
+import { getHost, resolveInput, siteKey } from '@/lib/url';
+import { useKeyboardHeight } from '@/lib/use-keyboard-height';
+import { useSettings, type DockButtonId, type ShieldPrefs } from '@/state/settings';
+import { useStats } from '@/state/stats';
+import { totalBlocked, useTabs } from '@/state/tabs';
+import { colors } from '@/theme';
 
 const GAP = 10;
 /** Đợi bảng trước đóng xong rồi mới mở bảng/màn hình khác (iOS không trình bày 2 modal cùng lúc). */
@@ -59,6 +44,28 @@ export default function BrowserScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [blockedPopup, setBlockedPopup] = useState<BlockedPopup | null>(null);
 
+  // Bộ lọc tầng mạng: áp theo tuỳ chọn Shield (đợi một chút để gộp nhiều lần bật/tắt liên tiếp)
+  const allowSitesKey = Object.entries(settings.siteOverrides)
+    .filter(([, o]) => o.ads === false)
+    .map(([s]) => s)
+    .sort()
+    .join(',');
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void configureContentBlocker({
+        ads: settings.shield.ads,
+        gambling: settings.shield.gambling,
+        allowSites: allowSitesKey ? allowSitesKey.split(',') : [],
+      });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [settings.shield.ads, settings.shield.gambling, allowSitesKey]);
+  useEffect(() => {
+    // Tải bộ lọc mới (3 ngày/lần) sau khi app mở xong, không chặn lúc khởi động
+    const t = setTimeout(() => void refreshContentBlocker(), 4000);
+    return () => clearTimeout(t);
+  }, []);
+
   const onPopupBlocked = useCallback((url: string) => {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     setBlockedPopup({ key: Date.now(), url, host: getHost(url) || url });
@@ -68,8 +75,7 @@ export default function BrowserScreen() {
   // ---- "Chạm để ẩn quảng cáo" ----
   const [picking, setPicking] = useState(false);
   // Không bọc useCallback: React Compiler tự ghi nhớ
-  const runInActive = (js: string) =>
-    refs.current.get(active.id)?.injectJavaScript(`${js}; true;`);
+  const runInActive = (js: string) => refs.current.get(active.id)?.injectJavaScript(`${js}; true;`);
   const setPick = (on: boolean) => {
     setPicking(on);
     runInActive(`window.__ryx && window.__ryx.pick(${on})`);
@@ -80,9 +86,8 @@ export default function BrowserScreen() {
     ActionSheetIOS.showActionSheetWithOptions(
       {
         title: `Đã chọn khối <${p.tag}> ${p.w}×${p.h}`,
-        message:
-          "Khối được tô đỏ trên trang sẽ bị ẩn mỗi lần cậu vào trang này.",
-        options: ["Ẩn khối này", "Chọn khối lớn hơn", "Chọn lại", "Thoát"],
+        message: 'Khối được tô đỏ trên trang sẽ bị ẩn mỗi lần cậu vào trang này.',
+        options: ['Ẩn khối này', 'Chọn khối lớn hơn', 'Chọn lại', 'Thoát'],
         destructiveButtonIndex: 0,
         cancelButtonIndex: 3,
       },
@@ -97,20 +102,17 @@ export default function BrowserScreen() {
               },
             });
           }
-          log.info("block", `Tự ẩn phần tử trên ${pageSite}`, p.selector);
-          void Haptics.notificationAsync(
-            Haptics.NotificationFeedbackType.Success,
-          );
+          log.info('block', `Tự ẩn phần tử trên ${pageSite}`, p.selector);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           setPick(false);
-        } else if (i === 1)
-          runInActive("window.__ryx && window.__ryx.pickParent()");
+        } else if (i === 1) runInActive('window.__ryx && window.__ryx.pickParent()');
         else if (i === 3) setPick(false);
       },
     );
   };
 
   const hasPage = !active.home && !!active.url;
-  const site = hasPage ? siteKey(active.url) : "";
+  const site = hasPage ? siteKey(active.url) : '';
   const prefs = prefsFor(site);
   const blocked = totalBlocked(active);
   const shieldOn = prefs.ads || prefs.gambling || prefs.popups;
@@ -125,22 +127,16 @@ export default function BrowserScreen() {
     [settings.shield, settings.siteOverrides, settings.customHides],
   );
   const siteThemes = useSiteThemes();
-  const script = useMemo(
-    () => buildInjectedScript(injectConfig, siteThemes),
-    [injectConfig, siteThemes],
-  );
+  const script = useMemo(() => buildInjectedScript(injectConfig, siteThemes), [injectConfig, siteThemes]);
 
   // ---- Bố cục ----
   const dock = dockMetrics(settings.dockStyle, insets.bottom);
-  const addrTop = settings.addressBarPosition === "top";
+  const addrTop = settings.addressBarPosition === 'top';
   const addrBottom = addrFocused && kb > 0 ? kb + GAP : dock.top + GAP;
   const chromeBottom = addrTop ? dock.top : dock.top + GAP + ADDRESS_BAR_HEIGHT;
-  const contentTop =
-    insets.top + (addrTop ? ADDRESS_BAR_HEIGHT + GAP * 1.2 : 0);
-  const webBottomInset =
-    settings.dockStyle === "attached" && addrTop ? 0 : chromeBottom + GAP;
-  const webContainerBottom =
-    settings.dockStyle === "attached" && addrTop ? dock.height : 0;
+  const contentTop = insets.top + (addrTop ? ADDRESS_BAR_HEIGHT + GAP * 1.2 : 0);
+  const webBottomInset = settings.dockStyle === 'attached' && addrTop ? 0 : chromeBottom + GAP;
+  const webContainerBottom = settings.dockStyle === 'attached' && addrTop ? dock.height : 0;
 
   // ---- Hành động ----
   const go = useCallback(
@@ -169,54 +165,46 @@ export default function BrowserScreen() {
   // Nhấn giữ ảnh/video trong trang
   const onMediaLongPress = useCallback(
     (m: MediaPress) => {
-      const isVideo = m.kind === "video";
-      const save = (url: string, kind: "image" | "video") => {
+      const isVideo = m.kind === 'video';
+      const save = (url: string, kind: 'image' | 'video') => {
         void saveMediaToPhotos(url, kind, m.pageUrl)
           .then(() => {
-            void Haptics.notificationAsync(
-              Haptics.NotificationFeedbackType.Success,
-            );
-            Alert.alert(
-              kind === "video" ? "Đã lưu video vào Ảnh" : "Đã lưu ảnh vào Ảnh",
-            );
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert(kind === 'video' ? 'Đã lưu video vào Ảnh' : 'Đã lưu ảnh vào Ảnh');
           })
           .catch((e: unknown) => {
-            Alert.alert(
-              "Không lưu được",
-              e instanceof SaveMediaError ? e.message : String(e),
-            );
+            Alert.alert('Không lưu được', e instanceof SaveMediaError ? e.message : String(e));
           });
       };
       const items: { label: string; run: () => void }[] = [];
       if (m.src)
         items.push({
-          label: isVideo ? "Lưu video vào Ảnh" : "Lưu vào Ảnh",
+          label: isVideo ? 'Lưu video vào Ảnh' : 'Lưu vào Ảnh',
           run: () => save(m.src, m.kind),
         });
       if (isVideo && m.poster)
         items.push({
-          label: "Lưu ảnh bìa video",
-          run: () => save(m.poster, "image"),
+          label: 'Lưu ảnh bìa video',
+          run: () => save(m.poster, 'image'),
         });
       if (m.src)
         items.push({
-          label: isVideo ? "Sao chép link video" : "Sao chép link ảnh",
+          label: isVideo ? 'Sao chép link video' : 'Sao chép link ảnh',
           run: () => void Clipboard.setStringAsync(m.src),
         });
-      if (!isVideo && /^https?:/.test(m.src))
-        items.push({ label: "Mở ảnh trong thẻ mới", run: () => newTab(m.src) });
+      if (!isVideo && /^https?:/.test(m.src)) items.push({ label: 'Mở ảnh trong thẻ mới', run: () => newTab(m.src) });
       if (m.link)
         items.push({
-          label: "Mở link trong thẻ mới",
+          label: 'Mở link trong thẻ mới',
           run: () => newTab(m.link),
         });
       if (!items.length) return;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          title: isVideo ? "Video" : "Ảnh",
+          title: isVideo ? 'Video' : 'Ảnh',
           message: getHost(m.src) || undefined,
-          options: [...items.map((i) => i.label), "Huỷ"],
+          options: [...items.map((i) => i.label), 'Huỷ'],
           cancelButtonIndex: items.length,
         },
         (i) => items[i]?.run(),
@@ -226,85 +214,70 @@ export default function BrowserScreen() {
   );
 
   const share = () => {
-    if (active.url)
-      Share.share({ url: active.url, message: active.url }).catch(() => {});
+    if (active.url) Share.share({ url: active.url, message: active.url }).catch(() => {});
   };
 
   const onDockPress = (id: DockButtonId) => {
     switch (id) {
-      case "back":
-        log.debug(
-          "nav",
-          `Bấm lùi (trang có lịch sử lùi: ${active.canGoBack ? "có" : "không"})`,
-          active.url ?? "",
-        );
+      case 'back':
+        log.debug('nav', `Bấm lùi (trang có lịch sử lùi: ${active.canGoBack ? 'có' : 'không'})`, active.url ?? '');
         return goBack();
-      case "forward":
-        log.debug(
-          "nav",
-          `Bấm tiến (trang có lịch sử tiến: ${active.canGoForward ? "có" : "không"})`,
-          active.url ?? "",
-        );
+      case 'forward':
+        log.debug('nav', `Bấm tiến (trang có lịch sử tiến: ${active.canGoForward ? 'có' : 'không'})`, active.url ?? '');
         return webRef()?.goForward();
-      case "tabs":
+      case 'tabs':
         // Chụp thẻ đang mở trước để màn quản lý thẻ có ảnh mới nhất
-        return void captureTab(active.id).finally(() => router.push("/tabs"));
-      case "menu":
+        return void captureTab(active.id).finally(() => router.push('/tabs'));
+      case 'menu':
         return setMenuOpen(true);
-      case "shield":
+      case 'shield':
         return setShieldOpen(true);
-      case "reload":
+      case 'reload':
         return reload();
-      case "home":
+      case 'home':
         return goHome();
-      case "share":
+      case 'share':
         return share();
     }
   };
 
   const onMenuAction = (a: MenuAction) => {
     switch (a) {
-      case "reload":
+      case 'reload':
         return reload();
-      case "share":
+      case 'share':
         return setTimeout(share, SHEET_HANDOFF_MS);
-      case "home":
+      case 'home':
         return goHome();
-      case "safari":
+      case 'safari':
         return active.url && Linking.openURL(active.url);
-      case "shield":
+      case 'shield':
         return setTimeout(() => setShieldOpen(true), SHEET_HANDOFF_MS);
-      case "pick":
+      case 'pick':
         return setPick(true);
-      case "customize":
-        return setTimeout(() => router.push("/customize"), SHEET_HANDOFF_MS);
-      case "newTab":
+      case 'customize':
+        return setTimeout(() => router.push('/customize'), SHEET_HANDOFF_MS);
+      case 'newTab':
         return newTab();
-      case "closeTab":
+      case 'closeTab':
         return closeTab(active.id);
-      case "logs":
-        return setTimeout(() => router.push("/logs"), SHEET_HANDOFF_MS);
-      case "history":
-        return setTimeout(() => router.push("/history"), SHEET_HANDOFF_MS);
-      case "dns":
-        return setTimeout(() => router.push("/dns"), SHEET_HANDOFF_MS);
+      case 'logs':
+        return setTimeout(() => router.push('/logs'), SHEET_HANDOFF_MS);
+      case 'history':
+        return setTimeout(() => router.push('/history'), SHEET_HANDOFF_MS);
+      case 'dns':
+        return setTimeout(() => router.push('/dns'), SHEET_HANDOFF_MS);
     }
   };
 
-  const toggle = (key: keyof ShieldPrefs, value: boolean) =>
-    setSitePref(site, key, value);
+  const toggle = (key: keyof ShieldPrefs, value: boolean) => setSitePref(site, key, value);
 
   const canGoBack = active.home ? !!active.sourceUrl : true;
   const canGoForward = !active.home && active.canGoForward;
 
   return (
     <View style={styles.root}>
-      <View
-        style={[
-          styles.webArea,
-          { top: contentTop, bottom: webContainerBottom },
-        ]}
-      >
+      <View style={[styles.webArea, { top: contentTop, bottom: webContainerBottom }]}>
         {tabs.map((t) => (
           <BrowserTab
             key={t.id}
@@ -333,10 +306,7 @@ export default function BrowserScreen() {
       </View>
 
       {/* Che vùng thanh trạng thái để nội dung trang không chạy dưới đồng hồ/pin */}
-      <View
-        style={[styles.statusCover, { height: insets.top }]}
-        pointerEvents="none"
-      />
+      <View style={[styles.statusCover, { height: insets.top }]} pointerEvents="none" />
 
       {!(addrFocused && kb > 0) && (
         <Dock
@@ -353,10 +323,7 @@ export default function BrowserScreen() {
 
       <View
         pointerEvents="box-none"
-        style={[
-          styles.addrWrap,
-          addrTop ? { top: insets.top + 4 } : { bottom: addrBottom },
-        ]}
+        style={[styles.addrWrap, addrTop ? { top: insets.top + 4 } : { bottom: addrBottom }]}
       >
         <AddressBar
           tab={active}
@@ -371,27 +338,16 @@ export default function BrowserScreen() {
       </View>
 
       {picking && (
-        <View
-          pointerEvents="box-none"
-          style={[styles.pickWrap, { top: insets.top + 8 }]}
-        >
+        <View pointerEvents="box-none" style={[styles.pickWrap, { top: insets.top + 8 }]}>
           <Glass radius={24} contentStyle={styles.pickRow}>
             <Ionicons name="hand-left-outline" size={18} color={colors.text} />
-            <Txt
-              weight="medium"
-              size={14}
-              style={{ flex: 1 }}
-              accessibilityRole="alert"
-            >
+            <Txt weight="medium" size={14} style={{ flex: 1 }} accessibilityRole="alert">
               Chạm vào quảng cáo cần ẩn
             </Txt>
             <Pressable
               onPress={() => setPick(false)}
               accessibilityRole="button"
-              style={({ pressed }) => [
-                styles.pickDone,
-                pressed && { opacity: 0.7 },
-              ]}
+              style={({ pressed }) => [styles.pickDone, pressed && { opacity: 0.7 }]}
             >
               <Txt weight="semibold" size={14}>
                 Xong
@@ -432,7 +388,7 @@ export default function BrowserScreen() {
         onClose={() => setMenuOpen(false)}
         hasPage={hasPage}
         dark={prefs.dark}
-        onToggleDark={(v) => toggle("dark", v)}
+        onToggleDark={(v) => toggle('dark', v)}
         onAction={onMenuAction}
       />
     </View>
@@ -441,19 +397,19 @@ export default function BrowserScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  webArea: { position: "absolute", left: 0, right: 0 },
+  webArea: { position: 'absolute', left: 0, right: 0 },
   statusCover: {
-    position: "absolute",
+    position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     backgroundColor: colors.bg,
   },
-  addrWrap: { position: "absolute", left: 16, right: 16 },
-  pickWrap: { position: "absolute", left: 16, right: 16 },
+  addrWrap: { position: 'absolute', left: 16, right: 16 },
+  pickWrap: { position: 'absolute', left: 16, right: 16 },
   pickRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
     paddingLeft: 16,
     paddingRight: 6,
@@ -463,7 +419,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
     paddingHorizontal: 16,
     borderRadius: 20,
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.12)",
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
 });

@@ -13,6 +13,7 @@ import type {
 import { shouldBlock, type BlockCategory } from '@/lib/blocker';
 import { buildUpdateCall, type InjectConfig } from '@/lib/inject';
 import { PageError } from '@/components/page-error';
+import { attachContentBlocker } from '@/lib/content-blocker';
 import { describeDiag, FRAME_DIAG_SCRIPT } from '@/lib/frame-diag';
 import { log } from '@/lib/logger';
 import { captureTab, registerShotTarget } from '@/lib/tab-shots';
@@ -149,6 +150,13 @@ function BrowserTabImpl({
   }, [tab.url]);
   useEffect(() => {
     sourceRef.current = tab.sourceUrl;
+  }, [tab.sourceUrl]);
+
+  // Gắn bộ lọc tầng mạng vào WebView của thẻ này (WebView có thể vào màn hình trễ một chút)
+  useEffect(() => {
+    attachContentBlocker();
+    const t = setTimeout(attachContentBlocker, 600);
+    return () => clearTimeout(t);
   }, [tab.sourceUrl]);
 
   // Không bọc useCallback: React Compiler tự ghi nhớ hàm này
