@@ -16,12 +16,12 @@ export const GAMBLING_SELECTORS_MANUAL: string[] = [
 
 export const GAMBLING_SELECTORS: string[] = [
   ...GAMBLING_SELECTORS_MANUAL,
-  ...GAMBLING_HOST_KEYWORDS.flatMap((k) => [
-    `a[href*="${k}"]`,
-    `iframe[src*="${k}"]`,
-    // Banner video cờ bạc tải từ chính trang (vd /static/media/mobile-new88-….mp4)
-    `video[src*="${k}"]`,
-    `video[poster*="${k}"]`,
-    `video:has(source[src*="${k}"])`,
+  ...GAMBLING_HOST_KEYWORDS.flatMap((k) => [`a[href*="${k}"]`, `iframe[src*="${k}"]`]),
+  // Banner video cờ bạc tải từ chính trang (vd /static/media/mobile-new88-….mp4).
+  // Bỏ từ khoá chỉ gồm chữ số + a–f (vd "fb88", "ae888"): dễ trùng mã hex trong tên file ảnh/video bình thường.
+  ...GAMBLING_HOST_KEYWORDS.filter((k) => !/^[0-9a-f]+$/.test(k)).flatMap((k) => [
+    `video[src*="-${k}"]`,
+    `video[poster*="-${k}"]`,
+    `video:has(source[src*="-${k}"])`,
   ]),
 ];
