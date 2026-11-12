@@ -1,11 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Linking, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Txt } from '@/components/txt';
 import { log } from '@/lib/logger';
+import { getRyxNetStatus, hasRyxNet, setRyxNetEnabled, type RyxNetStatus } from '@/lib/ryx-net';
 import { useTabs } from '@/state/tabs';
 import { colors, useTheme } from '@/theme';
 
@@ -44,8 +45,40 @@ export default function DnsScreen() {
   const insets = useSafeAreaInsets();
   const { accent, accentSoft, onAccent } = useTheme();
   const { newTab } = useTabs();
-  const [picked, setPicked] = useState<ProviderId>('cloudflare');
+  const [net, setNet] = useState<RyxNetStatus>(getRyxNetStatus);
+  const [picked, setPicked] = useState<ProviderId>(net.provider);
+  const [changed, setChanged] = useState(false);
   const provider = PROVIDERS.find((p) => p.id === picked)!;
+
+  // Cập nhật trạng thái proxy mỗi 2 giây khi đang mở màn này
+  useEffect(() => {
+    const t = setInterval(() => setNet(getRyxNetStatus()), 2000);
+    return () => clearInterval(t);
+  }, []);
+
+  const toggleInApp = (on: boolean) => {
+    setRyxNetEnabled(on, picked);
+    setChanged(true);
+    setTimeout(() => setNet(getRyxNetStatus()), 400);
+  };
+
+  const pick = (id: ProviderId) => {
+    setPicked(id);
+    if (net.enabled) {
+      setRyxNetEnabled(true, id);
+      setChanged(true);
+    }
+  };
+
+  const inAppLine = !hasRyxNet
+    ? 'Cần cài bản Ryx 1.0.1 trở lên.'
+    : !net.supported
+      ? 'Cần iOS 17 trở lên.'
+      : !net.enabled
+        ? 'Đang tắt.'
+        : net.running && net.applied
+          ? `Đang chạy · đã hỏi ${net.resolved} tên miền${net.fallbacks ? ` · ${net.fallbacks} lần phải dùng DNS hệ thống` : ''}`
+          : 'Đang khởi động…';
 
   const download = () => {
     log.info('dns', `Mở hồ sơ DNS: ${provider.name}`, provider.url);
@@ -78,6 +111,35 @@ export default function DnsScreen() {
           phí, gỡ lúc nào cũng được.
         </Txt>
 
+        <View style={[styles.inApp, net.enabled && net.running && { borderColor: accent }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Ionicons name="shield-checkmark" size={24} color={net.enabled ? accent : colors.textFaint} />
+            <View style={{ flex: 1 }}>
+              <Txt weight="semibold" size={16}>
+                DNS riêng trong Ryx
+              </Txt>
+              <Txt size={12} color={colors.textMuted}>
+                Khuyên dùng · không cần cài hồ sơ · chỉ áp dụng cho Ryx
+              </Txt>
+            </View>
+            <Switch
+              value={net.enabled}
+              onValueChange={toggleInApp}
+              disabled={!hasRyxNet || !net.supported}
+              trackColor={{ true: accent }}
+              accessibilityLabel="Bật DNS riêng trong Ryx"
+            />
+          </View>
+          <Txt size={13} color={net.enabled && net.running ? colors.text : colors.textMuted}>
+            {inAppLine}
+          </Txt>
+          {changed ? (
+            <Txt size={12} color={colors.gambling}>
+              Tắt hẳn Ryx rồi mở lại để áp dụng cho mọi trang (các trang đang mở có thể vẫn dùng kết nối cũ).
+            </Txt>
+          ) : null}
+        </View>
+
         <View style={{ gap: 10 }}>
           <Txt weight="semibold" size={13} color={colors.textMuted}>
             CHỌN MÁY CHỦ
@@ -87,7 +149,7 @@ export default function DnsScreen() {
             return (
               <Pressable
                 key={p.id}
-                onPress={() => setPicked(p.id)}
+                onPress={() => pick(p.id)}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: on }}
                 style={[styles.option, on && { borderColor: accent, backgroundColor: accentSoft }]}
@@ -108,7 +170,10 @@ export default function DnsScreen() {
 
         <View style={{ gap: 10 }}>
           <Txt weight="semibold" size={13} color={colors.textMuted}>
-            CÁCH CÀI
+            CÁCH KHÁC: HỒ SƠ DNS CHO CẢ MÁY
+          </Txt>
+          <Txt size={13} color={colors.textMuted}>
+            Dùng khi muốn Safari và các app khác cũng vào được trang bị chặn.
           </Txt>
           {STEPS.map((s, i) => (
             <View key={i} style={styles.step}>
@@ -174,6 +239,14 @@ const styles = StyleSheet.create({
     padding: 14,
     minHeight: 64,
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  inApp: {
+    gap: 10,
+    padding: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,

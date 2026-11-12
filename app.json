@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ryx",
     "slug": "ryx",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -21,7 +21,13 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "supportsTablet": false,
-      "bundleIdentifier": "com.henrywizzrd.ryx"
+      "bundleIdentifier": "com.henrywizzrd.ryx",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoadsInWebContent": true,
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -59,7 +65,32 @@
       [
         "expo-audio",
         {
-          "enableBackgroundPlayback": true
+          "enableBackgroundPlayback": true,
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Ryx dùng Face ID để khoá các thẻ riêng tư."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Ryx dùng camera để quét mã QR.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Ryx cần quyền truy cập ảnh để lưu ảnh và video bạn tải từ trang web.",
+          "savePhotosPermission": "Ryx lưu ảnh và video bạn tải về vào Thư viện ảnh.",
+          "isAccessMediaLocationEnabled": false
         }
       ]
     ],

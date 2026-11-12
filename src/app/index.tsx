@@ -10,6 +10,7 @@ import { MenuSheet, type MenuAction } from '@/components/menu-sheet';
 import { NewTabPage } from '@/components/new-tab-page';
 import { ShieldSheet } from '@/components/shield-sheet';
 import { buildInjectedScript, type InjectConfig } from '@/lib/inject';
+import { captureTab } from '@/lib/tab-shots';
 import { useSiteThemes } from '@/state/site-themes';
 import { resolveInput, siteKey } from '@/lib/url';
 import { useKeyboardHeight } from '@/lib/use-keyboard-height';
@@ -88,7 +89,8 @@ export default function BrowserScreen() {
       case 'forward':
         return webRef()?.goForward();
       case 'tabs':
-        return router.push('/tabs');
+        // Chụp thẻ đang mở trước để màn quản lý thẻ có ảnh mới nhất
+        return void captureTab(active.id).finally(() => router.push('/tabs'));
       case 'menu':
         return setMenuOpen(true);
       case 'shield':

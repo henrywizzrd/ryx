@@ -1,0 +1,8 @@
+{
+  "name": "ryx-net",
+  "version": "1.0.0",
+  "description": "Ryx: proxy nội bộ có DNS over HTTPS cho trình duyệt trong app (iOS 17+)",
+  "main": "index.ts",
+  "license": "MIT",
+  "private": true
+}

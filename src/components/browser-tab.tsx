@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
-import { Linking, StyleSheet } from 'react-native';
+import { Linking, StyleSheet, View, type HostInstance } from 'react-native';
 import { WebView as RNWebView } from 'react-native-webview';
 import type {
   ShouldStartLoadRequest,
@@ -14,6 +14,7 @@ import { shouldBlock, type BlockCategory } from '@/lib/blocker';
 import { buildUpdateCall, type InjectConfig } from '@/lib/inject';
 import { PageError } from '@/components/page-error';
 import { log } from '@/lib/logger';
+import { captureTab, registerShotTarget } from '@/lib/tab-shots';
 import { getHost, siteKey } from '@/lib/url';
 import { useHistoryActions } from '@/state/history';
 import { setSiteTheme } from '@/state/site-themes';
@@ -63,6 +64,12 @@ function BrowserTabImpl({
   const lastTarget = useRef<string | null>(tab.sourceUrl ?? null);
   const loadFailed = useRef(false);
   const lastProgress = useRef(0);
+  const shotRef = useRef<HostInstance>(null);
+  const visibleRef = useRef(visible);
+  useEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
+  const shotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Hẹn giờ phát hiện trang "treo": đã cho mở mà mãi không thấy tiến triển. */
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navStartedAt = useRef(0);
@@ -83,6 +90,22 @@ function BrowserTabImpl({
     }, ms);
   }, [stopWatch]);
   useEffect(() => stopWatch, [stopWatch]);
+
+  useEffect(
+    () =>
+      registerShotTarget(tab.id, {
+        ref: shotRef,
+        isVisible: () => visibleRef.current,
+        onShot: (uri) => patchTab(tab.id, { thumb: uri }),
+      }),
+    [tab.id, patchTab],
+  );
+  useEffect(
+    () => () => {
+      if (shotTimer.current) clearTimeout(shotTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     urlRef.current = tab.url;
@@ -284,6 +307,9 @@ function BrowserTabImpl({
       if (msg.type === 'ryx:ready') {
         // Nội dung trang đã hiện & dùng được: cho thanh tiến trình xong luôn, không đợi quảng cáo/ảnh tải hết
         stopWatch();
+        // Chụp ảnh thu nhỏ một lúc sau khi trang hiện (cho màn quản lý thẻ)
+        if (shotTimer.current) clearTimeout(shotTimer.current);
+        shotTimer.current = setTimeout(() => void captureTab(tab.id), 1500);
         if (loadStartedAt.current) {
           log.debug('web', `Nội dung ${getHost(msg.url) || 'trang'} sẵn sàng sau ${((Date.now() - loadStartedAt.current) / 1000).toFixed(1)} s`);
         }
@@ -323,11 +349,16 @@ function BrowserTabImpl({
   if (!tab.sourceUrl) return null;
 
   return (
+    <View
+      ref={shotRef}
+      collapsable={false}
+      style={[StyleSheet.absoluteFill, { display: visible ? 'flex' : 'none' }]}
+    >
     <WebView
       ref={setRef}
       source={{ uri: tab.sourceUrl }}
       style={styles.web}
-      containerStyle={[StyleSheet.absoluteFill, { display: visible ? 'flex' : 'none' }]}
+      containerStyle={StyleSheet.absoluteFill}
       injectedJavaScriptBeforeContentLoaded={script}
       onShouldStartLoadWithRequest={onShouldStart}
       onOpenWindow={onOpenWindow}
@@ -352,6 +383,7 @@ function BrowserTabImpl({
       contentMode="mobile"
       keyboardDisplayRequiresUserAction={false}
     />
+    </View>
   );
 }
 

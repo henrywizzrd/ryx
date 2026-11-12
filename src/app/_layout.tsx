@@ -16,6 +16,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Txt } from '@/components/txt';
 import { UpdateBanner } from '@/components/update-banner';
 import { initUpdates } from '@/lib/app-updates';
+import { initRyxNet } from '@/lib/ryx-net';
 import { initLogging, log } from '@/lib/logger';
 import { initPerfMonitor } from '@/lib/perf-monitor';
 import { HistoryProvider } from '@/state/history';
@@ -28,6 +29,7 @@ import { colors } from '@/theme';
 initLogging();
 initPerfMonitor();
 initUpdates();
+initRyxNet();
 
 SplashScreen.preventAutoHideAsync();
 

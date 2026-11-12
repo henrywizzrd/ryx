@@ -20,6 +20,8 @@ export interface Tab {
   navCounts: Counts;
   /** Chặn do script trong trang (phần tử bị ẩn, pop-up). */
   pageCounts: Counts;
+  /** Ảnh chụp thu nhỏ của trang (file tạm) cho màn quản lý thẻ. */
+  thumb?: string;
 }
 
 let seq = 0;

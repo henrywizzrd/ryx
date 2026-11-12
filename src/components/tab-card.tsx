@@ -135,14 +135,25 @@ export function TabCard({ tab, active, variant, onOpen, onClose, onDuplicate, he
         <IconButton icon="close" label="Đóng thẻ" size={36} iconSize={16} color={colors.textMuted} onPress={onClose} />
       </View>
       <View style={[styles.preview, { backgroundColor: tint }]}>
-        {showPage ? (
+        {showPage && tab.thumb ? (
+          <Image
+            source={{ uri: tab.thumb }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            contentPosition="top"
+            transition={150}
+            accessibilityIgnoresInvertColors
+          />
+        ) : showPage ? (
           <Image source={faviconFor(tab.url!)} style={big ? styles.bigIcon : styles.midIcon} />
         ) : (
           <Ionicons name="add" size={big ? 48 : 34} color={colors.textFaint} />
         )}
-        <Txt weight={big ? 'semibold' : 'regular'} size={big ? 16 : 12} color={colors.textMuted} numberOfLines={1} style={styles.host}>
-          {host || 'Trang chủ Ryx'}
-        </Txt>
+        {showPage && tab.thumb ? null : (
+          <Txt weight={big ? 'semibold' : 'regular'} size={big ? 16 : 12} color={colors.textMuted} numberOfLines={1} style={styles.host}>
+            {host || 'Trang chủ Ryx'}
+          </Txt>
+        )}
         {badge ? <View style={styles.badgeWrap}>{badge}</View> : null}
       </View>
     </Pressable>
