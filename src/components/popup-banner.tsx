@@ -1,9 +1,9 @@
-import LottieView from 'lottie-react-native';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useTheme } from '@/theme';
 import { Glass } from './glass';
+import { ShieldAnim } from './shield-anim';
 import { IconButton } from './icon-button';
 import { Txt } from './txt';
 
@@ -22,7 +22,6 @@ interface Props {
 }
 
 const AUTO_HIDE_MS = 6000;
-const SHIELD_ANIM = require('../../assets/lottie/shield-block.json');
 
 /** Báo "đã chặn cửa sổ bật lên" kèm nút Mở nếu cậu thực sự muốn xem trang đó. */
 export function PopupBanner({ popup, bottom, onOpen, onClose }: Props) {
@@ -39,7 +38,7 @@ export function PopupBanner({ popup, bottom, onOpen, onClose }: Props) {
   return (
     <View pointerEvents="box-none" style={[styles.wrap, { bottom }]}>
       <Glass radius={24} contentStyle={styles.row}>
-        <LottieView key={popup.key} source={SHIELD_ANIM} autoPlay loop={false} style={styles.anim} />
+        <ShieldAnim playKey={popup.key} style={styles.anim} />
         <View style={{ flex: 1 }}>
           <Txt weight="semibold" size={14} accessibilityRole="alert">
             Đã chặn cửa sổ bật lên
