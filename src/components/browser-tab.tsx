@@ -29,6 +29,7 @@ export type WebViewHandle = RNWebView<object>;
 
 const EXTERNAL_SCHEMES = /^(tel|mailto|sms|facetime|maps):/i;
 const INTERNAL_SCHEMES = /^(https?|about|data|blob|file):/i;
+const ALL_ORIGINS = ['*'];
 /** Trang tải lâu hơn ngưỡng này thì ghi log hiệu năng. */
 const SLOW_LOAD_MS = 8000;
 
@@ -357,6 +358,9 @@ function BrowserTabImpl({
     <WebView
       ref={setRef}
       source={{ uri: tab.sourceUrl }}
+      // Mặc định thư viện chỉ cho http/https/about:blank, còn lại (vd about:srcdoc của khung trình phát video)
+      // bị chặn và bị mở ra ngoài app → video không chạy. Ryx tự lọc lược đồ trong onShouldStart.
+      originWhitelist={ALL_ORIGINS}
       style={styles.web}
       containerStyle={StyleSheet.absoluteFill}
       injectedJavaScriptBeforeContentLoaded={script}

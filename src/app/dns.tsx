@@ -18,18 +18,18 @@ import { colors, useTheme } from '@/theme';
  */
 const PROVIDERS = [
   {
-    id: 'cloudflare',
-    name: 'Cloudflare 1.1.1.1 Security',
-    note: 'Khuyên dùng. Chặn thêm trang lừa đảo và mã độc.',
-    url: 'https://github.com/paulmillr/encrypted-dns/raw/master/signed/cloudflare-malware-https.mobileconfig',
-    check: 'https://one.one.one.one/help',
-  },
-  {
     id: 'google',
     name: 'Google Public DNS',
-    note: 'Dự phòng nếu Cloudflare cũng bị nhà mạng chặn.',
+    note: 'Khuyên dùng ở Việt Nam: chạy ổn định, ít bị nhà mạng chặn.',
     url: 'https://github.com/paulmillr/encrypted-dns/raw/master/signed/google-default-https.mobileconfig',
     check: null,
+  },
+  {
+    id: 'cloudflare',
+    name: 'Cloudflare 1.1.1.1 Security',
+    note: 'Chặn thêm trang lừa đảo, mã độc. Một số nhà mạng chặn địa chỉ 1.1.1.1 nên có thể rất chậm.',
+    url: 'https://github.com/paulmillr/encrypted-dns/raw/master/signed/cloudflare-malware-https.mobileconfig',
+    check: 'https://one.one.one.one/help',
   },
 ] as const;
 
@@ -46,7 +46,8 @@ export default function DnsScreen() {
   const { accent, accentSoft, onAccent } = useTheme();
   const { newTab } = useTabs();
   const [net, setNet] = useState<RyxNetStatus>(getRyxNetStatus);
-  const [picked, setPicked] = useState<ProviderId>(net.provider);
+  // Chưa bật lần nào → gợi ý Google (Cloudflare hay bị chặn ở VN)
+  const [picked, setPicked] = useState<ProviderId>(net.enabled ? net.provider : 'google');
   const [changed, setChanged] = useState(false);
   const provider = PROVIDERS.find((p) => p.id === picked)!;
 
