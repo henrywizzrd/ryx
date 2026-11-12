@@ -232,7 +232,18 @@ function BrowserTabImpl({
 
   const onMessage = useCallback(
     (e: WebViewMessageEvent) => {
-      let msg: { type?: string; counts?: Counts; msg?: string; detail?: string; url?: string; host?: string; dark?: boolean };
+      let msg: {
+        type?: string;
+        counts?: Counts;
+        msg?: string;
+        detail?: string;
+        url?: string;
+        host?: string;
+        dark?: boolean;
+        ms?: number;
+        kind?: string;
+        src?: string;
+      };
       try {
         msg = JSON.parse(e.nativeEvent.data);
       } catch {
@@ -242,6 +253,12 @@ function BrowserTabImpl({
         // Nội dung trang đã hiện & dùng được: cho thanh tiến trình xong luôn, không đợi quảng cáo/ảnh tải hết
         lastProgress.current = 1;
         patchTab(tab.id, { loading: false, progress: 1 });
+        return;
+      }
+      if (msg.type === 'ryx:video') {
+        const s = ((msg.ms ?? 0) / 1000).toFixed(1);
+        const what = msg.kind === 'waiting' ? 'bị khựng' : 'chờ tải';
+        log.perf('video', `Video ở ${msg.host || 'trang'} ${what} ${s} s mới phát`, msg.src || undefined);
         return;
       }
       if (msg.type === 'ryx:theme') {

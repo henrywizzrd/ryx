@@ -129,12 +129,20 @@ interface SessionMark {
   start: number;
   running: boolean;
   lastActive: number;
+  /** Bản JS đang chạy (updateId), để phân biệt "khởi động lại do cập nhật" với crash. */
+  version?: string;
+}
+
+let runningVersion = 'embedded';
+/** Gọi khi khởi động (từ app-updates) để ghi bản đang chạy vào dấu phiên. */
+export function setRunningVersion(v: string) {
+  runningVersion = v;
 }
 
 function markSession(running: boolean) {
   // Chưa đọc xong phiên trước thì không ghi đè, kẻo mất dấu hiệu crash
   if (!sessionChecked) return;
-  const mark: SessionMark = { id: SESSION_ID, start: startTime, running, lastActive: Date.now() };
+  const mark: SessionMark = { id: SESSION_ID, start: startTime, running, lastActive: Date.now(), version: runningVersion };
   AsyncStorage.setItem(SESSION_KEY, JSON.stringify(mark)).catch(() => {});
 }
 
@@ -145,7 +153,10 @@ async function checkPreviousSession() {
     const raw = await AsyncStorage.getItem(SESSION_KEY);
     if (!raw) return;
     const prev = JSON.parse(raw) as SessionMark;
-    if (prev.running) {
+    if (prev.running && prev.version && prev.version !== runningVersion) {
+      // Bản JS đổi giữa 2 lần mở → app tự khởi động lại để chạy bản cập nhật, không phải crash
+      log.info('app', 'App đã khởi động lại để chạy bản cập nhật mới');
+    } else if (prev.running) {
       const mins = Math.round((prev.lastActive - prev.start) / 60000);
       log.crash(
         'app',

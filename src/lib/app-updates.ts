@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Updates from 'expo-updates';
 import { AppState } from 'react-native';
 
-import { log } from './logger';
+import { log, setRunningVersion } from './logger';
 
 /**
  * Cập nhật qua mạng (EAS Update).
@@ -70,6 +70,7 @@ export function initUpdates() {
   if (initialized) return;
   initialized = true;
 
+  setRunningVersion(Updates.isEnabled && !Updates.isEmbeddedLaunch && Updates.updateId ? Updates.updateId : 'embedded');
   if (!Updates.isEnabled) {
     log.debug('update', runningVersionLabel());
     return;

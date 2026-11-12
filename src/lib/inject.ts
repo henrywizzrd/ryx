@@ -125,6 +125,17 @@ function earlyDetect(){
 }
 new MutationObserver(function(){ earlyDetect(); scheduleScan(); }).observe(root, { childList: true, subtree: true });
 function send(m){ try { window.ReactNativeWebView.postMessage(JSON.stringify(m)); } catch (e) {} }
+/* Đo video chờ tải: từ lúc bắt đầu tải / bị khựng (waiting) tới lúc phát được. Chỉ báo khi > 2 giây. */
+function vsrc(v){ return String(v.currentSrc || v.src || '').slice(0, 200); }
+function vstart(e){ var v = e.target; if (v && v.tagName === 'VIDEO' && !v.__ryxT) { v.__ryxT = Date.now(); v.__ryxKind = e.type; } }
+function vplay(e){
+  var v = e.target; if (!v || v.tagName !== 'VIDEO' || !v.__ryxT) return;
+  var ms = Date.now() - v.__ryxT; var kind = v.__ryxKind; v.__ryxT = 0;
+  if (ms > 2000) send({ type: 'ryx:video', ms: ms, kind: kind, src: vsrc(v), host: HOST });
+}
+document.addEventListener('loadstart', vstart, true);
+document.addEventListener('waiting', vstart, true);
+document.addEventListener('playing', vplay, true);
 document.addEventListener('DOMContentLoaded', function(){
   earlyDone = true;
   detectDark(); applyAll(); post();

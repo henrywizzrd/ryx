@@ -56,6 +56,7 @@ export default function TabsScreen() {
   if (layout === 'list') {
     body = (
       <FlatList
+        key="list"
         data={tabs}
         keyExtractor={(t) => t.id}
         contentContainerStyle={{ padding: 16, gap: 8 }}
@@ -93,6 +94,7 @@ export default function TabsScreen() {
     body = (
       <View style={{ flex: 1, justifyContent: 'center' }}>
         <FlatList
+        key="carousel"
           data={tabs}
           horizontal
           keyExtractor={(t) => t.id}
@@ -117,6 +119,7 @@ export default function TabsScreen() {
   } else {
     body = (
       <FlatList
+        key="grid"
         data={tabs}
         keyExtractor={(t) => t.id}
         numColumns={2}
