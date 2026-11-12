@@ -125,6 +125,8 @@ function BrowserTabImpl({
         `${host}: ${stage} sau ${Math.round(ms / 1000)} giây vẫn chưa xong`,
         `${url}\nThường do nhà mạng chặn (kết nối bị treo) hoặc máy chủ trang quá chậm. Tiến độ hiện tại: ${Math.round(lastProgress.current * 100)}%`,
       );
+      // Hỏi trang xem đang chờ tệp nào (script đồng bộ bị treo sẽ làm trang đứng)
+      ref.current?.injectJavaScript('window.__ryx && window.__ryx.pending && window.__ryx.pending(); true;');
     }, ms);
   }, [stopWatch]);
   useEffect(() => stopWatch, [stopWatch]);
@@ -410,6 +412,16 @@ function BrowserTabImpl({
       try {
         msg = JSON.parse(e.nativeEvent.data);
       } catch {
+        return;
+      }
+      if (msg.type === 'ryx:pending') {
+        const p = msg as unknown as { state?: string; total?: number; list?: string[] };
+        const list = p.list ?? [];
+        log.warn(
+          'web',
+          `Trang đang chờ ${list.length}/${p.total ?? 0} tệp (trạng thái: ${p.state ?? '?'})`,
+          list.join('\n') || 'Không còn script/CSS nào đang chờ',
+        );
         return;
       }
       if (msg.type === 'ryx:pick') {

@@ -245,6 +245,20 @@ document.addEventListener('touchcancel', lpCancel, { passive: true, capture: tru
 /* Sau khi nhấn giữ thì bỏ cú "bấm" đi kèm, để trang không mở link/quảng cáo */
 document.addEventListener('click', function(e){ if (Date.now() - lpFired < 800) { e.preventDefault(); e.stopPropagation(); } }, true);
 
+/* Ghi lại script/CSS nào đã tải xong hoặc lỗi, để biết trang đang chờ tệp nào khi bị treo */
+function trackRes(e){ var t = e.target; if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) t.__ryxDone = e.type; }
+document.addEventListener('load', trackRes, true);
+document.addEventListener('error', trackRes, true);
+function reportPending(){
+  var els = document.querySelectorAll('script[src],link[rel~="stylesheet"][href]'), out = [];
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i]; if (el.__ryxDone) continue;
+    var kind = el.tagName === 'SCRIPT' ? ((el.async || el.defer) ? 'script (không chặn trang)' : 'script (CHẶN trang)') : 'css';
+    out.push(kind + ' ' + String(el.src || el.href).slice(0, 160));
+  }
+  send({ type: 'ryx:pending', state: document.readyState, total: els.length, list: out.slice(0, 25) });
+}
+
 /* "Chạm để ẩn quảng cáo": chọn phần tử, app hỏi lại rồi lưu bộ chọn cho trang này */
 var pickOn = false, picked = null;
 function pickCss(){
@@ -296,6 +310,7 @@ window.addEventListener('click', function(e){
 }, true);
 
 window.__ryx = {
+  pending: reportPending,
   pick: function(on){ pickOn = !!on; if (!pickOn) mark(null); pickCss(); },
   pickParent: function(){
     if (picked && picked.parentElement && picked.parentElement !== document.body && picked.parentElement !== root) { mark(picked.parentElement); }

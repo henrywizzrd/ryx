@@ -223,8 +223,8 @@ async function applyNow(cfg: BlockerConfig, force = false): Promise<void> {
       const cached = await readCache();
       if (cached?.main.length) {
         ids.push(...(await compileSplit(`ryx-list-${tag}`, cached.main, [...cached.allow, ...allow], dropped)));
-      }
-    }
+      } else log.info('shield', 'Chưa có bộ lọc EasyList/ABPVN trên máy, chỉ bật bộ lọc riêng của Ryx');
+    } else log.info('shield', '"Quảng cáo thường" đang tắt nên không bật EasyList/ABPVN');
 
     const n = await N.setActiveRules(ids);
     const old = state.activeIds.filter((x) => !ids.includes(x));
