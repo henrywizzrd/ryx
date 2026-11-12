@@ -11,7 +11,7 @@ var TOP = window === window.top;
 var HOST = location.hostname || String(location.href).slice(0, 40);
 var sent = 0;
 function send(ev, o){
-  if (ev !== 'tap_report' && sent++ > 40) return;
+  if (ev !== 'tap_report' && ev !== 'probe' && ev !== 'kick' && sent++ > 40) return;
   var m = { type: 'ryx:diag', ev: ev, top: TOP, host: HOST, href: String(location.href).slice(0, 200) };
   if (o) for (var k in o) m[k] = o[k];
   try { mh.postMessage(JSON.stringify(m)); } catch (e) {}
@@ -49,7 +49,8 @@ try {
     var v = this, p = op.apply(this, arguments);
     if (p && p.catch) p.catch(function(err){
       if (v.__ryxRej) return; v.__ryxRej = 1;
-      var o = info(v); o.name = err && err.name; o.msg = String((err && err.message) || '').slice(0, 150);
+      var o = info(v); o.name = err && err.name;
+      try { o.gesture = navigator.userActivation ? (navigator.userActivation.isActive ? 'có' : 'không') : '?'; } catch (e4) {} o.msg = String((err && err.message) || '').slice(0, 150);
       send('play_reject', o);
     });
     return p;
@@ -114,11 +115,14 @@ if (TOP) {
     var t0 = Date.now();
     var o = { src: src.slice(0, 250) };
     try {
+      var done = false;
+      setTimeout(function(){ if (!done) { done = true; o.err = 'quá 10 s không có phản hồi (yêu cầu bị treo)'; o.ms = Date.now() - t0; send('probe', o); } }, 10000);
       of.call(window, src, { headers: { Range: 'bytes=0-1023' }, credentials: 'include' }).then(function(res){
+        if (done) return; done = true;
         o.status = res.status; o.redirected = res.redirected; o.final = String(res.url).slice(0, 250);
         o.type = res.headers.get('content-type') || ''; o.range = res.headers.get('content-range') || res.headers.get('content-length') || '';
         o.ms = Date.now() - t0; send('probe', o);
-      }, function(err){ o.err = String((err && err.message) || err); o.ms = Date.now() - t0; send('probe', o); });
+      }, function(err){ if (done) return; done = true; o.err = String((err && err.message) || err); o.ms = Date.now() - t0; send('probe', o); });
     } catch (e) { o.err = String(e); send('probe', o); }
   }
   function snapshot(since, why, tapped){
@@ -150,6 +154,21 @@ if (TOP) {
   document.addEventListener('touchend', function(e){
     var t = e.target; var p = t && t.closest ? t.closest(PSEL) : null;
     if (!p || tapAt) return;
+    /* Thử nghiệm: tự gọi play() ngay trong cú chạm thật của cậu (để biết video có phát được không nếu đúng "thao tác người dùng") */
+    try {
+      var vs2 = p.tagName === 'VIDEO' ? [p] : p.querySelectorAll('video');
+      for (var k = 0; k < vs2.length; k++) {
+        var vv = vs2[k];
+        if ((vv.offsetWidth || 0) < 200 || vv.readyState > 0 || vv.__ryxKick || !(vv.currentSrc || vv.src)) continue;
+        vv.__ryxKick = 1;
+        (function(vk){
+          var pr = op.call(vk);
+          var ko = info(vk);
+          if (pr && pr.then) pr.then(function(){ ko.result = 'phát được'; send('kick', ko); }, function(er){ ko.result = 'bị từ chối: ' + (er && er.name); ko.msg = String((er && er.message) || '').slice(0, 150); send('kick', ko); });
+          setTimeout(function(){ var k2 = info(vk); k2.result = 'sau 8 s'; k2.paused = vk.paused; send('kick', k2); }, 8000);
+        })(vv);
+      }
+    } catch (e5) {}
     tapAt = performance.now();
     var tg = p.tagName.toLowerCase() + (p.id ? '#' + p.id : '');
     setTimeout(function(){ var since = tapAt; tapAt = 0; snapshot(since, 'tap', tg); }, 10000);
@@ -200,6 +219,8 @@ export function describeDiag(m: DiagMsg): { level: 'info' | 'warn' | 'error'; te
         text: m.why === 'auto' ? `Trạng thái trình phát 12 s sau khi mở trang (${String(m.requests)} tài nguyên)` : `Sau khi bấm trình phát 10 s: trang tải ${String(m.requests)} tài nguyên`,
         detail,
       };
+    case 'kick':
+      return { level: 'info', text: `Ryx tự bấm phát trong cú chạm: ${String(m.result)}`, detail };
     case 'probe':
       return {
         level: m.err || (typeof m.status === 'number' && m.status >= 400) ? 'error' : 'info',
