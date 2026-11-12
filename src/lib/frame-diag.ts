@@ -11,7 +11,7 @@ var TOP = window === window.top;
 var HOST = location.hostname || String(location.href).slice(0, 40);
 var sent = 0;
 function send(ev, o){
-  if (sent++ > 40) return;
+  if (ev !== 'tap_report' && sent++ > 40) return;
   var m = { type: 'ryx:diag', ev: ev, top: TOP, host: HOST, href: String(location.href).slice(0, 200) };
   if (o) for (var k in o) m[k] = o[k];
   try { mh.postMessage(JSON.stringify(m)); } catch (e) {}
@@ -48,6 +48,7 @@ try {
   HTMLMediaElement.prototype.play = function(){
     var v = this, p = op.apply(this, arguments);
     if (p && p.catch) p.catch(function(err){
+      if (v.__ryxRej) return; v.__ryxRej = 1;
       var o = info(v); o.name = err && err.name; o.msg = String((err && err.message) || '').slice(0, 150);
       send('play_reject', o);
     });
@@ -104,16 +105,11 @@ setTimeout(report, 2500);
 if (TOP) {
   var tapAt = 0;
   var PSEL = 'video,[class*="player"],[id*="player"],[class*="fp-"],[class*="jw-"],[class*="vjs"],[class*="plyr"]';
-  document.addEventListener('touchend', function(e){
-    var t = e.target; var p = t && t.closest ? t.closest(PSEL) : null;
-    if (!p || tapAt) return;
-    tapAt = performance.now();
-    setTimeout(function(){
-      var since = tapAt; tapAt = 0;
+  function snapshot(since, why, tapped){
       var res = [];
       try {
         performance.getEntriesByType('resource').forEach(function(r){
-          if (r.startTime < since) return;
+          if (r.startTime < since || r.initiatorType === 'img' || r.initiatorType === 'css' || r.initiatorType === 'link') return;
           var u = r.name.split('://').pop() || '';
           res.push(r.initiatorType + ' ' + Math.round(r.duration) + 'ms ' + (r.transferSize || 0) + 'B ' + u.slice(0, 110));
         });
@@ -128,9 +124,19 @@ if (TOP) {
           nodes.push(d.slice(0, 160));
         }
       } catch (e3) {}
-      send('tap_report', { tapped: p.tagName.toLowerCase() + (p.id ? '#' + p.id : ''), requests: res.length, list: res.slice(0, 30).join(' | '), player: nodes.join(' | ') });
-    }, 10000);
+      if (!nodes.length && why === 'auto') return;
+      send('tap_report', { why: why, tapped: tapped || '', requests: res.length, list: res.slice(-40).join(' | '), player: nodes.join(' | '),
+        ua: navigator.userAgent.slice(0, 160), vis: document.visibilityState });
+  }
+  document.addEventListener('touchend', function(e){
+    var t = e.target; var p = t && t.closest ? t.closest(PSEL) : null;
+    if (!p || tapAt) return;
+    tapAt = performance.now();
+    var tg = p.tagName.toLowerCase() + (p.id ? '#' + p.id : '');
+    setTimeout(function(){ var since = tapAt; tapAt = 0; snapshot(since, 'tap', tg); }, 10000);
   }, true);
+  /* Tự báo 12 s sau khi trang hiện (trình phát quay vòng không cho bấm) */
+  document.addEventListener('DOMContentLoaded', function(){ setTimeout(function(){ snapshot(0, 'auto'); }, 12000); });
 }
 })();
 true;`;
@@ -170,7 +176,11 @@ export function describeDiag(m: DiagMsg): { level: 'info' | 'warn' | 'error'; te
     case 'video_src':
       return { level: 'info', text: `Trình phát ở ${where} nhận nguồn video: ${String(m.kind)}`, detail };
     case 'tap_report':
-      return { level: 'info', text: `Sau khi bấm trình phát 10 s: trang tải ${String(m.requests)} tài nguyên`, detail };
+      return {
+        level: 'info',
+        text: m.why === 'auto' ? `Trạng thái trình phát 12 s sau khi mở trang (${String(m.requests)} tài nguyên)` : `Sau khi bấm trình phát 10 s: trang tải ${String(m.requests)} tài nguyên`,
+        detail,
+      };
     case 'js_error':
       return { level: 'warn', text: `Lỗi script trong ${where}`, detail };
     default:
