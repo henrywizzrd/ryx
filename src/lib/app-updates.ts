@@ -13,7 +13,7 @@ import { log } from './logger';
  */
 
 const RECHECK_MS = 30 * 60 * 1000;
-const NATIVE_LOG_KEY = 'khien:updates-log-imported:v1';
+const NATIVE_LOG_KEY = 'ryx:updates-log-imported:v1';
 
 let lastCheck = Date.now();
 let initialized = false;

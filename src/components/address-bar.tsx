@@ -43,7 +43,7 @@ export function AddressBar({ tab, blocked, shieldOn, onSubmit, onShieldPress, on
         <Pressable
           onPress={onShieldPress}
           accessibilityRole="button"
-          accessibilityLabel={`Khiên bảo vệ, đã chặn ${blocked} mục trên trang này`}
+          accessibilityLabel={`Shield, đã chặn ${blocked} mục trên trang này`}
           hitSlop={6}
           style={({ pressed }) => [
             styles.shield,

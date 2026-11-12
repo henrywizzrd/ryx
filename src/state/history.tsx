@@ -17,7 +17,7 @@ export interface HistoryEntry {
   t: number;
 }
 
-const STORAGE_KEY = 'khien:history:v1';
+const STORAGE_KEY = 'ryx:history:v1';
 export const RETENTION_DAYS = 90;
 const MAX_ENTRIES = 3000;
 const MERGE_MS = 30 * 60 * 1000;

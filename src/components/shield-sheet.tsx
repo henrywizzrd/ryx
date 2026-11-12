@@ -36,7 +36,7 @@ export function ShieldSheet({ visible, onClose, site, counts, prefs, onToggle, o
         </View>
         <View style={{ flex: 1 }}>
           <Txt weight="bold" size={20} accessibilityRole="header">
-            {anyOn ? 'Khiên đang bật' : 'Khiên đang tắt'}
+            {anyOn ? 'Shield đang bật' : 'Shield đang tắt'}
           </Txt>
           <Txt size={14} color={colors.textMuted} numberOfLines={1}>
             {site ? `${site} · đã chặn ${counts.total} mục` : 'Áp dụng cho mọi trang web'}

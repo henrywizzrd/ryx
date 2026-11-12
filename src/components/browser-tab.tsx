@@ -69,7 +69,7 @@ function BrowserTabImpl({
     else refs.current.delete(tab.id);
   };
 
-  // Áp dụng ngay thay đổi tuỳ chọn khiên / chế độ tối cho trang đang mở
+  // Áp dụng ngay thay đổi tuỳ chọn Shield / chế độ tối cho trang đang mở
   useEffect(() => {
     ref.current?.injectJavaScript(buildUpdateCall(injectConfig));
   }, [injectConfig]);
@@ -192,11 +192,11 @@ function BrowserTabImpl({
       } catch {
         return;
       }
-      if (msg.type === 'khien:log') {
+      if (msg.type === 'ryx:log') {
         log.error('inject', msg.msg ?? 'Lỗi trong script của trang', `${msg.url ?? ''}\n${msg.detail ?? ''}`.trim());
         return;
       }
-      if (msg.type !== 'khien:counts' || !msg.counts) return;
+      if (msg.type !== 'ryx:counts' || !msg.counts) return;
       const prev = lastPageCounts.current;
       const next = msg.counts;
       const delta = {

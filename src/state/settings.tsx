@@ -43,7 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   siteOverrides: {},
 };
 
-const STORAGE_KEY = 'khien.settings.v1';
+const STORAGE_KEY = 'ryx.settings.v1';
 
 interface SettingsCtx {
   settings: Settings;

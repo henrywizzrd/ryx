@@ -11,7 +11,7 @@ export interface InjectConfig {
  * - Ẩn quảng cáo/cờ bạc/pop-up bằng CSS và đếm số phần tử bị ẩn.
  * - Chặn window.open tự động (pop-up).
  * - Chế độ tối kiểu Dark Reader (đảo màu + giữ nguyên ảnh/video), bỏ qua trang vốn đã tối.
- * - window.__khien.update(cfg) để áp dụng thay đổi ngay mà không cần tải lại.
+ * - window.__ryx.update(cfg) để áp dụng thay đổi ngay mà không cần tải lại.
  */
 export function buildInjectedScript(cfg: InjectConfig): string {
   const data = JSON.stringify({
@@ -20,7 +20,7 @@ export function buildInjectedScript(cfg: InjectConfig): string {
   });
   return `(function(){
 try {
-if (window.__khien) { return; }
+if (window.__ryx) { return; }
 var D = ${data};
 var CFG = D.cfg;
 var root = document.documentElement;
@@ -40,7 +40,7 @@ var counts = { ads: 0, gambling: 0, popups: 0 };
 var P = prefs();
 
 function post(){
-  try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'khien:counts', url: location.href, counts: counts })); } catch (e) {}
+  try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ryx:counts', url: location.href, counts: counts })); } catch (e) {}
 }
 var postTimer = null;
 function schedulePost(){ if (postTimer) return; postTimer = setTimeout(function(){ postTimer = null; post(); }, 400); }
@@ -55,7 +55,7 @@ function applyHide(){
   ['ads','gambling','popups'].forEach(function(k){
     if (P[k] && SEL[k]) css += SEL[k] + '{display:none!important;visibility:hidden!important;}';
   });
-  styleEl('khien-hide').textContent = css;
+  styleEl('ryx-hide').textContent = css;
 }
 
 function scan(){
@@ -64,7 +64,7 @@ function scan(){
     if (!P[k] || !SEL[k]) return;
     var els; try { els = document.querySelectorAll(SEL[k]); } catch (e) { return; }
     for (var i = 0; i < els.length; i++) {
-      if (!els[i].__khienSeen) { els[i].__khienSeen = 1; counts[k]++; changed = true; }
+      if (!els[i].__ryxSeen) { els[i].__ryxSeen = 1; counts[k]++; changed = true; }
     }
   });
   if (changed) schedulePost();
@@ -93,7 +93,7 @@ function luminance(c){
   return (0.2126*p[0] + 0.7152*p[1] + 0.0722*p[2]) / 255;
 }
 function detectDark(){
-  var s = document.getElementById('khien-dark'); var prev = s ? s.textContent : '';
+  var s = document.getElementById('ryx-dark'); var prev = s ? s.textContent : '';
   if (s) s.textContent = '';
   var l = luminance(getComputedStyle(document.body || root).backgroundColor);
   if (l === null) l = luminance(getComputedStyle(root).backgroundColor);
@@ -102,7 +102,7 @@ function detectDark(){
   pageIsDark = (l !== null && l < 0.35) || (!!meta && /^\\s*dark\\s*$/.test(meta.content));
 }
 function applyDark(){
-  styleEl('khien-dark').textContent = (P.dark && pageIsDark !== true) ? DARK_CSS : '';
+  styleEl('ryx-dark').textContent = (P.dark && pageIsDark !== true) ? DARK_CSS : '';
 }
 
 function applyAll(){ applyHide(); applyDark(); scan(); }
@@ -112,16 +112,16 @@ new MutationObserver(scheduleScan).observe(root, { childList: true, subtree: tru
 document.addEventListener('DOMContentLoaded', function(){ detectDark(); applyAll(); post(); });
 window.addEventListener('load', scan);
 
-window.__khien = {
+window.__ryx = {
   update: function(c){ CFG = c; P = prefs(); applyAll(); post(); },
   report: post
 };
 } catch (err) {
-  try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'khien:log', level: 'error', msg: 'Script chặn quảng cáo lỗi: ' + (err && err.message || err), detail: String(err && err.stack || ''), url: location.href })); } catch (e) {}
+  try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ryx:log', level: 'error', msg: 'Script chặn quảng cáo lỗi: ' + (err && err.message || err), detail: String(err && err.stack || ''), url: location.href })); } catch (e) {}
 }
 })(); true;`;
 }
 
 export function buildUpdateCall(cfg: InjectConfig): string {
-  return `window.__khien && window.__khien.update(${JSON.stringify(cfg)}); true;`;
+  return `window.__ryx && window.__ryx.update(${JSON.stringify(cfg)}); true;`;
 }

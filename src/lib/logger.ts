@@ -24,8 +24,8 @@ export interface LogEntry {
   session: string;
 }
 
-const STORAGE_KEY = 'khien:logs:v1';
-const SESSION_KEY = 'khien:session:v1';
+const STORAGE_KEY = 'ryx:logs:v1';
+const SESSION_KEY = 'ryx:session:v1';
 const MAX_ENTRIES = 1500;
 const PERSISTED = 600;
 const MAX_DETAIL = 4000;

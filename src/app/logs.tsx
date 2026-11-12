@@ -46,7 +46,7 @@ function time(t: number) {
 
 function deviceHeader() {
   return [
-    `Khiên ${Constants.expoConfig?.version ?? '?'}`,
+    `Ryx ${Constants.expoConfig?.version ?? '?'}`,
     `${Device.modelName ?? 'iPhone'} · ${Platform.OS} ${Platform.Version}`,
     runningVersionLabel(),
     `Phiên hiện tại: ${SESSION_ID}`,

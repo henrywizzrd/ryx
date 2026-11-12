@@ -51,7 +51,7 @@ export function NewTabPage({ onSubmit, onOpen, paddingTop, paddingBottom }: Prop
           <Ionicons name="shield-checkmark" size={30} color={accent} />
         </View>
         <Txt weight="bold" size={34} style={{ lineHeight: 42 }} accessibilityRole="header">
-          Khiên
+          Ryx
         </Txt>
         <Txt size={15} color={colors.textMuted}>
           Duyệt web sạch quảng cáo, an toàn hơn

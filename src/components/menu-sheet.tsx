@@ -23,7 +23,7 @@ const ACTIONS: { id: MenuAction; icon: IconName; label: string; needsPage?: bool
   { id: 'share', icon: 'share-outline', label: 'Chia sẻ', needsPage: true },
   { id: 'safari', icon: 'compass-outline', label: 'Mở bằng Safari', needsPage: true },
   { id: 'home', icon: 'home-outline', label: 'Trang chủ' },
-  { id: 'shield', icon: 'shield-checkmark-outline', label: 'Khiên' },
+  { id: 'shield', icon: 'shield-checkmark-outline', label: 'Shield' },
   { id: 'customize', icon: 'color-palette-outline', label: 'Tuỳ chỉnh' },
   { id: 'newTab', icon: 'add-circle-outline', label: 'Thẻ mới' },
   { id: 'closeTab', icon: 'close-circle-outline', label: 'Đóng thẻ' },

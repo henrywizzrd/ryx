@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "RYX",
-    "slug": "zyx",
+    "name": "Ryx",
+    "slug": "ryx",
     "version": "1.0.0",
     "runtimeVersion": {
       "policy": "appVersion"
@@ -15,12 +15,12 @@
     },
     "orientation": "default",
     "icon": "./assets/images/icon.png",
-    "scheme": "khienbrowser",
+    "scheme": "ryx",
     "userInterfaceStyle": "dark",
     "ios": {
       "icon": "./assets/expo.icon",
       "supportsTablet": false,
-      "bundleIdentifier": "com.henrywizzrd.khien"
+      "bundleIdentifier": "com.henrywizzrd.ryx"
     },
     "android": {
       "adaptiveIcon": {
