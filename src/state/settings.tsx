@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 export type DockStyle = 'floating' | 'compact' | 'attached';
 export type AddressBarPosition = 'top' | 'bottom';
+export type TabLayout = 'grid' | 'list' | 'stack' | 'carousel';
 export type DockButtonId =
   | 'back'
   | 'forward'
@@ -23,6 +24,8 @@ export interface ShieldPrefs {
 export interface Settings {
   dockStyle: DockStyle;
   addressBarPosition: AddressBarPosition;
+  /** Kiểu hiển thị màn quản lý tab */
+  tabLayout: TabLayout;
   accent: string;
   /** 0 = mờ đục nhất … 3 = trong nhất */
   glass: 0 | 1 | 2 | 3;
@@ -36,6 +39,7 @@ export const MAX_DOCK_BUTTONS = 5;
 export const DEFAULT_SETTINGS: Settings = {
   dockStyle: 'floating',
   addressBarPosition: 'bottom',
+  tabLayout: 'grid',
   accent: '#34D399',
   glass: 1,
   dockButtons: ['back', 'forward', 'tabs', 'menu'],

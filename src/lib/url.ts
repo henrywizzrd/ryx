@@ -7,7 +7,8 @@ export function resolveInput(raw: string): string {
   if (!input) return '';
   if (SCHEME_RE.test(input)) return input;
   if (!/\s/.test(input) && HOST_LIKE_RE.test(input)) {
-    const local = /^(localhost|(\d{1,3}\.){3}\d{1,3})(:|\/|$)/.test(input);
+    // Chỉ mạng nội bộ mới dùng http; IP công cộng (vd 1.1.1.1) vẫn dùng https
+    const local = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(input);
     return `${local ? 'http' : 'https'}://${input}`;
   }
   return `https://www.google.com/search?q=${encodeURIComponent(input)}`;

@@ -122,6 +122,8 @@ export default function BrowserScreen() {
         return setTimeout(() => router.push('/logs'), SHEET_HANDOFF_MS);
       case 'history':
         return setTimeout(() => router.push('/history'), SHEET_HANDOFF_MS);
+      case 'dns':
+        return setTimeout(() => router.push('/dns'), SHEET_HANDOFF_MS);
     }
   };
 
