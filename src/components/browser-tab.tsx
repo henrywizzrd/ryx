@@ -14,6 +14,7 @@ import { shouldBlock, type BlockCategory } from '@/lib/blocker';
 import { buildUpdateCall, type InjectConfig } from '@/lib/inject';
 import { log } from '@/lib/logger';
 import { getHost, siteKey } from '@/lib/url';
+import { useHistoryActions } from '@/state/history';
 import type { ShieldPrefs } from '@/state/settings';
 import { EMPTY_COUNTS, type Counts } from '@/state/stats';
 import { useTabs, type Tab } from '@/state/tabs';
@@ -51,6 +52,7 @@ function BrowserTabImpl({
   insetBottom,
 }: Props) {
   const { patchTab, refs } = useTabs();
+  const { record: recordHistory } = useHistoryActions();
   const ref = useRef<WebViewHandle>(null);
   const lastPageCounts = useRef<Counts>({ ...EMPTY_COUNTS });
   const urlRef = useRef(tab.url);
@@ -145,8 +147,10 @@ function BrowserTabImpl({
         canGoForward: nav.canGoForward,
         loading: nav.loading,
       });
+      // Ghi lịch sử khi trang tải xong (kể cả đổi URL trong trang kiểu SPA)
+      if (!nav.loading && nav.url) recordHistory(nav.url, nav.title || '');
     },
-    [patchTab, tab.id],
+    [patchTab, recordHistory, tab.id],
   );
 
   const onLoadEnd = useCallback(() => {

@@ -8,6 +8,7 @@ import { Alert, FlatList, Platform, Pressable, Share, StyleSheet, View } from 'r
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Txt } from '@/components/txt';
+import { runningVersionLabel } from '@/lib/app-updates';
 import { clearLogs, SESSION_ID, type LogEntry, type LogLevel } from '@/lib/logger';
 import { useLogs, usePerfSnapshot } from '@/lib/use-logs';
 import { colors, fonts, useTheme, withAlpha } from '@/theme';
@@ -47,6 +48,7 @@ function deviceHeader() {
   return [
     `Khiên ${Constants.expoConfig?.version ?? '?'}`,
     `${Device.modelName ?? 'iPhone'} · ${Platform.OS} ${Platform.Version}`,
+    runningVersionLabel(),
     `Phiên hiện tại: ${SESSION_ID}`,
     `Xuất lúc: ${new Date().toLocaleString('vi-VN')}`,
   ].join('\n');
@@ -151,6 +153,10 @@ export default function LogsScreen() {
           </Txt>
         </Pressable>
       </View>
+
+      <Txt size={12} color={colors.textFaint} style={styles.version} numberOfLines={2}>
+        {runningVersionLabel()}
+      </Txt>
 
       <View style={styles.stats}>
         <Stat label="JS FPS" value={String(perf.fps)} warn={perf.fps < 45} />
@@ -258,6 +264,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   headerBtn: { minHeight: 44, justifyContent: 'center' },
+  version: { paddingHorizontal: 20, marginTop: 2 },
   stats: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginTop: 12 },
   stat: { flex: 1, borderRadius: 14, backgroundColor: colors.surface, paddingVertical: 10, paddingHorizontal: 10 },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingVertical: 12 },

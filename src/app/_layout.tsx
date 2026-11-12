@@ -13,8 +13,11 @@ import { Pressable, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Txt } from '@/components/txt';
+import { UpdateBanner } from '@/components/update-banner';
+import { initUpdates } from '@/lib/app-updates';
 import { initLogging, log } from '@/lib/logger';
 import { initPerfMonitor } from '@/lib/perf-monitor';
+import { HistoryProvider } from '@/state/history';
 import { SettingsProvider, useSettings } from '@/state/settings';
 import { StatsProvider } from '@/state/stats';
 import { TabsProvider } from '@/state/tabs';
@@ -23,6 +26,7 @@ import { colors } from '@/theme';
 // Bật nhật ký + theo dõi hiệu năng sớm nhất có thể để bắt được cả lỗi lúc khởi động
 initLogging();
 initPerfMonitor();
+initUpdates();
 
 SplashScreen.preventAutoHideAsync();
 
@@ -42,7 +46,9 @@ function RootStack() {
         <Stack.Screen name="tabs" options={{ presentation: 'modal' }} />
         <Stack.Screen name="customize" options={{ presentation: 'modal' }} />
         <Stack.Screen name="logs" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="history" options={{ presentation: 'modal' }} />
       </Stack>
+      <UpdateBanner />
     </ThemeProvider>
   );
 }
@@ -97,7 +103,9 @@ export default function RootLayout() {
       <SettingsProvider>
         <StatsProvider>
           <TabsProvider>
-            <RootStack />
+            <HistoryProvider>
+              <RootStack />
+            </HistoryProvider>
           </TabsProvider>
         </StatsProvider>
       </SettingsProvider>

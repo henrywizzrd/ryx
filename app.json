@@ -3,6 +3,16 @@
     "name": "RYX",
     "slug": "zyx",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 3000,
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
+    },
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "khienbrowser",
@@ -37,7 +47,9 @@
       ],
       [
         "expo-audio",
-        { "enableBackgroundPlayback": true }
+        {
+          "enableBackgroundPlayback": true
+        }
       ]
     ],
     "experiments": {

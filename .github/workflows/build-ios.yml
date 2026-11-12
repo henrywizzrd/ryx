@@ -1,13 +1,11 @@
-name: Build iOS IPA (unsigned, for sideload)
+# Build bản Release (chạy độc lập, không cần laptop) để ký bằng Sideloadly/ESign rồi cài lên iPhone.
+# Chạy tay: tab Actions -> "Build iOS IPA" -> Run workflow. Xong thì tải file ở mục "Artifacts" cuối trang.
+# Code JS thay đổi sau này không cần build lại: dùng `npx eas-cli@latest update --channel production`.
+# Chỉ build lại khi thêm thư viện native hoặc đổi app.json (nhớ tăng "version" khi đó).
+name: Build iOS IPA (Release, unsigned)
 
 on:
   workflow_dispatch:
-    inputs:
-      configuration:
-        description: "Debug = dev build (live reload from laptop) · Release = standalone app"
-        type: choice
-        options: [Debug, Release]
-        default: Debug
 
 jobs:
   build:
@@ -15,6 +13,18 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check EAS Update config
+        run: |
+          node -e '
+            const e = require("./app.json").expo;
+            const url = e.updates && e.updates.url;
+            if (!url) {
+              console.error("::error::app.json chưa có updates.url → app build ra sẽ KHÔNG nhận được cập nhật qua mạng. Chạy `npx eas-cli@latest update:configure` trước rồi push lại.");
+              process.exit(1);
+            }
+            console.log("updates.url:", url, "| runtimeVersion:", JSON.stringify(e.runtimeVersion), "| version:", e.version);
+          '
 
       - uses: actions/setup-node@v4
         with:
@@ -34,15 +44,16 @@ jobs:
       - name: Install CocoaPods
         run: cd ios && pod install
 
-      - name: Build .app without code signing
+      - name: Build Release .app without code signing
         run: |
+          set -o pipefail
           WS=$(ls -d ios/*.xcworkspace | head -1)
           SCHEME=$(basename "$WS" .xcworkspace)
           echo "Workspace: $WS  Scheme: $SCHEME"
           xcodebuild \
             -workspace "$WS" \
             -scheme "$SCHEME" \
-            -configuration "${{ inputs.configuration }}" \
+            -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
@@ -54,11 +65,13 @@ jobs:
       - name: Package .ipa
         run: |
           mkdir -p Payload
-          cp -R build/Build/Products/${{ inputs.configuration }}-iphoneos/*.app Payload/
-          zip -qry "khien-${{ inputs.configuration }}-unsigned.ipa" Payload
+          cp -R build/Build/Products/Release-iphoneos/*.app Payload/
+          VERSION=$(node -p 'require("./app.json").expo.version')
+          zip -qry "RYX-${VERSION}-unsigned.ipa" Payload
+          echo "IPA_NAME=RYX-${VERSION}-unsigned.ipa" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: khien-${{ inputs.configuration }}-ipa
-          path: khien-${{ inputs.configuration }}-unsigned.ipa
-          retention-days: 14
+          name: RYX-ios-release
+          path: ${{ env.IPA_NAME }}
+          retention-days: 30
