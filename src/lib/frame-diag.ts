@@ -54,15 +54,48 @@ try {
     return p;
   };
 } catch (e) {}
-if (!TOP) {
-  window.addEventListener('error', function(e){
-    send('js_error', { msg: String(e.message || '').slice(0, 150), src: String(e.filename || '').slice(0, 150) });
-  });
-}
+/* Lỗi script + tài nguyên (script/ảnh/video) không tải được */
+window.addEventListener('error', function(e){
+  var t = e.target;
+  if (t && t !== window && t.tagName) {
+    var u = t.currentSrc || t.src || t.href || '';
+    if (u) send('res_error', { tag: t.tagName.toLowerCase(), url: String(u).slice(0, 200) });
+    return;
+  }
+  send('js_error', { msg: String(e.message || '').slice(0, 150), src: String(e.filename || '').slice(0, 150), line: e.lineno || 0 });
+}, true);
+window.addEventListener('unhandledrejection', function(e){
+  var r = e.reason; send('js_error', { msg: String((r && (r.message || r)) || '').slice(0, 150), kind: 'promise' });
+});
+/* Yêu cầu mạng của trang (fetch / XHR) bị lỗi: trình phát thường lấy link video qua đây */
+try {
+  var of = window.fetch;
+  if (of) window.fetch = function(input){
+    var u = String((input && input.url) || input || '').slice(0, 200);
+    return of.apply(this, arguments).then(function(res){
+      if (res && !res.ok && res.status) send('http_fail', { url: u, status: res.status, via: 'fetch' });
+      return res;
+    }, function(err){ send('http_fail', { url: u, status: 0, msg: String(err && err.message || err).slice(0, 120), via: 'fetch' }); throw err; });
+  };
+  var xo = XMLHttpRequest.prototype.open, xs = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(m, u){ this.__ryxU = String(u || '').slice(0, 200); return xo.apply(this, arguments); };
+  XMLHttpRequest.prototype.send = function(){
+    var x = this;
+    x.addEventListener('loadend', function(){ if (x.status === 0 || x.status >= 400) send('http_fail', { url: x.__ryxU, status: x.status, via: 'xhr' }); });
+    return xs.apply(this, arguments);
+  };
+} catch (e) {}
+/* Trình phát lớn (không phải ảnh động nhỏ) nhận nguồn video */
+document.addEventListener('loadstart', function(e){
+  var v = e.target; if (!v || v.tagName !== 'VIDEO') return;
+  var w = v.offsetWidth || 0; if (w < 200) return;
+  var o = info(v); if (v.__ryxSrc === o.src) return; v.__ryxSrc = o.src;
+  o.size = w + 'x' + (v.offsetHeight || 0); send('video_src', o);
+}, true);
 function report(){
   var vs = document.getElementsByTagName('video');
-  if (!vs.length || TOP) return;
-  var o = info(vs[0]); o.count = vs.length;
+  if (!vs.length || TOP || (vs[0].offsetWidth || 0) < 200) return;
+  var o = info(vs[0]); o.count = vs.length; o.size = vs[0].offsetWidth + 'x' + vs[0].offsetHeight;
   o.mse = typeof window.MediaSource !== 'undefined'; o.mmse = typeof window.ManagedMediaSource !== 'undefined';
   send('frame_video', o);
 }
@@ -98,6 +131,12 @@ export function describeDiag(m: DiagMsg): { level: 'info' | 'warn' | 'error'; te
       return { level: 'error', text: `Video ở ${where} báo lỗi: ${String(m.why || 'không rõ')} (mã ${String(m.code ?? '?')})`, detail };
     case 'play_reject':
       return { level: 'warn', text: `Lệnh phát video ở ${where} bị từ chối: ${String(m.name || '?')}`, detail };
+    case 'res_error':
+      return { level: 'warn', text: `Không tải được ${String(m.tag)} ở ${where}`, detail };
+    case 'http_fail':
+      return { level: 'warn', text: `Yêu cầu mạng lỗi ${String(m.status)} ở ${where}`, detail };
+    case 'video_src':
+      return { level: 'info', text: `Trình phát ở ${where} nhận nguồn video: ${String(m.kind)}`, detail };
     case 'js_error':
       return { level: 'warn', text: `Lỗi script trong ${where}`, detail };
     default:

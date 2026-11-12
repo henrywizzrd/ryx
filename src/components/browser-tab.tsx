@@ -394,7 +394,8 @@ function BrowserTabImpl({
       originWhitelist={ALL_ORIGINS}
       style={styles.web}
       containerStyle={StyleSheet.absoluteFill}
-      injectedJavaScriptBeforeContentLoaded={script}
+      // Chẩn đoán chạy từ đầu trang chính (bắt được cả script lỗi lúc tải), rồi tới script chính của Ryx
+      injectedJavaScriptBeforeContentLoaded={FRAME_DIAG_SCRIPT + '\n' + script}
       // Script chẩn đoán video chạy cả trong iframe (trình phát thường nằm trong iframe)
       injectedJavaScript={FRAME_DIAG_SCRIPT}
       injectedJavaScriptForMainFrameOnly={false}
