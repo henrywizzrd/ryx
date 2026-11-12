@@ -9,7 +9,7 @@ export const EMPTY_COUNTS: Counts = { ads: 0, gambling: 0, popups: 0 };
 /** Số lượng chặn theo ngày, khoá "YYYY-MM-DD". */
 type Daily = Record<string, Counts>;
 
-const STORAGE_KEY = 'khien.stats.v1';
+const STORAGE_KEY = 'ryx.stats.v1';
 const KEEP_DAYS = 14;
 
 function dayKey(d: Date) {

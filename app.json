@@ -1,16 +1,26 @@
 {
   "expo": {
-    "name": "RYX",
-    "slug": "zyx",
+    "name": "Ryx",
+    "slug": "ryx",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 3000,
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
+    },
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
-    "scheme": "khienbrowser",
+    "scheme": "ryx",
     "userInterfaceStyle": "dark",
     "ios": {
       "icon": "./assets/expo.icon",
       "supportsTablet": false,
-      "bundleIdentifier": "com.henrywizzrd.khien"
+      "bundleIdentifier": "com.henrywizzrd.ryx"
     },
     "android": {
       "adaptiveIcon": {
@@ -34,6 +44,12 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true
+        }
       ]
     ],
     "experiments": {
@@ -46,16 +62,7 @@
         "asyncRoutes": {
           "web": true
         }
-      },
-      "eas": {
-        "projectId": "7f4dcbef-7a9b-43e4-8cd6-6b6674c0ad03"
       }
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/7f4dcbef-7a9b-43e4-8cd6-6b6674c0ad03"
     }
   }
 }

@@ -13,7 +13,7 @@ export const DOCK_BUTTONS: Record<DockButtonId, { icon: IconName; label: string 
   forward: { icon: 'chevron-forward', label: 'Tiến tới' },
   tabs: { icon: 'copy-outline', label: 'Các thẻ' },
   menu: { icon: 'ellipsis-horizontal', label: 'Menu' },
-  shield: { icon: 'shield-checkmark-outline', label: 'Khiên' },
+  shield: { icon: 'shield-checkmark-outline', label: 'Shield' },
   reload: { icon: 'refresh', label: 'Tải lại' },
   home: { icon: 'home-outline', label: 'Trang chủ' },
   share: { icon: 'share-outline', label: 'Chia sẻ' },

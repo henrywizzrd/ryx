@@ -5,16 +5,28 @@ import {
   BeVietnamPro_700Bold,
   useFonts,
 } from '@expo-google-fonts/be-vietnam-pro';
-import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, Stack, ThemeProvider, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { Pressable, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { Txt } from '@/components/txt';
+import { UpdateBanner } from '@/components/update-banner';
+import { initUpdates } from '@/lib/app-updates';
+import { initLogging, log } from '@/lib/logger';
+import { initPerfMonitor } from '@/lib/perf-monitor';
+import { HistoryProvider } from '@/state/history';
 import { SettingsProvider, useSettings } from '@/state/settings';
 import { StatsProvider } from '@/state/stats';
 import { TabsProvider } from '@/state/tabs';
 import { colors } from '@/theme';
+
+// Bật nhật ký + theo dõi hiệu năng sớm nhất có thể để bắt được cả lỗi lúc khởi động
+initLogging();
+initPerfMonitor();
+initUpdates();
 
 SplashScreen.preventAutoHideAsync();
 
@@ -33,8 +45,41 @@ function RootStack() {
         <Stack.Screen name="index" />
         <Stack.Screen name="tabs" options={{ presentation: 'modal' }} />
         <Stack.Screen name="customize" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="logs" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="history" options={{ presentation: 'modal' }} />
       </Stack>
+      <UpdateBanner />
     </ThemeProvider>
+  );
+}
+
+/** Màn hình thay thế khi giao diện bị lỗi lúc render: ghi log và cho thử lại thay vì app trắng màn hình. */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  useEffect(() => {
+    log.crash('react', `Giao diện bị lỗi: ${error.message}`, error.stack);
+    SplashScreen.hideAsync().catch(() => {});
+  }, [error]);
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+      <Txt weight="bold" size={20} style={{ textAlign: 'center' }}>
+        Có lỗi xảy ra
+      </Txt>
+      <Txt size={14} color={colors.textMuted} style={{ marginTop: 8, textAlign: 'center' }}>
+        {error.message}
+      </Txt>
+      <Txt size={13} color={colors.textFaint} style={{ marginTop: 8, textAlign: 'center' }}>
+        Lỗi đã được ghi vào Nhật ký (Menu → Nhật ký).
+      </Txt>
+      <Pressable
+        onPress={retry}
+        accessibilityRole="button"
+        style={{ marginTop: 24, minHeight: 48, paddingHorizontal: 28, borderRadius: 24, backgroundColor: colors.surfaceRaised, justifyContent: 'center' }}
+      >
+        <Txt weight="semibold" size={16}>
+          Thử lại
+        </Txt>
+      </Pressable>
+    </View>
   );
 }
 
@@ -47,6 +92,7 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
+    if (fontError) log.error('app', 'Không tải được font Be Vietnam Pro', fontError);
     if (fontsLoaded || fontError) SplashScreen.hideAsync();
   }, [fontsLoaded, fontError]);
 
@@ -57,7 +103,9 @@ export default function RootLayout() {
       <SettingsProvider>
         <StatsProvider>
           <TabsProvider>
-            <RootStack />
+            <HistoryProvider>
+              <RootStack />
+            </HistoryProvider>
           </TabsProvider>
         </StatsProvider>
       </SettingsProvider>

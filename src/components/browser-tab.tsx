@@ -3,6 +3,8 @@ import { Linking, StyleSheet } from 'react-native';
 import { WebView as RNWebView } from 'react-native-webview';
 import type {
   ShouldStartLoadRequest,
+  WebViewErrorEvent,
+  WebViewHttpErrorEvent,
   WebViewMessageEvent,
   WebViewNavigation,
   WebViewOpenWindowEvent,
@@ -10,7 +12,9 @@ import type {
 
 import { shouldBlock, type BlockCategory } from '@/lib/blocker';
 import { buildUpdateCall, type InjectConfig } from '@/lib/inject';
-import { siteKey } from '@/lib/url';
+import { log } from '@/lib/logger';
+import { getHost, siteKey } from '@/lib/url';
+import { useHistoryActions } from '@/state/history';
 import type { ShieldPrefs } from '@/state/settings';
 import { EMPTY_COUNTS, type Counts } from '@/state/stats';
 import { useTabs, type Tab } from '@/state/tabs';
@@ -22,6 +26,8 @@ export type WebViewHandle = RNWebView<object>;
 
 const EXTERNAL_SCHEMES = /^(tel|mailto|sms|facetime|maps):/i;
 const INTERNAL_SCHEMES = /^(https?|about|data|blob|file):/i;
+/** Trang tải lâu hơn ngưỡng này thì ghi log hiệu năng. */
+const SLOW_LOAD_MS = 8000;
 
 interface Props {
   tab: Tab;
@@ -46,9 +52,11 @@ function BrowserTabImpl({
   insetBottom,
 }: Props) {
   const { patchTab, refs } = useTabs();
+  const { record: recordHistory } = useHistoryActions();
   const ref = useRef<WebViewHandle>(null);
   const lastPageCounts = useRef<Counts>({ ...EMPTY_COUNTS });
   const urlRef = useRef(tab.url);
+  const loadStartedAt = useRef(0);
 
   useEffect(() => {
     urlRef.current = tab.url;
@@ -61,7 +69,7 @@ function BrowserTabImpl({
     else refs.current.delete(tab.id);
   };
 
-  // Áp dụng ngay thay đổi tuỳ chọn khiên / chế độ tối cho trang đang mở
+  // Áp dụng ngay thay đổi tuỳ chọn Shield / chế độ tối cho trang đang mở
   useEffect(() => {
     ref.current?.injectJavaScript(buildUpdateCall(injectConfig));
   }, [injectConfig]);
@@ -92,6 +100,7 @@ function BrowserTabImpl({
       }
       const cat = shouldBlock(url, isTopFrame, prefs);
       if (cat) {
+        log.debug('block', `Chặn ${cat}: ${getHost(url)}`, url);
         countBlocked(cat);
         return false;
       }
@@ -117,6 +126,7 @@ function BrowserTabImpl({
     (e: { nativeEvent: WebViewNavigation }) => {
       // Mỗi lần trang chính bắt đầu tải là một trang mới → đếm lại từ đầu
       lastPageCounts.current = { ...EMPTY_COUNTS };
+      loadStartedAt.current = Date.now();
       patchTab(tab.id, {
         url: e.nativeEvent.url,
         loading: true,
@@ -137,19 +147,56 @@ function BrowserTabImpl({
         canGoForward: nav.canGoForward,
         loading: nav.loading,
       });
+      // Ghi lịch sử khi trang tải xong (kể cả đổi URL trong trang kiểu SPA)
+      if (!nav.loading && nav.url) recordHistory(nav.url, nav.title || '');
     },
-    [patchTab, tab.id],
+    [patchTab, recordHistory, tab.id],
   );
+
+  const onLoadEnd = useCallback(() => {
+    patchTab(tab.id, { loading: false, progress: 1 });
+    if (!loadStartedAt.current) return;
+    const ms = Date.now() - loadStartedAt.current;
+    loadStartedAt.current = 0;
+    const host = getHost(urlRef.current ?? '');
+    if (ms >= SLOW_LOAD_MS) log.perf('web', `Trang ${host} tải chậm: ${(ms / 1000).toFixed(1)} s`, urlRef.current);
+    else log.debug('web', `Tải xong ${host} trong ${(ms / 1000).toFixed(1)} s`);
+  }, [patchTab, tab.id]);
+
+  const onError = useCallback((e: WebViewErrorEvent) => {
+    const { code, description, url } = e.nativeEvent;
+    // -999 = điều hướng bị huỷ (người dùng bấm link khác/bị chặn): không phải lỗi thật
+    if (code === -999) return;
+    log.error('web', `Không tải được trang: ${description}`, `${url}\nMã lỗi: ${code}`);
+  }, []);
+
+  const onHttpError = useCallback((e: WebViewHttpErrorEvent) => {
+    const { statusCode, url } = e.nativeEvent;
+    log.warn('net', `HTTP ${statusCode} từ ${getHost(url)}`, url);
+  }, []);
+
+  const onProcessTerminated = useCallback(() => {
+    log.crash(
+      'web',
+      'iOS đã tắt tiến trình WebKit của thẻ (thường do trang tốn quá nhiều RAM). Đã tự tải lại.',
+      urlRef.current,
+    );
+    ref.current?.reload();
+  }, []);
 
   const onMessage = useCallback(
     (e: WebViewMessageEvent) => {
-      let msg: { type?: string; counts?: Counts };
+      let msg: { type?: string; counts?: Counts; msg?: string; detail?: string; url?: string };
       try {
         msg = JSON.parse(e.nativeEvent.data);
       } catch {
         return;
       }
-      if (msg.type !== 'khien:counts' || !msg.counts) return;
+      if (msg.type === 'ryx:log') {
+        log.error('inject', msg.msg ?? 'Lỗi trong script của trang', `${msg.url ?? ''}\n${msg.detail ?? ''}`.trim());
+        return;
+      }
+      if (msg.type !== 'ryx:counts' || !msg.counts) return;
       const prev = lastPageCounts.current;
       const next = msg.counts;
       const delta = {
@@ -178,9 +225,11 @@ function BrowserTabImpl({
       onLoadStart={onLoadStart}
       onNavigationStateChange={onNavChange}
       onLoadProgress={(e: { nativeEvent: { progress: number } }) => patchTab(tab.id, { progress: e.nativeEvent.progress })}
-      onLoadEnd={() => patchTab(tab.id, { loading: false, progress: 1 })}
+      onLoadEnd={onLoadEnd}
+      onError={onError}
+      onHttpError={onHttpError}
       onMessage={onMessage}
-      onContentProcessDidTerminate={() => ref.current?.reload()}
+      onContentProcessDidTerminate={onProcessTerminated}
       allowsBackForwardNavigationGestures
       allowsInlineMediaPlayback
       pullToRefreshEnabled

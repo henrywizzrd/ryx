@@ -243,7 +243,7 @@ export default function CustomizeScreen() {
           </View>
         </Section>
 
-        <Section title="Bảo vệ mặc định" hint="Có thể thay đổi riêng cho từng trang trong bảng Khiên.">
+        <Section title="Bảo vệ mặc định" hint="Có thể thay đổi riêng cho từng trang trong bảng Shield.">
           <View style={[styles.card, { paddingHorizontal: 14 }]}>
             <ToggleRow icon="dice-outline" iconColor={colors.gambling} title="Chặn quảng cáo cờ bạc" value={settings.shield.gambling} onChange={(v) => setShield('gambling', v)} />
             <ToggleRow icon="megaphone-outline" title="Chặn quảng cáo thường" value={settings.shield.ads} onChange={(v) => setShield('ads', v)} />

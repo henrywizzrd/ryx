@@ -57,7 +57,7 @@ export default function TabsScreen() {
         <View style={styles.preview}>
           <Ionicons name={showPage ? 'globe-outline' : 'add'} size={34} color={colors.textFaint} />
           <Txt size={12} color={colors.textMuted} numberOfLines={1} style={{ marginTop: 6, paddingHorizontal: 8 }}>
-            {host || 'Trang chủ Khiên'}
+            {host || 'Trang chủ Ryx'}
           </Txt>
           {blocked > 0 && (
             <View style={[styles.blocked, { backgroundColor: accentSoft }]}>
