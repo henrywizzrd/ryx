@@ -100,6 +100,38 @@ function report(){
   send('frame_video', o);
 }
 setTimeout(report, 2500);
+/* Trang chính: khi bấm vào vùng trình phát, 10 s sau báo lại trình phát đã tải những gì */
+if (TOP) {
+  var tapAt = 0;
+  var PSEL = 'video,[class*="player"],[id*="player"],[class*="fp-"],[class*="jw-"],[class*="vjs"],[class*="plyr"]';
+  document.addEventListener('touchend', function(e){
+    var t = e.target; var p = t && t.closest ? t.closest(PSEL) : null;
+    if (!p || tapAt) return;
+    tapAt = performance.now();
+    setTimeout(function(){
+      var since = tapAt; tapAt = 0;
+      var res = [];
+      try {
+        performance.getEntriesByType('resource').forEach(function(r){
+          if (r.startTime < since) return;
+          var u = r.name.split('://').pop() || '';
+          res.push(r.initiatorType + ' ' + Math.round(r.duration) + 'ms ' + (r.transferSize || 0) + 'B ' + u.slice(0, 110));
+        });
+      } catch (e2) {}
+      var nodes = [];
+      try {
+        var ps = document.querySelectorAll(PSEL);
+        for (var i = 0; i < ps.length && nodes.length < 8; i++) {
+          var n = ps[i]; if ((n.offsetWidth || 0) < 200) continue;
+          var d = n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (typeof n.className === 'string' && n.className ? '.' + n.className.split(' ').filter(Boolean).slice(0, 3).join('.') : '');
+          if (n.tagName === 'VIDEO') d += ' src=' + String(n.currentSrc || n.src || '-').slice(0, 80) + ' rs=' + n.readyState;
+          nodes.push(d.slice(0, 160));
+        }
+      } catch (e3) {}
+      send('tap_report', { tapped: p.tagName.toLowerCase() + (p.id ? '#' + p.id : ''), requests: res.length, list: res.slice(0, 30).join(' | '), player: nodes.join(' | ') });
+    }, 10000);
+  }, true);
+}
 })();
 true;`;
 
@@ -118,7 +150,7 @@ export function describeDiag(m: DiagMsg): { level: 'info' | 'warn' | 'error'; te
   const where = m.top ? 'trang chính' : `khung ${m.host || '?'}`;
   const detail = Object.keys(m)
     .filter((k) => !SKIP.has(k) && m[k] !== '' && m[k] !== undefined)
-    .map((k) => `${k}: ${String(m[k])}`)
+    .map((k) => `${k}: ${String(m[k]).split(' | ').join('\n  ')}`)
     .join('\n');
   switch (m.ev) {
     case 'frame_video':
@@ -137,6 +169,8 @@ export function describeDiag(m: DiagMsg): { level: 'info' | 'warn' | 'error'; te
       return { level: 'warn', text: `Yêu cầu mạng lỗi ${String(m.status)} ở ${where}`, detail };
     case 'video_src':
       return { level: 'info', text: `Trình phát ở ${where} nhận nguồn video: ${String(m.kind)}`, detail };
+    case 'tap_report':
+      return { level: 'info', text: `Sau khi bấm trình phát 10 s: trang tải ${String(m.requests)} tài nguyên`, detail };
     case 'js_error':
       return { level: 'warn', text: `Lỗi script trong ${where}`, detail };
     default:

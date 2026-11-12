@@ -31,6 +31,8 @@ export type WebViewHandle = RNWebView<object>;
 const EXTERNAL_SCHEMES = /^(tel|mailto|sms|facetime|maps):/i;
 const INTERNAL_SCHEMES = /^(https?|about|data|blob|file):/i;
 const ALL_ORIGINS = ['*'];
+/** Chuyển trang "tự động" xảy ra trong khoảng này sau cú bấm được coi là quảng cáo mở kèm (đo được ~50 ms). */
+const POPUNDER_WINDOW_MS = 250;
 /** Trang tải lâu hơn ngưỡng này thì ghi log hiệu năng. */
 const SLOW_LOAD_MS = 8000;
 
@@ -68,6 +70,8 @@ function BrowserTabImpl({
   const sourceRef = useRef(tab.sourceUrl);
   /** Trang đã hiện xong: từ lúc này trang tự chuyển sang site khác mà không phải bấm link là đáng ngờ. */
   const pageReady = useRef(false);
+  /** Lần bấm link gần nhất (quảng cáo popunder hay chuyển tab sang trang khác cùng lúc với cú bấm). */
+  const lastClick = useRef({ at: 0, url: '' });
   const loadFailed = useRef(false);
   const lastProgress = useRef(0);
   const shotRef = useRef<HostInstance>(null);
@@ -160,6 +164,24 @@ function BrowserTabImpl({
           return false;
         }
         return true;
+      }
+      // Quảng cáo popunder: cùng lúc cậu bấm link, script mở thêm một trang khác site để cướp tab
+      if (isTopFrame && req.navigationType === 'click') lastClick.current = { at: Date.now(), url };
+      if (
+        isTopFrame &&
+        prefs.popups &&
+        req.navigationType === 'other' &&
+        url !== sourceRef.current &&
+        Date.now() - lastClick.current.at < POPUNDER_WINDOW_MS
+      ) {
+        const to = registrableDomain(getHost(url));
+        const clicked = registrableDomain(getHost(lastClick.current.url));
+        const here = registrableDomain(getHost(urlRef.current));
+        if (to && to !== clicked && to !== here) {
+          log.info('block', `Chặn quảng cáo mở kèm khi bấm: ${getHost(url)}`, `${url}\nĐã bấm: ${lastClick.current.url}`);
+          countBlocked('popups');
+          return false;
+        }
       }
       // Quảng cáo cướp tab: trang đã hiện xong rồi tự chuyển (không phải bấm link) sang một site khác
       if (
