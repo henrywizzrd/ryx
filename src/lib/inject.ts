@@ -116,7 +116,9 @@ window.__khien = {
   update: function(c){ CFG = c; P = prefs(); applyAll(); post(); },
   report: post
 };
-} catch (err) {}
+} catch (err) {
+  try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'khien:log', level: 'error', msg: 'Script chặn quảng cáo lỗi: ' + (err && err.message || err), detail: String(err && err.stack || ''), url: location.href })); } catch (e) {}
+}
 })(); true;`;
 }
 

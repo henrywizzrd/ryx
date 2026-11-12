@@ -118,6 +118,8 @@ export default function BrowserScreen() {
         return newTab();
       case 'closeTab':
         return closeTab(active.id);
+      case 'logs':
+        return setTimeout(() => router.push('/logs'), SHEET_HANDOFF_MS);
     }
   };
 

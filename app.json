@@ -3,14 +3,14 @@
     "name": "RYX",
     "slug": "zyx",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "khienbrowser",
     "userInterfaceStyle": "dark",
     "ios": {
       "icon": "./assets/expo.icon",
       "supportsTablet": false,
-      "bundleIdentifier": "com.henrywizzrd.khien"     
+      "bundleIdentifier": "com.henrywizzrd.khien"
     },
     "android": {
       "adaptiveIcon": {
@@ -34,6 +34,10 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      [
+        "expo-audio",
+        { "enableBackgroundPlayback": true }
       ]
     ],
     "experiments": {

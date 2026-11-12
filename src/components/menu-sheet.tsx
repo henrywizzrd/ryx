@@ -7,7 +7,7 @@ import { Sheet } from './sheet';
 import { ToggleRow } from './toggle-row';
 import { Txt } from './txt';
 
-export type MenuAction = 'reload' | 'share' | 'home' | 'safari' | 'shield' | 'customize' | 'newTab' | 'closeTab';
+export type MenuAction = 'reload' | 'share' | 'home' | 'safari' | 'shield' | 'customize' | 'newTab' | 'closeTab' | 'logs';
 
 interface Props {
   visible: boolean;
@@ -27,6 +27,7 @@ const ACTIONS: { id: MenuAction; icon: IconName; label: string; needsPage?: bool
   { id: 'customize', icon: 'color-palette-outline', label: 'Tuỳ chỉnh' },
   { id: 'newTab', icon: 'add-circle-outline', label: 'Thẻ mới' },
   { id: 'closeTab', icon: 'close-circle-outline', label: 'Đóng thẻ' },
+  { id: 'logs', icon: 'bug-outline', label: 'Nhật ký' },
 ];
 
 export function MenuSheet({ visible, onClose, hasPage, dark, onToggleDark, onAction }: Props) {
