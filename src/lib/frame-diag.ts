@@ -156,7 +156,10 @@ if (TOP) {
     if (!p || tapAt) return;
     /* Thử nghiệm: tự gọi play() ngay trong cú chạm thật của cậu (để biết video có phát được không nếu đúng "thao tác người dùng") */
     try {
-      var vs2 = p.tagName === 'VIDEO' ? [p] : p.querySelectorAll('video');
+      /* Chỗ chạm thường là lớp nút phủ lên video: đi ngược lên tới khối có chứa thẻ video */
+      var box = p;
+      while (box && box !== document.body && !(box.tagName === 'VIDEO' || box.querySelector('video'))) box = box.parentElement;
+      var vs2 = !box ? [] : box.tagName === 'VIDEO' ? [box] : box.querySelectorAll('video');
       for (var k = 0; k < vs2.length; k++) {
         var vv = vs2[k];
         if ((vv.offsetWidth || 0) < 200 || vv.readyState > 0 || vv.__ryxKick || !(vv.currentSrc || vv.src)) continue;
