@@ -16,6 +16,7 @@ import { PageError } from '@/components/page-error';
 import { log } from '@/lib/logger';
 import { getHost, siteKey } from '@/lib/url';
 import { useHistoryActions } from '@/state/history';
+import { setSiteTheme } from '@/state/site-themes';
 import type { ShieldPrefs } from '@/state/settings';
 import { EMPTY_COUNTS, type Counts } from '@/state/stats';
 import { useTabs, type Tab } from '@/state/tabs';
@@ -61,6 +62,7 @@ function BrowserTabImpl({
   /** Link trang chính đang được mở (để log và trang lỗi hiện đúng địa chỉ bị lỗi). */
   const lastTarget = useRef<string | null>(tab.sourceUrl ?? null);
   const loadFailed = useRef(false);
+  const lastProgress = useRef(0);
 
   useEffect(() => {
     urlRef.current = tab.url;
@@ -136,6 +138,7 @@ function BrowserTabImpl({
       lastPageCounts.current = { ...EMPTY_COUNTS };
       loadStartedAt.current = Date.now();
       loadFailed.current = false;
+      lastProgress.current = 0.05;
       patchTab(tab.id, {
         url: e.nativeEvent.url,
         loading: true,
@@ -160,6 +163,18 @@ function BrowserTabImpl({
       if (!nav.loading && nav.url) recordHistory(nav.url, nav.title || '');
     },
     [patchTab, recordHistory, tab.id],
+  );
+
+  // Chỉ cập nhật thanh tiến trình khi tăng ≥ 10% (mỗi lần cập nhật làm cả giao diện tính toán lại)
+  const onLoadProgress = useCallback(
+    (e: { nativeEvent: { progress: number } }) => {
+      const p = e.nativeEvent.progress;
+      if (lastProgress.current >= 1) return;
+      if (p - lastProgress.current < 0.1 && p < 1) return;
+      lastProgress.current = p;
+      patchTab(tab.id, { progress: p });
+    },
+    [patchTab, tab.id],
   );
 
   const onLoadEnd = useCallback(() => {
@@ -217,10 +232,20 @@ function BrowserTabImpl({
 
   const onMessage = useCallback(
     (e: WebViewMessageEvent) => {
-      let msg: { type?: string; counts?: Counts; msg?: string; detail?: string; url?: string };
+      let msg: { type?: string; counts?: Counts; msg?: string; detail?: string; url?: string; host?: string; dark?: boolean };
       try {
         msg = JSON.parse(e.nativeEvent.data);
       } catch {
+        return;
+      }
+      if (msg.type === 'ryx:ready') {
+        // Nội dung trang đã hiện & dùng được: cho thanh tiến trình xong luôn, không đợi quảng cáo/ảnh tải hết
+        lastProgress.current = 1;
+        patchTab(tab.id, { loading: false, progress: 1 });
+        return;
+      }
+      if (msg.type === 'ryx:theme') {
+        if (msg.host) setSiteTheme(msg.host, !!msg.dark);
         return;
       }
       if (msg.type === 'ryx:log') {
@@ -255,7 +280,7 @@ function BrowserTabImpl({
       onOpenWindow={onOpenWindow}
       onLoadStart={onLoadStart}
       onNavigationStateChange={onNavChange}
-      onLoadProgress={(e: { nativeEvent: { progress: number } }) => patchTab(tab.id, { progress: e.nativeEvent.progress })}
+      onLoadProgress={onLoadProgress}
       onLoadEnd={onLoadEnd}
       onError={onError}
       renderError={renderError}

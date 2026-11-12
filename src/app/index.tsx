@@ -10,6 +10,7 @@ import { MenuSheet, type MenuAction } from '@/components/menu-sheet';
 import { NewTabPage } from '@/components/new-tab-page';
 import { ShieldSheet } from '@/components/shield-sheet';
 import { buildInjectedScript, type InjectConfig } from '@/lib/inject';
+import { useSiteThemes } from '@/state/site-themes';
 import { resolveInput, siteKey } from '@/lib/url';
 import { useKeyboardHeight } from '@/lib/use-keyboard-height';
 import { useSettings, type DockButtonId, type ShieldPrefs } from '@/state/settings';
@@ -43,7 +44,8 @@ export default function BrowserScreen() {
     () => ({ defaults: settings.shield, sites: settings.siteOverrides }),
     [settings.shield, settings.siteOverrides],
   );
-  const script = useMemo(() => buildInjectedScript(injectConfig), [injectConfig]);
+  const siteThemes = useSiteThemes();
+  const script = useMemo(() => buildInjectedScript(injectConfig, siteThemes), [injectConfig, siteThemes]);
 
   // ---- Bố cục ----
   const dock = dockMetrics(settings.dockStyle, insets.bottom);

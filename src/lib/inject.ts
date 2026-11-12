@@ -1,5 +1,6 @@
 import { AD_SELECTORS, GAMBLING_SELECTORS, POPUP_SELECTORS } from '@/filters';
 import type { ShieldPrefs } from '@/state/settings';
+import type { SiteThemes } from '@/state/site-themes';
 
 export interface InjectConfig {
   defaults: ShieldPrefs;
@@ -13,9 +14,10 @@ export interface InjectConfig {
  * - Chế độ tối kiểu Dark Reader (đảo màu + giữ nguyên ảnh/video), bỏ qua trang vốn đã tối.
  * - window.__ryx.update(cfg) để áp dụng thay đổi ngay mà không cần tải lại.
  */
-export function buildInjectedScript(cfg: InjectConfig): string {
+export function buildInjectedScript(cfg: InjectConfig, themes: SiteThemes = {}): string {
   const data = JSON.stringify({
     cfg,
+    themes,
     sel: { ads: AD_SELECTORS, gambling: GAMBLING_SELECTORS, popups: POPUP_SELECTORS },
   });
   return `(function(){
@@ -85,7 +87,10 @@ window.open = function(){
 /* Chế độ tối */
 var DARK_CSS = 'html{background:#fff!important;filter:invert(0.9) hue-rotate(180deg)!important;}' +
   'img,video,picture,canvas,iframe,embed,object,svg image,[style*="background-image"]{filter:invert(1) hue-rotate(180deg)!important;}';
-var pageIsDark = null;
+var HOST = (location.hostname || '').replace(/^www\\./, '');
+var known = D.themes ? D.themes[HOST] : undefined;
+/* Đã biết trang này sáng/tối từ lần trước → áp dụng đúng ngay, không chớp */
+var pageIsDark = known === 1 ? true : (known === 0 ? false : null);
 function luminance(c){
   var m = /rgba?\\(([^)]+)\\)/.exec(c || ''); if (!m) return null;
   var p = m[1].split(',').map(parseFloat);
@@ -99,7 +104,10 @@ function detectDark(){
   if (l === null) l = luminance(getComputedStyle(root).backgroundColor);
   if (s) s.textContent = prev;
   var meta = document.querySelector('meta[name="color-scheme"]');
-  pageIsDark = (l !== null && l < 0.35) || (!!meta && /^\\s*dark\\s*$/.test(meta.content));
+  var metaDark = !!meta && /^\\s*dark\\s*$/.test(meta.content);
+  if (l === null && !metaDark) return false; /* chưa đo được, giữ nguyên */
+  pageIsDark = metaDark || l < 0.35;
+  return true;
 }
 function applyDark(){
   styleEl('ryx-dark').textContent = (P.dark && pageIsDark !== true) ? DARK_CSS : '';
@@ -108,8 +116,22 @@ function applyDark(){
 function applyAll(){ applyHide(); applyDark(); scan(); }
 
 applyHide(); applyDark();
-new MutationObserver(scheduleScan).observe(root, { childList: true, subtree: true });
-document.addEventListener('DOMContentLoaded', function(){ detectDark(); applyAll(); post(); });
+/* Đo màu nền sớm, ngay khi phần thân trang xuất hiện (không đợi DOMContentLoaded) */
+var earlyDone = false;
+function earlyDetect(){
+  if (earlyDone || !document.body) return;
+  earlyDone = true;
+  if (detectDark()) applyDark();
+}
+new MutationObserver(function(){ earlyDetect(); scheduleScan(); }).observe(root, { childList: true, subtree: true });
+function send(m){ try { window.ReactNativeWebView.postMessage(JSON.stringify(m)); } catch (e) {} }
+document.addEventListener('DOMContentLoaded', function(){
+  earlyDone = true;
+  detectDark(); applyAll(); post();
+  /* Nội dung đã dùng được: báo app cho thanh tiến trình xong luôn */
+  send({ type: 'ryx:ready', url: location.href });
+  if (pageIsDark !== null) send({ type: 'ryx:theme', host: HOST, dark: pageIsDark });
+});
 window.addEventListener('load', scan);
 
 window.__ryx = {
