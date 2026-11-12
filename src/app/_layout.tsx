@@ -19,7 +19,10 @@ import { initUpdates } from '@/lib/app-updates';
 import { initRyxNet } from '@/lib/ryx-net';
 import { initLogging, log } from '@/lib/logger';
 import { initPerfMonitor } from '@/lib/perf-monitor';
+import { BookmarksProvider } from '@/state/bookmarks';
+import { DownloadsProvider } from '@/state/downloads';
 import { HistoryProvider } from '@/state/history';
+import { ReadingProvider } from '@/state/reading';
 import { SettingsProvider, useSettings } from '@/state/settings';
 import { StatsProvider } from '@/state/stats';
 import { TabsProvider } from '@/state/tabs';
@@ -35,7 +38,13 @@ SplashScreen.preventAutoHideAsync();
 
 const navTheme = {
   ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: colors.bg, card: colors.surface, text: colors.text, border: colors.border },
+  colors: {
+    ...DarkTheme.colors,
+    background: colors.bg,
+    card: colors.surface,
+    text: colors.text,
+    border: colors.border,
+  },
 };
 
 function RootStack() {
@@ -51,6 +60,7 @@ function RootStack() {
         <Stack.Screen name="logs" options={{ presentation: 'modal' }} />
         <Stack.Screen name="history" options={{ presentation: 'modal' }} />
         <Stack.Screen name="dns" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="downloads" options={{ presentation: 'modal' }} />
       </Stack>
       <UpdateBanner />
     </ThemeProvider>
@@ -77,7 +87,14 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
       <Pressable
         onPress={retry}
         accessibilityRole="button"
-        style={{ marginTop: 24, minHeight: 48, paddingHorizontal: 28, borderRadius: 24, backgroundColor: colors.surfaceRaised, justifyContent: 'center' }}
+        style={{
+          marginTop: 24,
+          minHeight: 48,
+          paddingHorizontal: 28,
+          borderRadius: 24,
+          backgroundColor: colors.surfaceRaised,
+          justifyContent: 'center',
+        }}
       >
         <Txt weight="semibold" size={16}>
           Thử lại
@@ -104,17 +121,23 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-    <SafeAreaProvider>
-      <SettingsProvider>
-        <StatsProvider>
-          <TabsProvider>
-            <HistoryProvider>
-              <RootStack />
-            </HistoryProvider>
-          </TabsProvider>
-        </StatsProvider>
-      </SettingsProvider>
-    </SafeAreaProvider>
+      <SafeAreaProvider>
+        <SettingsProvider>
+          <StatsProvider>
+            <TabsProvider>
+              <HistoryProvider>
+                <BookmarksProvider>
+                  <ReadingProvider>
+                    <DownloadsProvider>
+                      <RootStack />
+                    </DownloadsProvider>
+                  </ReadingProvider>
+                </BookmarksProvider>
+              </HistoryProvider>
+            </TabsProvider>
+          </StatsProvider>
+        </SettingsProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

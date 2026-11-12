@@ -15,6 +15,8 @@ export interface InjectConfig {
   sites: Record<string, Partial<ShieldPrefs>>;
   /** Phần tử tự ẩn theo trang (bộ chọn CSS) */
   hides: Record<string, string[]>;
+  /** Phát nền: trang luôn tưởng mình đang hiển thị nên không tự dừng video khi chuyển app */
+  bgPlay: boolean;
 }
 
 /**
@@ -202,6 +204,7 @@ document.addEventListener('DOMContentLoaded', function(){
   detectDark(); applyAll(); post();
   /* Nội dung đã dùng được: báo app cho thanh tiến trình xong luôn */
   send({ type: 'ryx:ready', url: location.href });
+  try { reportChapter(); } catch (e) {}
   if (pageIsDark !== null) send({ type: 'ryx:theme', host: HOST, dark: pageIsDark });
 });
 window.addEventListener('load', scan);
@@ -244,6 +247,108 @@ document.addEventListener('touchend', lpCancel, { passive: true, capture: true }
 document.addEventListener('touchcancel', lpCancel, { passive: true, capture: true });
 /* Sau khi nhấn giữ thì bỏ cú "bấm" đi kèm, để trang không mở link/quảng cáo */
 document.addEventListener('click', function(e){ if (Date.now() - lpFired < 800) { e.preventDefault(); e.stopPropagation(); } }, true);
+
+/* Đọc truyện: nhận ra trang chương, tìm link chương trước/sau, tải trước chương sau */
+var CHAP_RE = /(?:chap|chuong|chapter)[-_\\/]?(\\d+(?:[.-]\\d+)?)/i;
+function chapterInfo(){
+  var path = location.pathname || '';
+  var m = CHAP_RE.exec(path);
+  if (!m) return null;
+  var next = null, prev = null;
+  var rn = document.querySelector('a[rel~="next"],link[rel~="next"]');
+  var rp = document.querySelector('a[rel~="prev"],link[rel~="prev"]');
+  if (rn && rn.href) next = rn.href;
+  if (rp && rp.href) prev = rp.href;
+  var links = document.querySelectorAll('a[href]');
+  for (var i = 0; i < links.length && (!next || !prev); i++) {
+    var a = links[i];
+    var href = a.href || '';
+    if (!href || href.indexOf('#') === href.length - 1 || href === location.href) continue;
+    if (!CHAP_RE.test(href)) continue;
+    var t = ((a.textContent || '') + ' ' + (a.title || '') + ' ' + (a.getAttribute('aria-label') || '') + ' ' + (typeof a.className === 'string' ? a.className : '')).toLowerCase();
+    if (!next && /(sau|tiếp|kế|next)/.test(t)) next = href;
+    else if (!prev && /(trước|truoc|prev|back)/.test(t)) prev = href;
+  }
+  var raw = (document.querySelector('h1') || {}).textContent || document.title || '';
+  var title = raw.split(/ [-|–] /)[0].replace(CHAP_RE, '').replace(/(chương|chap|chapter)\\s*[\\d.]+/i, '').replace(/[\\s:-]+$/, '').trim();
+  var series = location.hostname.replace(/^www\\./, '') + path.replace(/[-_\\/]?(?:chap|chuong|chapter)[-_\\/]?\\d+.*$/i, '');
+  return { series: series, title: title || location.hostname, chapter: 'Chương ' + m[1].replace('-', '.'), url: location.href, next: next, prev: prev };
+}
+var prefetched = {};
+function prefetchChapter(url){
+  if (!url || prefetched[url]) return;
+  prefetched[url] = 1;
+  try {
+    fetch(url, { credentials: 'include' }).then(function(r){ return r.text(); }).then(function(html){
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      var imgs = doc.querySelectorAll('img'), n = 0;
+      for (var i = 0; i < imgs.length && n < 10; i++) {
+        var src = imgs[i].getAttribute('data-src') || imgs[i].getAttribute('data-original') || imgs[i].getAttribute('src');
+        if (!src || src.indexOf('data:') === 0) continue;
+        try { var im = new Image(); im.src = new URL(src, url).href; n++; } catch (e) {}
+      }
+    }).catch(function(){});
+  } catch (e) {}
+}
+function reportChapter(){
+  var c = chapterInfo();
+  if (!c || (!c.next && !c.prev)) return;
+  send({ type: 'ryx:chapter', series: c.series, title: c.title, chapter: c.chapter, url: c.url, next: c.next, prev: c.prev });
+  /* Đợi trang hiện xong ảnh của chương này rồi mới tải trước chương sau */
+  if (c.next) setTimeout(function(){ prefetchChapter(c.next); }, 4000);
+}
+
+/* Phát nền: nhiều trang tự dừng video khi thấy trang bị ẩn (chuyển app, tắt màn hình) */
+if (CFG.bgPlay) {
+  try {
+    Object.defineProperty(document, 'hidden', { get: function(){ return false; }, configurable: true });
+    Object.defineProperty(document, 'webkitHidden', { get: function(){ return false; }, configurable: true });
+    Object.defineProperty(document, 'visibilityState', { get: function(){ return 'visible'; }, configurable: true });
+    document.addEventListener('visibilitychange', function(e){ e.stopImmediatePropagation(); }, true);
+    document.addEventListener('webkitvisibilitychange', function(e){ e.stopImmediatePropagation(); }, true);
+  } catch (e) {}
+}
+
+/* Nút PiP nổi trên video lớn đang phát (bấm thật nên iOS cho bật Picture-in-Picture) */
+var pipBtn = null, pipVideo = null, pipTimer = null;
+function pipSupported(v){ return !!(v && (v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode('picture-in-picture'))); }
+function placePip(){
+  if (!pipBtn || !pipVideo) return;
+  var r = pipVideo.getBoundingClientRect();
+  if (r.width < 200 || r.bottom < 0 || r.top > window.innerHeight) { pipBtn.style.display = 'none'; return; }
+  pipBtn.style.display = 'flex';
+  pipBtn.style.top = (r.top + window.scrollY + 10) + 'px';
+  pipBtn.style.left = (r.right + window.scrollX - 50) + 'px';
+}
+function showPip(v){
+  if (!pipSupported(v) || (v.offsetWidth || 0) < 200) return;
+  pipVideo = v;
+  if (!pipBtn) {
+    pipBtn = document.createElement('div');
+    pipBtn.setAttribute('role', 'button');
+    pipBtn.setAttribute('aria-label', 'Hình trong hình');
+    pipBtn.style.cssText = 'position:absolute;z-index:2147483647;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;-webkit-backdrop-filter:blur(8px);';
+    pipBtn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><rect x="12" y="11" width="8" height="6" rx="1.5" fill="#fff"/></svg>';
+    pipBtn.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation();
+      var v2 = pipVideo; if (!v2) return;
+      try {
+        var mode = v2.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
+        v2.webkitSetPresentationMode(mode);
+      } catch (err) { send({ type: 'ryx:log', msg: 'Không bật được PiP', detail: String(err), url: location.href }); }
+    }, true);
+    (document.body || root).appendChild(pipBtn);
+    window.addEventListener('scroll', placePip, { passive: true });
+    window.addEventListener('resize', placePip);
+  }
+  placePip();
+  clearTimeout(pipTimer);
+  pipTimer = setInterval(placePip, 1000);
+}
+function hidePip(){ if (pipBtn) pipBtn.style.display = 'none'; clearInterval(pipTimer); }
+document.addEventListener('playing', function(e){ if (e.target && e.target.tagName === 'VIDEO') showPip(e.target); }, true);
+document.addEventListener('pause', function(e){ if (e.target === pipVideo && e.target.webkitPresentationMode !== 'picture-in-picture') hidePip(); }, true);
+document.addEventListener('ended', function(e){ if (e.target === pipVideo) hidePip(); }, true);
 
 /* Ghi lại script/CSS nào đã tải xong hoặc lỗi, để biết trang đang chờ tệp nào khi bị treo */
 function trackRes(e){ var t = e.target; if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) t.__ryxDone = e.type; }

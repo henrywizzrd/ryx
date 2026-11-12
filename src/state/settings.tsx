@@ -34,6 +34,8 @@ export interface Settings {
   siteOverrides: Record<string, Partial<ShieldPrefs>>;
   /** Phần tử cậu tự chọn ẩn ("Chạm để ẩn quảng cáo"), theo từng trang */
   customHides: Record<string, string[]>;
+  /** Video/nhạc tiếp tục phát khi tắt màn hình hoặc chuyển app */
+  backgroundPlay: boolean;
   /** Ghi chi tiết trình phát video vào Nhật ký (chỉ bật khi cần dò lỗi) */
   diagVideo: boolean;
 }
@@ -50,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shield: { gambling: true, ads: true, popups: true, dark: true },
   siteOverrides: {},
   diagVideo: false,
+  backgroundPlay: true,
   customHides: {},
 };
 

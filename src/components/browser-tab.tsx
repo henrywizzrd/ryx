@@ -51,9 +51,24 @@ interface Props {
   onMediaLongPress: (m: MediaPress) => void;
   /** Đang ở chế độ "Chạm để ẩn quảng cáo" và trang báo phần tử vừa chọn. */
   onPick: (p: PickedElement) => void;
+  /** Trang chương truyện (có link chương trước/sau), null khi rời trang. */
+  onChapter: (tabId: string, c: ChapterInfo | null) => void;
+  /** Trang mở một file không xem được (zip, ipa, tệp đính kèm…) → tải về. */
+  onDownload: (url: string, referer: string | null) => void;
+  /** Trang tải quá lâu (gợi ý bật DNS riêng). */
+  onSlowLoad: (url: string) => void;
   /** Bật script chẩn đoán video (Tuỳ chỉnh → Nâng cao). */
   diag: boolean;
   insetBottom: number;
+}
+
+export interface ChapterInfo {
+  series: string;
+  title: string;
+  chapter: string;
+  url: string;
+  next: string | null;
+  prev: string | null;
 }
 
 export interface PickedElement {
@@ -83,6 +98,9 @@ function BrowserTabImpl({
   onPopupBlocked,
   onMediaLongPress,
   onPick,
+  onSlowLoad,
+  onChapter,
+  onDownload,
   diag,
   insetBottom,
 }: Props) {
@@ -127,8 +145,9 @@ function BrowserTabImpl({
       );
       // Hỏi trang xem đang chờ tệp nào (script đồng bộ bị treo sẽ làm trang đứng)
       ref.current?.injectJavaScript('window.__ryx && window.__ryx.pending && window.__ryx.pending(); true;');
+      if (visibleRef.current) onSlowLoad(url);
     }, ms);
-  }, [stopWatch]);
+  }, [stopWatch, onSlowLoad]);
   useEffect(() => stopWatch, [stopWatch]);
 
   useEffect(
@@ -286,6 +305,7 @@ function BrowserTabImpl({
       // Mỗi lần trang chính bắt đầu tải là một trang mới → đếm lại từ đầu
       lastPageCounts.current = { ...EMPTY_COUNTS };
       pageReady.current = false;
+      onChapter(tab.id, null);
       loadStartedAt.current = Date.now();
       loadFailed.current = false;
       lastProgress.current = 0.05;
@@ -301,7 +321,7 @@ function BrowserTabImpl({
         pageCounts: { ...EMPTY_COUNTS },
       });
     },
-    [patchTab, tab.id, startWatch],
+    [patchTab, tab.id, startWatch, onChapter],
   );
 
   const onNavChange = useCallback(
@@ -414,6 +434,11 @@ function BrowserTabImpl({
       } catch {
         return;
       }
+      if (msg.type === 'ryx:chapter') {
+        const c = msg as unknown as ChapterInfo;
+        if (c.series && c.url) onChapter(tab.id, { ...c, next: c.next ?? null, prev: c.prev ?? null });
+        return;
+      }
       if (msg.type === 'ryx:pending') {
         const p = msg as unknown as { state?: string; total?: number; list?: string[] };
         const list = p.list ?? [];
@@ -485,7 +510,7 @@ function BrowserTabImpl({
       if (delta.ads || delta.gambling || delta.popups) record(delta);
       patchTab(tab.id, { pageCounts: next });
     },
-    [patchTab, record, tab.id, stopWatch, onMediaLongPress, onPick],
+    [patchTab, record, tab.id, stopWatch, onMediaLongPress, onPick, onChapter],
   );
 
   if (!tab.sourceUrl) return null;
@@ -513,6 +538,7 @@ function BrowserTabImpl({
       injectedJavaScriptForMainFrameOnly={!diag}
       onShouldStartLoadWithRequest={onShouldStart}
       onOpenWindow={onOpenWindow}
+      onFileDownload={(e) => onDownload(e.nativeEvent.downloadUrl, urlRef.current ?? null)}
       onLoadStart={onLoadStart}
       onNavigationStateChange={onNavChange}
       onLoadProgress={onLoadProgress}

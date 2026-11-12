@@ -1,37 +1,57 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { ActionSheetIOS, Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import { faviconFor } from '@/lib/url';
+import { displayHost, faviconFor } from '@/lib/url';
+import { useBookmarks, type Bookmark } from '@/state/bookmarks';
+import { useReading } from '@/state/reading';
 import { useStats } from '@/state/stats';
 import { colors, fonts, useTheme } from '@/theme';
 import { Txt } from './txt';
 
-const SHORTCUTS = [
-  { name: 'Google', url: 'https://www.google.com' },
-  { name: 'YouTube', url: 'https://m.youtube.com' },
-  { name: 'VnExpress', url: 'https://vnexpress.net' },
-  { name: 'Tuổi Trẻ', url: 'https://tuoitre.vn' },
-  { name: 'Wikipedia', url: 'https://vi.wikipedia.org' },
-  { name: 'Facebook', url: 'https://m.facebook.com' },
-  { name: 'Shopee', url: 'https://shopee.vn' },
-  { name: 'Zing MP3', url: 'https://zingmp3.vn' },
-];
 
 interface Props {
   onSubmit: (text: string) => void;
   onOpen: (url: string) => void;
+  onOpenNewTab: (url: string) => void;
   paddingTop: number;
   paddingBottom: number;
 }
 
 const nf = new Intl.NumberFormat('vi-VN');
 
-export function NewTabPage({ onSubmit, onOpen, paddingTop, paddingBottom }: Props) {
+export function NewTabPage({ onSubmit, onOpen, onOpenNewTab, paddingTop, paddingBottom }: Props) {
   const { accent, accentSoft } = useTheme();
   const { week } = useStats();
   const [query, setQuery] = useState('');
+  const { bookmarks, remove, moveToFront, rename } = useBookmarks();
+  const { reading, forget } = useReading();
+
+  // Nhấn giữ một ô truy cập nhanh
+  const bookmarkMenu = (b: Bookmark) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const actions: { label: string; run: () => void }[] = [
+      { label: 'Mở trong thẻ mới', run: () => onOpenNewTab(b.url) },
+      { label: 'Đưa lên đầu', run: () => moveToFront(b.id) },
+      {
+        label: 'Đổi tên',
+        run: () => Alert.prompt('Đổi tên', undefined, (t) => rename(b.id, t), 'plain-text', b.title),
+      },
+      { label: 'Xoá khỏi truy cập nhanh', run: () => remove(b.url) },
+    ];
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: b.title,
+        message: displayHost(b.url),
+        options: [...actions.map((a) => a.label), 'Huỷ'],
+        destructiveButtonIndex: actions.length - 1,
+        cancelButtonIndex: actions.length,
+      },
+      (i) => actions[i]?.run(),
+    );
+  };
 
   const breakdown = [
     { label: 'Quảng cáo', value: week.ads, color: accent },
@@ -107,27 +127,72 @@ export function NewTabPage({ onSubmit, onOpen, paddingTop, paddingBottom }: Prop
         </View>
       </View>
 
+      {reading.length > 0 && (
+        <>
+          <Txt weight="semibold" size={15} color={colors.textMuted} style={styles.sectionTitle}>
+            Đọc tiếp
+          </Txt>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.readRow} style={styles.readScroll}>
+            {reading.slice(0, 12).map((r) => (
+              <Pressable
+                key={r.series}
+                onPress={() => onOpen(r.url)}
+                onLongPress={() =>
+                  ActionSheetIOS.showActionSheetWithOptions(
+                    { title: r.title, options: ['Bỏ khỏi Đọc tiếp', 'Huỷ'], destructiveButtonIndex: 0, cancelButtonIndex: 1 },
+                    (i) => i === 0 && forget(r.series),
+                  )
+                }
+                accessibilityRole="link"
+                accessibilityLabel={`Đọc tiếp ${r.title}, ${r.chapter}`}
+                style={({ pressed }) => [styles.readCard, pressed && { opacity: 0.7 }]}
+              >
+                <View style={styles.readHead}>
+                  <Image source={faviconFor(r.url)} style={styles.readIcon} contentFit="contain" />
+                  <Txt size={11} color={colors.textMuted} numberOfLines={1} style={{ flex: 1 }}>
+                    {displayHost(r.url)}
+                  </Txt>
+                </View>
+                <Txt weight="semibold" size={14} numberOfLines={2}>
+                  {r.title}
+                </Txt>
+                <Txt weight="medium" size={13} color={accent} numberOfLines={1}>
+                  {r.chapter}
+                </Txt>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </>
+      )}
+
       <Txt weight="semibold" size={15} color={colors.textMuted} style={styles.sectionTitle}>
         Truy cập nhanh
       </Txt>
       <View style={styles.grid}>
-        {SHORTCUTS.map((s) => (
+        {bookmarks.map((b) => (
           <Pressable
-            key={s.url}
-            onPress={() => onOpen(s.url)}
+            key={b.id}
+            onPress={() => onOpen(b.url)}
+            onLongPress={() => bookmarkMenu(b)}
             accessibilityRole="link"
-            accessibilityLabel={s.name}
+            accessibilityLabel={b.title}
+            accessibilityHint="Nhấn giữ để sửa hoặc xoá"
             style={({ pressed }) => [styles.tile, pressed && { opacity: 0.6, transform: [{ scale: 0.96 }] }]}
           >
             <View style={styles.tileIcon}>
-              <Image source={faviconFor(s.url)} style={styles.favicon} contentFit="contain" transition={150} />
+              <Image source={faviconFor(b.url)} style={styles.favicon} contentFit="contain" transition={150} />
             </View>
-            <Txt size={12} numberOfLines={1} color={colors.text} style={{ marginTop: 6 }}>
-              {s.name}
+            <Txt size={12} numberOfLines={1} color={colors.text} style={{ marginTop: 6, maxWidth: '90%' }}>
+              {b.title}
             </Txt>
           </Pressable>
         ))}
       </View>
+      {bookmarks.length === 0 && (
+        <Txt size={13} color={colors.textMuted} style={{ marginLeft: 4 }}>
+          Mở một trang rồi chọn Menu → Thêm dấu trang để ghim vào đây.
+        </Txt>
+      )}
     </ScrollView>
   );
 }
@@ -182,4 +247,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   favicon: { width: 30, height: 30 },
+  readScroll: { marginHorizontal: -20, marginBottom: 24 },
+  readRow: { paddingHorizontal: 20, gap: 10 },
+  readCard: {
+    width: 170,
+    padding: 12,
+    gap: 4,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  readHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  readIcon: { width: 14, height: 14 },
 });

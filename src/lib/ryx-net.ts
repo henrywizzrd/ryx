@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { requireOptionalNativeModule, type EventSubscription } from 'expo';
 
 import { log } from './logger';
@@ -74,6 +75,21 @@ export function initRyxNet() {
   } catch (e) {
     log.error('dns', 'Không kết nối được với module DNS riêng', e);
   }
+  void enableByDefaultOnce();
+}
+
+const DEFAULT_KEY = 'ryx:dns-default-on:v1';
+/** Bản cũ mặc định tắt DNS riêng: bật sẵn (Google) đúng một lần cho máy chưa từng bật. */
+async function enableByDefaultOnce() {
+  try {
+    if (await AsyncStorage.getItem(DEFAULT_KEY)) return;
+    await AsyncStorage.setItem(DEFAULT_KEY, '1');
+    const st = getRyxNetStatus();
+    if (st.supported && !st.enabled) {
+      setRyxNetEnabled(true, 'google');
+      log.info('dns', 'Bật sẵn DNS riêng (Google) để tránh trang bị nhà mạng chặn');
+    }
+  } catch {}
 }
 
 export function getRyxNetStatus(): RyxNetStatus {

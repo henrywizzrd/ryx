@@ -7,13 +7,28 @@ import { Sheet } from './sheet';
 import { ToggleRow } from './toggle-row';
 import { Txt } from './txt';
 
-export type MenuAction = 'reload' | 'share' | 'home' | 'safari' | 'shield' | 'pick' | 'customize' | 'newTab' | 'closeTab' | 'logs' | 'history' | 'dns';
+export type MenuAction =
+  | 'reload'
+  | 'share'
+  | 'bookmark'
+  | 'home'
+  | 'safari'
+  | 'shield'
+  | 'pick'
+  | 'customize'
+  | 'newTab'
+  | 'closeTab'
+  | 'logs'
+  | 'history'
+  | 'dns'
+  | 'downloads';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
   hasPage: boolean;
   dark: boolean;
+  bookmarked: boolean;
   onToggleDark: (v: boolean) => void;
   onAction: (a: MenuAction) => void;
 }
@@ -21,6 +36,7 @@ interface Props {
 const ACTIONS: { id: MenuAction; icon: IconName; label: string; needsPage?: boolean }[] = [
   { id: 'reload', icon: 'refresh', label: 'Tải lại', needsPage: true },
   { id: 'share', icon: 'share-outline', label: 'Chia sẻ', needsPage: true },
+  { id: 'bookmark', icon: 'star-outline', label: 'Thêm dấu trang', needsPage: true },
   { id: 'safari', icon: 'compass-outline', label: 'Mở bằng Safari', needsPage: true },
   { id: 'home', icon: 'home-outline', label: 'Trang chủ' },
   { id: 'shield', icon: 'shield-checkmark-outline', label: 'Shield' },
@@ -29,11 +45,12 @@ const ACTIONS: { id: MenuAction; icon: IconName; label: string; needsPage?: bool
   { id: 'newTab', icon: 'add-circle-outline', label: 'Thẻ mới' },
   { id: 'closeTab', icon: 'close-circle-outline', label: 'Đóng thẻ' },
   { id: 'history', icon: 'time-outline', label: 'Lịch sử' },
+  { id: 'downloads', icon: 'download-outline', label: 'Tải về' },
   { id: 'dns', icon: 'lock-closed-outline', label: 'DNS bảo mật' },
   { id: 'logs', icon: 'bug-outline', label: 'Nhật ký' },
 ];
 
-export function MenuSheet({ visible, onClose, hasPage, dark, onToggleDark, onAction }: Props) {
+export function MenuSheet({ visible, onClose, hasPage, dark, bookmarked, onToggleDark, onAction }: Props) {
   return (
     <Sheet visible={visible} onClose={onClose}>
       <View style={styles.grid}>
@@ -51,9 +68,13 @@ export function MenuSheet({ visible, onClose, hasPage, dark, onToggleDark, onAct
               accessibilityState={{ disabled }}
               style={({ pressed }) => [styles.cell, pressed && styles.pressed, disabled && { opacity: 0.35 }]}
             >
-              <Ionicons name={a.icon} size={24} color={colors.text} />
+              <Ionicons
+                name={a.id === 'bookmark' && bookmarked ? 'star' : a.icon}
+                size={24}
+                color={a.id === 'bookmark' && bookmarked ? '#FBBF24' : colors.text}
+              />
               <Txt size={12} numberOfLines={1} style={{ marginTop: 6 }}>
-                {a.label}
+                {a.id === 'bookmark' && bookmarked ? 'Bỏ dấu trang' : a.label}
               </Txt>
             </Pressable>
           );

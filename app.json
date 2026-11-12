@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ryx",
     "slug": "ryx",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -19,10 +19,12 @@
     "scheme": "ryx",
     "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/icon.png",
       "supportsTablet": false,
       "bundleIdentifier": "com.henrywizzrd.ryx",
       "infoPlist": {
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true,
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoadsInWebContent": true,
           "NSAllowsLocalNetworking": true

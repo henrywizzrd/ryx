@@ -295,8 +295,15 @@ export default function CustomizeScreen() {
           </Pressable>
         </Section>
 
-        <Section title="Nâng cao" hint="Chỉ bật khi video trên một trang không chạy và cần gửi Nhật ký để dò lỗi. Bật/tắt xong tải lại trang.">
+        <Section title="Nâng cao" hint="Chẩn đoán video: chỉ bật khi cần gửi Nhật ký để dò lỗi. Bật/tắt xong tải lại trang.">
           <View style={[styles.card, { paddingHorizontal: 14 }]}>
+            <ToggleRow
+              icon="musical-notes-outline"
+              title="Phát nền"
+              subtitle="Âm thanh tiếp tục khi tắt màn hình. Video: bấm nút PiP trên video để xem trong khung nổi"
+              value={settings.backgroundPlay}
+              onChange={(v) => update({ backgroundPlay: v })}
+            />
             <ToggleRow
               icon="pulse-outline"
               title="Chẩn đoán video"
@@ -380,7 +387,7 @@ function FilterStatus() {
   const st = useSyncExternalStore(subscribeContentBlocker, getContentBlockerStatus);
   const when = st.updatedAt ? new Date(st.updatedAt).toLocaleDateString('vi-VN') : 'chưa tải';
   const detail = !st.supported
-    ? 'Cần cài bản Ryx mới (1.0.2) để bật bộ lọc này.'
+    ? 'Cần cài bản Ryx mới (1.0.2 trở lên) để bật bộ lọc này.'
     : st.busy
       ? 'Đang tải / biên dịch bộ lọc…'
       : `${st.ruleCount.toLocaleString('vi-VN')} luật · cập nhật ${when} · ${st.active} danh sách đang bật`;

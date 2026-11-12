@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -7,10 +7,13 @@ import { ActionSheetIOS, Alert, Linking, Pressable, Share, StyleSheet, View } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ADDRESS_BAR_HEIGHT, AddressBar } from '@/components/address-bar';
-import { BrowserTab, type MediaPress, type PickedElement } from '@/components/browser-tab';
+import { BrowserTab, type ChapterInfo, type MediaPress, type PickedElement } from '@/components/browser-tab';
+import { NoticeBanner, type Notice } from '@/components/notice-banner';
 import { PopupBanner, type BlockedPopup } from '@/components/popup-banner';
 import { configureContentBlocker, refreshContentBlocker } from '@/lib/content-blocker';
+import { applyBackgroundPlay } from '@/lib/background-play';
 import { log } from '@/lib/logger';
+import { getRyxNetStatus, setRyxNetEnabled } from '@/lib/ryx-net';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { Dock, dockMetrics } from '@/components/dock';
 import { Glass } from '@/components/glass';
@@ -24,6 +27,9 @@ import { useSiteThemes } from '@/state/site-themes';
 import { getHost, resolveInput, siteKey } from '@/lib/url';
 import { useKeyboardHeight } from '@/lib/use-keyboard-height';
 import { useSettings, type DockButtonId, type ShieldPrefs } from '@/state/settings';
+import { useBookmarks } from '@/state/bookmarks';
+import { useDownloads } from '@/state/downloads';
+import { useReading } from '@/state/reading';
 import { useStats } from '@/state/stats';
 import { totalBlocked, useTabs } from '@/state/tabs';
 import { colors } from '@/theme';
@@ -42,6 +48,19 @@ export default function BrowserScreen() {
   const [addrFocused, setAddrFocused] = useState(false);
   const [shieldOpen, setShieldOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { isBookmarked, toggle: toggleBookmark } = useBookmarks();
+  const { start: startDownload, onFinished: downloadFinishedRef } = useDownloads();
+
+  // ---- Đọc truyện: chương trước/sau của từng thẻ ----
+  const { recordChapter } = useReading();
+  const [chapters, setChapters] = useState<Record<string, ChapterInfo | null>>({});
+  const onChapter = useCallback(
+    (tabId: string, c: ChapterInfo | null) => {
+      setChapters((m) => (m[tabId] === c || (!m[tabId] && !c) ? m : { ...m, [tabId]: c }));
+      if (c) recordChapter({ series: c.series, title: c.title, url: c.url, chapter: c.chapter });
+    },
+    [recordChapter],
+  );
   const [blockedPopup, setBlockedPopup] = useState<BlockedPopup | null>(null);
 
   // Bộ lọc tầng mạng: áp theo tuỳ chọn Shield (đợi một chút để gộp nhiều lần bật/tắt liên tiếp)
@@ -61,6 +80,9 @@ export default function BrowserScreen() {
     return () => clearTimeout(t);
   }, [settings.shield.ads, settings.shield.gambling, allowSitesKey]);
   useEffect(() => {
+    void applyBackgroundPlay(settings.backgroundPlay);
+  }, [settings.backgroundPlay]);
+  useEffect(() => {
     // Tải bộ lọc mới (3 ngày/lần) sau khi app mở xong, không chặn lúc khởi động
     const t = setTimeout(() => void refreshContentBlocker(), 4000);
     return () => clearTimeout(t);
@@ -71,6 +93,65 @@ export default function BrowserScreen() {
     setBlockedPopup({ key: Date.now(), url, host: getHost(url) || url });
   }, []);
   const closePopupBanner = useCallback(() => setBlockedPopup(null), []);
+
+  const activeIdRef = useRef(active.id);
+  useEffect(() => {
+    activeIdRef.current = active.id;
+  }, [active.id]);
+
+  // Thông báo chung (trang tải lâu, tải về xong…)
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const closeNotice = useCallback(() => setNotice(null), []);
+  // ---- Tải về ----
+  const download = (url: string, referer: string | null, ext?: string) => {
+    startDownload(url, { referer: referer ?? undefined, ext });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setNotice({
+      key: Date.now(),
+      icon: 'download-outline',
+      title: 'Đang tải về',
+      subtitle: getHost(url) || url,
+      action: { label: 'Xem', run: () => router.push('/downloads') },
+      autoHide: 4000,
+    });
+  };
+  useEffect(() => {
+    downloadFinishedRef.current = (d) => {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setNotice({
+        key: Date.now(),
+        icon: 'checkmark-circle-outline',
+        title: 'Đã tải xong',
+        subtitle: d.name,
+        action: { label: 'Mở', run: () => router.push('/downloads') },
+        autoHide: 6000,
+      });
+    };
+    return () => {
+      downloadFinishedRef.current = null;
+    };
+  }, [downloadFinishedRef]);
+
+  // Không bọc useCallback: React Compiler tự ghi nhớ
+  const onSlowLoad = () => {
+    const st = getRyxNetStatus();
+    if (!st.supported || st.enabled) return;
+    setNotice({
+      key: Date.now(),
+      icon: 'lock-closed-outline',
+      title: 'Trang tải lâu bất thường',
+      subtitle: 'Có thể nhà mạng đang chặn. Bật DNS riêng của Ryx rồi tải lại?',
+      action: {
+        label: 'Bật DNS',
+        run: () => {
+          setRyxNetEnabled(true, 'google');
+          // Proxy chỉ áp cho kết nối mở sau khi bật: đợi chút rồi tải lại
+          setTimeout(() => refs.current.get(activeIdRef.current)?.reload(), 600);
+        },
+      },
+      autoHide: 12000,
+    });
+  };
 
   // ---- "Chạm để ẩn quảng cáo" ----
   const [picking, setPicking] = useState(false);
@@ -123,8 +204,9 @@ export default function BrowserScreen() {
       defaults: settings.shield,
       sites: settings.siteOverrides,
       hides: settings.customHides,
+      bgPlay: settings.backgroundPlay,
     }),
-    [settings.shield, settings.siteOverrides, settings.customHides],
+    [settings.shield, settings.siteOverrides, settings.customHides, settings.backgroundPlay],
   );
   const siteThemes = useSiteThemes();
   const script = useMemo(() => buildInjectedScript(injectConfig, siteThemes), [injectConfig, siteThemes]);
@@ -163,55 +245,57 @@ export default function BrowserScreen() {
   const openInNewTab = useCallback((url: string) => newTab(url), [newTab]);
 
   // Nhấn giữ ảnh/video trong trang
-  const onMediaLongPress = useCallback(
-    (m: MediaPress) => {
-      const isVideo = m.kind === 'video';
-      const save = (url: string, kind: 'image' | 'video') => {
-        void saveMediaToPhotos(url, kind, m.pageUrl)
-          .then(() => {
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            Alert.alert(kind === 'video' ? 'Đã lưu video vào Ảnh' : 'Đã lưu ảnh vào Ảnh');
-          })
-          .catch((e: unknown) => {
-            Alert.alert('Không lưu được', e instanceof SaveMediaError ? e.message : String(e));
-          });
-      };
-      const items: { label: string; run: () => void }[] = [];
-      if (m.src)
-        items.push({
-          label: isVideo ? 'Lưu video vào Ảnh' : 'Lưu vào Ảnh',
-          run: () => save(m.src, m.kind),
+  const onMediaLongPress = (m: MediaPress) => {
+    const isVideo = m.kind === 'video';
+    const save = (url: string, kind: 'image' | 'video') => {
+      void saveMediaToPhotos(url, kind, m.pageUrl)
+        .then(() => {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          Alert.alert(kind === 'video' ? 'Đã lưu video vào Ảnh' : 'Đã lưu ảnh vào Ảnh');
+        })
+        .catch((e: unknown) => {
+          Alert.alert('Không lưu được', e instanceof SaveMediaError ? e.message : String(e));
         });
-      if (isVideo && m.poster)
-        items.push({
-          label: 'Lưu ảnh bìa video',
-          run: () => save(m.poster, 'image'),
-        });
-      if (m.src)
-        items.push({
-          label: isVideo ? 'Sao chép link video' : 'Sao chép link ảnh',
-          run: () => void Clipboard.setStringAsync(m.src),
-        });
-      if (!isVideo && /^https?:/.test(m.src)) items.push({ label: 'Mở ảnh trong thẻ mới', run: () => newTab(m.src) });
-      if (m.link)
-        items.push({
-          label: 'Mở link trong thẻ mới',
-          run: () => newTab(m.link),
-        });
-      if (!items.length) return;
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: isVideo ? 'Video' : 'Ảnh',
-          message: getHost(m.src) || undefined,
-          options: [...items.map((i) => i.label), 'Huỷ'],
-          cancelButtonIndex: items.length,
-        },
-        (i) => items[i]?.run(),
-      );
-    },
-    [newTab],
-  );
+    };
+    const items: { label: string; run: () => void }[] = [];
+    if (m.src)
+      items.push({
+        label: isVideo ? 'Lưu video vào Ảnh' : 'Lưu vào Ảnh',
+        run: () => save(m.src, m.kind),
+      });
+    if (/^https?:/.test(m.src))
+      items.push({
+        label: 'Tải về (xem trong Tải về)',
+        run: () => download(m.src, m.pageUrl, isVideo ? 'mp4' : 'jpg'),
+      });
+    if (isVideo && m.poster)
+      items.push({
+        label: 'Lưu ảnh bìa video',
+        run: () => save(m.poster, 'image'),
+      });
+    if (m.src)
+      items.push({
+        label: isVideo ? 'Sao chép link video' : 'Sao chép link ảnh',
+        run: () => void Clipboard.setStringAsync(m.src),
+      });
+    if (!isVideo && /^https?:/.test(m.src)) items.push({ label: 'Mở ảnh trong thẻ mới', run: () => newTab(m.src) });
+    if (m.link)
+      items.push({
+        label: 'Mở link trong thẻ mới',
+        run: () => newTab(m.link),
+      });
+    if (!items.length) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: isVideo ? 'Video' : 'Ảnh',
+        message: getHost(m.src) || undefined,
+        options: [...items.map((i) => i.label), 'Huỷ'],
+        cancelButtonIndex: items.length,
+      },
+      (i) => items[i]?.run(),
+    );
+  };
 
   const share = () => {
     if (active.url) Share.share({ url: active.url, message: active.url }).catch(() => {});
@@ -255,6 +339,20 @@ export default function BrowserScreen() {
         return setTimeout(() => setShieldOpen(true), SHEET_HANDOFF_MS);
       case 'pick':
         return setPick(true);
+      case 'bookmark': {
+        if (!active.url) return;
+        const added = toggleBookmark(active.url, active.title || siteKey(active.url));
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return setNotice({
+          key: Date.now(),
+          icon: added ? 'star' : 'star-outline',
+          title: added ? 'Đã thêm vào Truy cập nhanh' : 'Đã bỏ khỏi Truy cập nhanh',
+          subtitle: active.title || siteKey(active.url),
+          autoHide: 2500,
+        });
+      }
+      case 'downloads':
+        return setTimeout(() => router.push('/downloads'), SHEET_HANDOFF_MS);
       case 'customize':
         return setTimeout(() => router.push('/customize'), SHEET_HANDOFF_MS);
       case 'newTab':
@@ -272,6 +370,7 @@ export default function BrowserScreen() {
 
   const toggle = (key: keyof ShieldPrefs, value: boolean) => setSitePref(site, key, value);
 
+  const chapter = !active.home ? chapters[active.id] : null;
   const canGoBack = active.home ? !!active.sourceUrl : true;
   const canGoForward = !active.home && active.canGoForward;
 
@@ -291,6 +390,9 @@ export default function BrowserScreen() {
             onPopupBlocked={onPopupBlocked}
             onMediaLongPress={onMediaLongPress}
             onPick={onPick}
+            onSlowLoad={onSlowLoad}
+            onChapter={onChapter}
+            onDownload={(url, referer) => download(url, referer)}
             diag={settings.diagVideo}
             insetBottom={webBottomInset}
           />
@@ -299,6 +401,7 @@ export default function BrowserScreen() {
           <NewTabPage
             onSubmit={go}
             onOpen={(url) => open(active.id, url)}
+            onOpenNewTab={(url) => newTab(url)}
             paddingTop={0}
             paddingBottom={chromeBottom}
           />
@@ -334,6 +437,7 @@ export default function BrowserScreen() {
           onReload={reload}
           onStop={() => webRef()?.stopLoading()}
           onFocusChange={setAddrFocused}
+          position={addrTop ? 'top' : 'bottom'}
         />
       </View>
 
@@ -356,6 +460,47 @@ export default function BrowserScreen() {
           </Glass>
         </View>
       )}
+
+      {chapter && !addrFocused && !picking && !notice && (
+        <View pointerEvents="box-none" style={[styles.chapWrap, { bottom: chromeBottom + GAP }]}>
+          {chapter.prev ? (
+            <Glass radius={22} contentStyle={styles.chapBtn}>
+              <Pressable
+                onPress={() => chapter.prev && open(active.id, chapter.prev)}
+                accessibilityRole="button"
+                accessibilityLabel="Chương trước"
+                hitSlop={6}
+                style={({ pressed }) => [styles.chapInner, pressed && { opacity: 0.6 }]}
+              >
+                <Ionicons name="chevron-back" size={18} color={colors.text} />
+                <Txt weight="semibold" size={14}>
+                  Chương trước
+                </Txt>
+              </Pressable>
+            </Glass>
+          ) : (
+            <View />
+          )}
+          {chapter.next ? (
+            <Glass radius={22} contentStyle={styles.chapBtn}>
+              <Pressable
+                onPress={() => chapter.next && open(active.id, chapter.next)}
+                accessibilityRole="button"
+                accessibilityLabel="Chương sau"
+                hitSlop={6}
+                style={({ pressed }) => [styles.chapInner, pressed && { opacity: 0.6 }]}
+              >
+                <Txt weight="semibold" size={14}>
+                  Chương sau
+                </Txt>
+                <Ionicons name="chevron-forward" size={18} color={colors.text} />
+              </Pressable>
+            </Glass>
+          ) : null}
+        </View>
+      )}
+
+      <NoticeBanner notice={notice} bottom={chromeBottom + GAP} onClose={closeNotice} />
 
       <PopupBanner
         popup={blockedPopup}
@@ -388,6 +533,7 @@ export default function BrowserScreen() {
         onClose={() => setMenuOpen(false)}
         hasPage={hasPage}
         dark={prefs.dark}
+        bookmarked={isBookmarked(active.url)}
         onToggleDark={(v) => toggle('dark', v)}
         onAction={onMenuAction}
       />
@@ -407,6 +553,9 @@ const styles = StyleSheet.create({
   },
   addrWrap: { position: 'absolute', left: 16, right: 16 },
   pickWrap: { position: 'absolute', left: 16, right: 16 },
+  chapWrap: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
+  chapBtn: { minHeight: 44, justifyContent: 'center' },
+  chapInner: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, minHeight: 44 },
   pickRow: {
     flexDirection: 'row',
     alignItems: 'center',

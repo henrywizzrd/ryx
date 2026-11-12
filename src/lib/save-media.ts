@@ -22,6 +22,13 @@ export class SaveMediaError extends Error {}
  * Gửi kèm Referer của trang vì nhiều máy chủ ảnh/video chặn tải khi thiếu.
  */
 export async function saveMediaToPhotos(url: string, kind: MediaKind, pageUrl: string | null): Promise<void> {
+  // File đã tải về máy (màn Tải về): lưu thẳng
+  if (url.startsWith('file://')) {
+    const perm = await requestPermissionsAsync(true);
+    if (!perm.granted) throw new SaveMediaError('Ryx chưa được cấp quyền thêm vào Ảnh. Vào Cài đặt → Ryx → Ảnh để bật.');
+    await saveToLibraryAsync(url);
+    return;
+  }
   if (!/^https?:/i.test(url)) {
     // blob:/data: là dữ liệu nằm trong trang (vd video HLS), không tải lại được từ ngoài
     throw new SaveMediaError(kind === 'video' ? 'Video này phát theo dạng luồng nên không lưu được.' : 'Ảnh này không có link tải được.');

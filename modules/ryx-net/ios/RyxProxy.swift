@@ -46,8 +46,9 @@ final class RyxProxy {
     return URLSession(configuration: cfg)
   }()
 
-  var enabled: Bool { defaults.object(forKey: kEnabled) as? Bool ?? false }
-  var provider: String { defaults.string(forKey: kProvider) ?? "cloudflare" }
+  /// Mặc định BẬT với Google: nhiều trang ở VN bị nhà mạng chặn qua DNS, tắt thì trang có thể treo.
+  var enabled: Bool { defaults.object(forKey: kEnabled) as? Bool ?? true }
+  var provider: String { defaults.string(forKey: kProvider) ?? "google" }
 
   // MARK: - Log
 
