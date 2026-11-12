@@ -7,7 +7,7 @@ import { Sheet } from './sheet';
 import { ToggleRow } from './toggle-row';
 import { Txt } from './txt';
 
-export type MenuAction = 'reload' | 'share' | 'home' | 'safari' | 'shield' | 'customize' | 'newTab' | 'closeTab' | 'logs' | 'history';
+export type MenuAction = 'reload' | 'share' | 'home' | 'safari' | 'shield' | 'customize' | 'newTab' | 'closeTab' | 'logs' | 'history' | 'dns';
 
 interface Props {
   visible: boolean;
@@ -28,6 +28,7 @@ const ACTIONS: { id: MenuAction; icon: IconName; label: string; needsPage?: bool
   { id: 'newTab', icon: 'add-circle-outline', label: 'Thẻ mới' },
   { id: 'closeTab', icon: 'close-circle-outline', label: 'Đóng thẻ' },
   { id: 'history', icon: 'time-outline', label: 'Lịch sử' },
+  { id: 'dns', icon: 'lock-closed-outline', label: 'DNS bảo mật' },
   { id: 'logs', icon: 'bug-outline', label: 'Nhật ký' },
 ];
 

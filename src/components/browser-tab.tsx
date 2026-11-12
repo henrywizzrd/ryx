@@ -12,6 +12,7 @@ import type {
 
 import { shouldBlock, type BlockCategory } from '@/lib/blocker';
 import { buildUpdateCall, type InjectConfig } from '@/lib/inject';
+import { PageError } from '@/components/page-error';
 import { log } from '@/lib/logger';
 import { getHost, siteKey } from '@/lib/url';
 import { useHistoryActions } from '@/state/history';
@@ -57,6 +58,9 @@ function BrowserTabImpl({
   const lastPageCounts = useRef<Counts>({ ...EMPTY_COUNTS });
   const urlRef = useRef(tab.url);
   const loadStartedAt = useRef(0);
+  /** Link trang chính đang được mở (để log và trang lỗi hiện đúng địa chỉ bị lỗi). */
+  const lastTarget = useRef<string | null>(tab.sourceUrl ?? null);
+  const loadFailed = useRef(false);
 
   useEffect(() => {
     urlRef.current = tab.url;
@@ -85,6 +89,10 @@ function BrowserTabImpl({
   const onShouldStart = useCallback(
     (req: ShouldStartLoadRequest) => {
       const { url, isTopFrame } = req;
+      if (isTopFrame) {
+        lastTarget.current = url;
+        log.debug('nav', `Mở ${getHost(url) || url}`, `${url}\nKiểu: ${req.navigationType ?? '?'}`);
+      }
       if (EXTERNAL_SCHEMES.test(url)) {
         Linking.openURL(url).catch(() => {});
         return false;
@@ -127,6 +135,7 @@ function BrowserTabImpl({
       // Mỗi lần trang chính bắt đầu tải là một trang mới → đếm lại từ đầu
       lastPageCounts.current = { ...EMPTY_COUNTS };
       loadStartedAt.current = Date.now();
+      loadFailed.current = false;
       patchTab(tab.id, {
         url: e.nativeEvent.url,
         loading: true,
@@ -156,6 +165,10 @@ function BrowserTabImpl({
   const onLoadEnd = useCallback(() => {
     patchTab(tab.id, { loading: false, progress: 1 });
     if (!loadStartedAt.current) return;
+    if (loadFailed.current) {
+      loadStartedAt.current = 0;
+      return;
+    }
     const ms = Date.now() - loadStartedAt.current;
     loadStartedAt.current = 0;
     const host = getHost(urlRef.current ?? '');
@@ -167,8 +180,26 @@ function BrowserTabImpl({
     const { code, description, url } = e.nativeEvent;
     // -999 = điều hướng bị huỷ (người dùng bấm link khác/bị chặn): không phải lỗi thật
     if (code === -999) return;
-    log.error('web', `Không tải được trang: ${description}`, `${url}\nMã lỗi: ${code}`);
+    loadFailed.current = true;
+    const target = lastTarget.current ?? url;
+    log.error('web', `Không tải được ${getHost(target) || 'trang'}: ${description}`, `${target}\nMã lỗi: ${code}\nTrang trước: ${url}`);
   }, []);
+
+  const renderError = useCallback(
+    (_domain: string | undefined, code: number, desc: string) => (
+      <PageError
+        url={lastTarget.current}
+        code={code}
+        description={desc}
+        onRetry={() => {
+          const target = lastTarget.current;
+          if (target) ref.current?.injectJavaScript(`window.location.href = ${JSON.stringify(target)}; true;`);
+          else ref.current?.reload();
+        }}
+      />
+    ),
+    [],
+  );
 
   const onHttpError = useCallback((e: WebViewHttpErrorEvent) => {
     const { statusCode, url } = e.nativeEvent;
@@ -227,6 +258,7 @@ function BrowserTabImpl({
       onLoadProgress={(e: { nativeEvent: { progress: number } }) => patchTab(tab.id, { progress: e.nativeEvent.progress })}
       onLoadEnd={onLoadEnd}
       onError={onError}
+      renderError={renderError}
       onHttpError={onHttpError}
       onMessage={onMessage}
       onContentProcessDidTerminate={onProcessTerminated}

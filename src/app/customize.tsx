@@ -13,6 +13,7 @@ import {
   type DockButtonId,
   type DockStyle,
   type Settings,
+  type TabLayout,
 } from '@/state/settings';
 import { ACCENT_PRESETS, GLASS_LABELS, colors, useTheme, withAlpha } from '@/theme';
 
@@ -162,6 +163,19 @@ export default function CustomizeScreen() {
           </View>
         </Section>
 
+        <Section title="Kiểu hiển thị thẻ" hint="Cũng đổi được ngay trên màn quản lý thẻ.">
+          <Segmented
+            options={[
+              { value: 'grid' as TabLayout, label: 'Lưới' },
+              { value: 'list' as TabLayout, label: 'Danh sách' },
+              { value: 'stack' as TabLayout, label: 'Xếp chồng' },
+              { value: 'carousel' as TabLayout, label: 'Trượt' },
+            ]}
+            value={settings.tabLayout}
+            onChange={(v) => update({ tabLayout: v })}
+          />
+        </Section>
+
         <Section title="Vị trí thanh địa chỉ">
           <Segmented
             options={[
@@ -263,6 +277,20 @@ export default function CustomizeScreen() {
           )}
         </Section>
 
+        <Section title="Mạng" hint="Dùng khi nhà mạng chặn trang web.">
+          <Pressable
+            onPress={() => router.push('/dns')}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.card, styles.linkRow, pressed && { opacity: 0.7 }]}
+          >
+            <Ionicons name="lock-closed-outline" size={20} color={colors.text} />
+            <Txt weight="medium" size={15} style={{ flex: 1 }}>
+              DNS bảo mật
+            </Txt>
+            <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+          </Pressable>
+        </Section>
+
         <Pressable
           onPress={confirmReset}
           disabled={JSON.stringify(settings) === JSON.stringify(DEFAULT_SETTINGS)}
@@ -326,4 +354,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(248,113,113,0.10)',
   },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, minHeight: 52 },
 });

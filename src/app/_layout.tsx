@@ -10,6 +10,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { Pressable, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Txt } from '@/components/txt';
@@ -47,6 +48,7 @@ function RootStack() {
         <Stack.Screen name="customize" options={{ presentation: 'modal' }} />
         <Stack.Screen name="logs" options={{ presentation: 'modal' }} />
         <Stack.Screen name="history" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="dns" options={{ presentation: 'modal' }} />
       </Stack>
       <UpdateBanner />
     </ThemeProvider>
@@ -99,6 +101,7 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) return null;
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider>
       <SettingsProvider>
         <StatsProvider>
@@ -110,5 +113,6 @@ export default function RootLayout() {
         </StatsProvider>
       </SettingsProvider>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

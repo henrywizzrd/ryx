@@ -1,76 +1,135 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { FlatList, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { IconButton } from '@/components/icon-button';
+import { IconButton, type IconName } from '@/components/icon-button';
+import { SwipeToClose } from '@/components/swipe-to-close';
+import { TabCard } from '@/components/tab-card';
 import { Txt } from '@/components/txt';
-import { displayHost, faviconFor } from '@/lib/url';
-import { totalBlocked, useTabs, type Tab } from '@/state/tabs';
+import { useSettings, type TabLayout } from '@/state/settings';
+import { useTabs, type Tab } from '@/state/tabs';
 import { colors, useTheme } from '@/theme';
+
+const LAYOUTS: { id: TabLayout; icon: IconName; label: string }[] = [
+  { id: 'grid', icon: 'grid-outline', label: 'Lưới' },
+  { id: 'list', icon: 'list-outline', label: 'Danh sách' },
+  { id: 'stack', icon: 'layers-outline', label: 'Xếp chồng' },
+  { id: 'carousel', icon: 'albums-outline', label: 'Trượt ngang' },
+];
+
+const STACK_CARD = 260;
+const STACK_VISIBLE = 92; // phần mỗi thẻ lộ ra khi xếp chồng
 
 export default function TabsScreen() {
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
   const { accent, accentSoft, onAccent } = useTheme();
+  const { settings, update } = useSettings();
   const { tabs, activeId, setActive, closeTab, closeAll, newTab } = useTabs();
+  const layout = settings.tabLayout ?? 'grid';
+  const stackRef = useRef<ScrollViewInstance>(null);
+  const activeIndex = Math.max(0, tabs.findIndex((t) => t.id === activeId));
+  const [page, setPage] = useState(activeIndex);
 
-  const pick = (id: string) => {
+  const open = (id: string) => {
     setActive(id);
     router.back();
   };
 
-  const renderItem = ({ item }: { item: Tab }) => {
-    const isActive = item.id === activeId;
-    const showPage = !item.home && !!item.url;
-    const host = showPage ? displayHost(item.url) : '';
-    const blocked = totalBlocked(item).total;
-    return (
-      <Pressable
-        onPress={() => pick(item.id)}
-        accessibilityRole="button"
-        accessibilityLabel={`${item.title || host || 'Thẻ mới'}${isActive ? ', đang mở' : ''}`}
-        style={({ pressed }) => [
-          styles.card,
-          isActive && { borderColor: accent, borderWidth: 2 },
-          pressed && { transform: [{ scale: 0.97 }] },
-        ]}
-      >
-        <View style={styles.cardHead}>
-          {showPage ? (
-            <Image source={faviconFor(item.url!)} style={styles.favicon} />
-          ) : (
-            <Ionicons name="shield-checkmark" size={16} color={accent} />
-          )}
-          <Txt weight="medium" size={13} numberOfLines={1} style={{ flex: 1 }}>
-            {showPage ? item.title || host : 'Thẻ mới'}
-          </Txt>
-          <IconButton
-            icon="close"
-            label="Đóng thẻ"
-            size={32}
-            iconSize={16}
-            color={colors.textMuted}
-            onPress={() => closeTab(item.id)}
-          />
-        </View>
-        <View style={styles.preview}>
-          <Ionicons name={showPage ? 'globe-outline' : 'add'} size={34} color={colors.textFaint} />
-          <Txt size={12} color={colors.textMuted} numberOfLines={1} style={{ marginTop: 6, paddingHorizontal: 8 }}>
-            {host || 'Trang chủ Ryx'}
-          </Txt>
-          {blocked > 0 && (
-            <View style={[styles.blocked, { backgroundColor: accentSoft }]}>
-              <Ionicons name="shield-checkmark" size={11} color={accent} />
-              <Txt weight="semibold" size={11} color={accent} style={{ lineHeight: 14 }}>
-                {blocked}
-              </Txt>
-            </View>
-          )}
-        </View>
-      </Pressable>
+  const cardProps = (t: Tab) => ({
+    tab: t,
+    active: t.id === activeId,
+    onOpen: () => open(t.id),
+    onClose: () => closeTab(t.id),
+    onDuplicate: () => newTab(t.url),
+  });
+
+  // Kiểu trượt ngang: thẻ lớn ở giữa màn hình
+  const cardW = Math.round(width * 0.78);
+  const gap = 14;
+  const sidePad = (width - cardW) / 2;
+  const carouselH = Math.min(Math.round(height * 0.56), 520);
+
+  let body: React.ReactNode;
+  if (layout === 'list') {
+    body = (
+      <FlatList
+        data={tabs}
+        keyExtractor={(t) => t.id}
+        contentContainerStyle={{ padding: 16, gap: 8 }}
+        renderItem={({ item }) => (
+          <SwipeToClose direction="horizontal" onClose={() => closeTab(item.id)}>
+            <TabCard variant="list" {...cardProps(item)} />
+          </SwipeToClose>
+        )}
+      />
     );
-  };
+  } else if (layout === 'stack') {
+    body = (
+      <ScrollView
+        ref={stackRef}
+        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+        onContentSizeChange={() => stackRef.current?.scrollToEnd({ animated: false })}
+      >
+        {tabs.map((t, i) => (
+          <SwipeToClose
+            key={t.id}
+            direction="horizontal"
+            onClose={() => closeTab(t.id)}
+            style={{
+              marginTop: i === 0 ? 0 : -(STACK_CARD - STACK_VISIBLE),
+              zIndex: i,
+              transform: [{ perspective: 1200 }, { rotateX: '-10deg' }],
+            }}
+          >
+            <TabCard variant="stack" height={STACK_CARD} {...cardProps(t)} />
+          </SwipeToClose>
+        ))}
+      </ScrollView>
+    );
+  } else if (layout === 'carousel') {
+    body = (
+      <View style={{ flex: 1, justifyContent: 'center' }}>
+        <FlatList
+          data={tabs}
+          horizontal
+          keyExtractor={(t) => t.id}
+          showsHorizontalScrollIndicator={false}
+          snapToInterval={cardW + gap}
+          decelerationRate="fast"
+          initialScrollIndex={activeIndex}
+          getItemLayout={(_, index) => ({ length: cardW + gap, offset: (cardW + gap) * index, index })}
+          contentContainerStyle={{ paddingHorizontal: sidePad - gap / 2, alignItems: 'center' }}
+          onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / (cardW + gap)))}
+          renderItem={({ item }) => (
+            <SwipeToClose direction="up" onClose={() => closeTab(item.id)} style={{ width: cardW, marginHorizontal: gap / 2 }}>
+              <TabCard variant="carousel" height={carouselH} {...cardProps(item)} />
+            </SwipeToClose>
+          )}
+        />
+        <Txt size={13} color={colors.textMuted} style={{ textAlign: 'center', marginTop: 14 }}>
+          {Math.min(page, tabs.length - 1) + 1} / {tabs.length} · vuốt lên để đóng
+        </Txt>
+      </View>
+    );
+  } else {
+    body = (
+      <FlatList
+        data={tabs}
+        keyExtractor={(t) => t.id}
+        numColumns={2}
+        columnWrapperStyle={{ gap: 12 }}
+        contentContainerStyle={{ padding: 16, gap: 12 }}
+        renderItem={({ item }) => (
+          <SwipeToClose direction="horizontal" onClose={() => closeTab(item.id)} style={styles.gridCell}>
+            <TabCard variant="grid" {...cardProps(item)} />
+          </SwipeToClose>
+        )}
+      />
+    );
+  }
 
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom + 8 }]}>
@@ -85,14 +144,25 @@ export default function TabsScreen() {
         </Pressable>
       </View>
 
-      <FlatList
-        data={tabs}
-        keyExtractor={(t) => t.id}
-        numColumns={2}
-        columnWrapperStyle={{ gap: 12 }}
-        contentContainerStyle={{ padding: 16, gap: 12 }}
-        renderItem={renderItem}
-      />
+      <View style={styles.switcher} accessibilityRole="tablist">
+        {LAYOUTS.map((l) => {
+          const on = l.id === layout;
+          return (
+            <IconButton
+              key={l.id}
+              icon={l.icon}
+              label={`Kiểu ${l.label}`}
+              size={40}
+              iconSize={19}
+              color={on ? accent : colors.textMuted}
+              style={[styles.switchBtn, on && { backgroundColor: accentSoft }]}
+              onPress={() => update({ tabLayout: l.id })}
+            />
+          );
+        })}
+      </View>
+
+      <View style={{ flex: 1 }}>{body}</View>
 
       <View style={styles.footer}>
         <Pressable
@@ -128,34 +198,18 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   headerBtn: { minHeight: 44, justifyContent: 'center' },
-  card: {
-    flex: 1,
-    maxWidth: '50%',
-    borderRadius: 22,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 4, height: 40 },
-  favicon: { width: 16, height: 16, borderRadius: 4 },
-  preview: {
-    height: 150,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceRaised,
-  },
-  blocked: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
+  switcher: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignSelf: 'flex-start',
     gap: 4,
-    paddingHorizontal: 8,
-    height: 22,
-    borderRadius: 11,
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 4,
+    borderRadius: 24,
+    backgroundColor: colors.surface,
   },
+  switchBtn: { borderRadius: 20 },
+  gridCell: { flex: 1, maxWidth: '50%' },
   footer: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 8 },
   newBtn: {
     flex: 1,
