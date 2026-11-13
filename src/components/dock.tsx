@@ -80,9 +80,9 @@ const SWIPE_SIDE = 56;
 /** Lò xo kiểu iOS: dứt khoát, nảy rất nhẹ. */
 const SPRING = { damping: 20, stiffness: 260, mass: 0.9 };
 /** Dock nảy về chỗ cũ khi thả tay */
-const BOUNCE = { damping: 11, stiffness: 230, mass: 0.8 };
+const BOUNCE = { damping: 17, stiffness: 240, mass: 0.8 };
 /** Trang thu nhỏ / phóng to */
-export const ZOOM_SPRING = { damping: 24, stiffness: 230, mass: 1 };
+export const ZOOM_SPRING = { damping: 30, stiffness: 240, mass: 1 };
 
 function TabCountIcon({ count, size }: { count: number; size: number }) {
   const box = Math.round(size * 0.92);
@@ -190,7 +190,7 @@ export function Dock({
             ? withTiming(open ? 1 : 0, { duration: 200 }, (f) => {
                 if (f) runOnJS(onZoomEnd)(open);
               })
-            : withSpring(open ? 1 : 0, { ...ZOOM_SPRING, velocity: -e.velocityY / dist }, (f) => {
+            : withSpring(open ? 1 : 0, { ...ZOOM_SPRING, velocity: Math.max(-2, Math.min(2, -e.velocityY / dist)) }, (f) => {
                 if (f) runOnJS(onZoomEnd)(open);
               }),
         );

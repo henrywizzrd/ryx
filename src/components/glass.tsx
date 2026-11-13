@@ -20,7 +20,7 @@ export function Glass({ radius, style, contentStyle, shadow = true, children }: 
     <View style={[shadow && styles.shadow, { borderRadius: radius }, style]}>
       <View style={[styles.clip, { borderRadius: radius }]}>
         <BlurView tint="systemChromeMaterialDark" intensity={glass.intensity} style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(14,18,24,${glass.overlay})` }]} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(${colors.glassTint},${glass.overlay})` }]} />
         <View
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, styles.highlight, { borderRadius: radius }]}

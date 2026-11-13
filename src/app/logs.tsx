@@ -13,17 +13,21 @@ import { clearLogs, SESSION_ID, type LogEntry, type LogLevel } from '@/lib/logge
 import { useLogs, usePerfSnapshot } from '@/lib/use-logs';
 import { colors, fonts, useTheme, withAlpha } from '@/theme';
 
-type Filter = 'all' | 'error' | 'warn' | 'perf' | 'crash';
+type Filter = 'all' | 'error' | 'warn' | 'perf' | 'crash' | 'ui';
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'Tất cả' },
   { id: 'error', label: 'Lỗi' },
   { id: 'crash', label: 'Crash' },
   { id: 'perf', label: 'Hiệu năng' },
+  { id: 'ui', label: 'Giao diện' },
   { id: 'warn', label: 'Cảnh báo' },
 ];
 
-const LEVEL_STYLE: Record<LogLevel, { color: string; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }> = {
+const LEVEL_STYLE: Record<
+  LogLevel,
+  { color: string; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }
+> = {
   debug: { color: '#7F8A9A', label: 'DEBUG', icon: 'ellipse-outline' },
   info: { color: '#7DD3FC', label: 'INFO', icon: 'information-circle-outline' },
   warn: { color: '#FBBF24', label: 'WARN', icon: 'warning-outline' },
@@ -35,6 +39,7 @@ const LEVEL_STYLE: Record<LogLevel, { color: string; label: string; icon: React.
 function matches(e: LogEntry, f: Filter) {
   if (f === 'all') return true;
   if (f === 'error') return e.level === 'error' || e.level === 'crash';
+  if (f === 'ui') return e.tag === 'ui';
   return e.level === f;
 }
 
@@ -125,7 +130,12 @@ export default function LogsScreen() {
               {time(item.t)} · {item.tag}
             </Txt>
             {item.detail ? (
-              <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textFaint} style={{ marginLeft: 'auto' }} />
+              <Ionicons
+                name={open ? 'chevron-up' : 'chevron-down'}
+                size={14}
+                color={colors.textFaint}
+                style={{ marginLeft: 'auto' }}
+              />
             ) : null}
           </View>
           <Txt size={14} numberOfLines={open ? undefined : 2} style={{ marginTop: 2 }}>
@@ -206,7 +216,13 @@ export default function LogsScreen() {
       <View style={styles.footer}>
         <FooterBtn icon="copy-outline" label="Sao chép" onPress={copy} disabled={!visible.length} />
         <FooterBtn icon="share-outline" label="Chia sẻ" onPress={share} disabled={!visible.length} />
-        <FooterBtn icon="trash-outline" label="Xoá" color={colors.danger} onPress={confirmClear} disabled={!logs.length} />
+        <FooterBtn
+          icon="trash-outline"
+          label="Xoá"
+          color={colors.danger}
+          onPress={confirmClear}
+          disabled={!logs.length}
+        />
       </View>
     </View>
   );

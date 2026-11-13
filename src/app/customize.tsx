@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DOCK_BUTTONS } from '@/components/dock';
 import { TAB_LAYOUTS } from '@/components/tab-overview';
 import { getContentBlockerStatus, refreshContentBlocker, subscribeContentBlocker } from '@/lib/content-blocker';
+import { log } from '@/lib/logger';
 import { ToggleRow } from '@/components/toggle-row';
 import { Txt } from '@/components/txt';
 import {
@@ -17,7 +18,8 @@ import {
   type DockStyle,
   type Settings,
 } from '@/state/settings';
-import { ACCENT_PRESETS, GLASS_LABELS, colors, useTheme, withAlpha } from '@/theme';
+import { ACCENT_PRESETS, GLASS_LABELS, THEME_ID, THEMES, colors, saveThemeId, useTheme, withAlpha } from '@/theme';
+import * as Updates from 'expo-updates';
 
 const DOCK_STYLES: { id: DockStyle; label: string; hint: string }[] = [
   { id: 'floating', label: 'Nổi', hint: 'Viên nang kính' },
@@ -212,6 +214,39 @@ export default function CustomizeScreen() {
             ]}
             value={settings.addressBarPosition}
             onChange={(v) => update({ addressBarPosition: v })}
+          />
+        </Section>
+
+        <Section title="Giao diện" hint="Đổi giao diện thì Ryx tự mở lại (các thẻ đang mở sẽ đóng).">
+          <Segmented
+            options={THEMES.map((t) => ({ value: t.id, label: t.label }))}
+            value={THEME_ID}
+            onChange={(id) => {
+              if (id === THEME_ID) return;
+              const t = THEMES.find((x) => x.id === id)!;
+              Alert.alert(`Đổi sang giao diện ${t.label}?`, 'Ryx sẽ mở lại để áp dụng. Các thẻ đang mở sẽ đóng.', [
+                { text: 'Huỷ', style: 'cancel' },
+                {
+                  text: 'Đổi',
+                  onPress: () => {
+                    try {
+                      saveThemeId(id);
+                    } catch (e) {
+                      log.error('ui', 'Không lưu được giao diện', e);
+                      return;
+                    }
+                    update({ accent: t.accent });
+                    log.info('ui', 'Đổi giao diện', `${THEME_ID} → ${id}`);
+                    // Đợi cài đặt (màu nhấn) lưu xong rồi mở lại app
+                    setTimeout(() => {
+                      Updates.reloadAsync().catch(() =>
+                        Alert.alert('Đã lưu giao diện', 'Tắt hẳn rồi mở lại Ryx để áp dụng.'),
+                      );
+                    }, 500);
+                  },
+                },
+              ]);
+            }}
           />
         </Section>
 

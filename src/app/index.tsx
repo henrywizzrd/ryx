@@ -8,6 +8,7 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useReducedMotion,
+  useFrameCallback,
   useSharedValue,
   withSpring,
   withTiming,
@@ -78,6 +79,37 @@ export default function BrowserScreen() {
   const [phase, setPhase] = useState<OverviewPhase | 'off' | 'fly'>('off');
   const [hideId, setHideId] = useState<string | null>(null);
 
+  // ---- Nhật ký giao diện: đo độ mượt của hiệu ứng thu nhỏ/phóng to (khung hình > 25 ms = bị giật) ----
+  const tracking = useSharedValue(false);
+  const jank = useSharedValue({ frames: 0, slow: 0, max: 0 });
+  useFrameCallback((f) => {
+    if (!tracking.value) return;
+    const dt = f.timeSincePreviousFrame ?? 0;
+    if (dt <= 0) return;
+    const j = jank.value;
+    jank.value = { frames: j.frames + 1, slow: j.slow + (dt > 25 ? 1 : 0), max: Math.max(j.max, dt) };
+  });
+  const uiTrack = useRef({ what: '', t: 0, measured: false });
+  const beginTrack = (what: string) => {
+    uiTrack.current = { what, t: Date.now(), measured: false };
+    jank.set({ frames: 0, slow: 0, max: 0 });
+    tracking.set(true);
+  };
+  const endTrack = (result: string) => {
+    tracking.set(false);
+    const { what, t, measured } = uiTrack.current;
+    if (!what) return;
+    const j = jank.get();
+    const detail =
+      `${result} sau ${Date.now() - t} ms · ${j.frames} khung hình, ${j.slow} khung bị giật (chậm nhất ${Math.round(j.max)} ms)` +
+      `\nKiểu thẻ: ${settings.tabLayout} · Đo được vị trí thẻ: ${measured ? 'có' : 'không'} · Số thẻ: ${tabs.length}`;
+    if (j.slow > 2) log.perf('ui', `${what}: hiệu ứng bị giật`, detail);
+    else log.info('ui', what, detail);
+    if (what.startsWith('Mở màn các thẻ') && result === 'Mở' && !measured)
+      log.warn('ui', 'Không đo được vị trí thẻ đang mở, trang bay vào vị trí mặc định', settings.tabLayout);
+    uiTrack.current.what = '';
+  };
+
   const setFrame = (r: Rect, animate: boolean) => {
     const cfg = { duration: 140 };
     fx.value = animate ? withTiming(r.x, cfg) : r.x;
@@ -96,6 +128,7 @@ export default function BrowserScreen() {
         });
   };
   const zoomSettled = (open: boolean) => {
+    endTrack(open ? 'Mở' : 'Về trang');
     setHideId(null);
     if (open) setPhase('open');
     else {
@@ -104,7 +137,8 @@ export default function BrowserScreen() {
     }
   };
   /** Bắt đầu thu nhỏ: dựng màn các thẻ bên dưới, chụp ảnh trang hiện tại cho thẻ của nó */
-  const startZoom = () => {
+  const startZoom = (how: 'kéo dock' | 'nút' = 'kéo dock') => {
+    beginTrack(`Mở màn các thẻ (${how})`);
     setFrame({ x: W * 0.1, y: H * 0.18, w: W * 0.8, h: H * 0.6 }, false);
     dockX.value = 0;
     setHideId(active.id);
@@ -113,11 +147,13 @@ export default function BrowserScreen() {
   };
   const openOverview = () => {
     if (phase !== 'off') return;
-    startZoom();
+    startZoom('nút');
     setTimeout(() => zoomTo(1, zoomSettled), 60);
   };
   /** Chạm một thẻ: trang của thẻ đó phóng từ khung thẻ ra toàn màn hình; đổi thẻ thì dock nảy từ dưới lên */
   const pickTab = (id: string, r: Rect | null) => {
+    beginTrack(id === active.id ? 'Quay lại thẻ đang mở' : 'Chuyển sang thẻ khác');
+    uiTrack.current.measured = !!r;
     if (r) setFrame(r, false);
     zoom.value = 1;
     setHideId(id);
@@ -128,7 +164,7 @@ export default function BrowserScreen() {
     }
     requestAnimationFrame(() => {
       zoomTo(0, zoomSettled);
-      dockY.value = withSpring(0, { damping: 12, stiffness: 200, mass: 0.9 });
+      dockY.value = withSpring(0, { damping: 18, stiffness: 220, mass: 0.9 });
     });
   };
   /** Thẻ mới bay ra từ nút + */
@@ -141,6 +177,8 @@ export default function BrowserScreen() {
       }
       return;
     }
+    beginTrack('Thẻ mới bay ra từ nút +');
+    uiTrack.current.measured = true;
     setFrame(r, false);
     zoom.value = 1;
     setHideId(null);
@@ -148,7 +186,7 @@ export default function BrowserScreen() {
     dockY.value = phase === 'open' ? 160 : 0;
     requestAnimationFrame(() => {
       zoomTo(0, zoomSettled);
-      dockY.value = withSpring(0, { damping: 12, stiffness: 200, mass: 0.9 });
+      dockY.value = withSpring(0, { damping: 18, stiffness: 220, mass: 0.9 });
     });
   };
 
@@ -541,8 +579,15 @@ export default function BrowserScreen() {
           hideId={hideId}
           layout={settings.tabLayout}
           bottomPad={dock.top + 14}
-          onLayoutChange={(l) => update({ tabLayout: l })}
-          onActiveFrame={(r) => phase === 'drag' && setFrame(r, true)}
+          onLayoutChange={(l) => {
+            log.info('ui', 'Đổi kiểu thẻ', `${settings.tabLayout} → ${l}`);
+            update({ tabLayout: l });
+          }}
+          onActiveFrame={(r) => {
+            if (phase !== 'drag') return;
+            uiTrack.current.measured = true;
+            setFrame(r, true);
+          }}
           onPick={pickTab}
           onClose={closeTab}
           onDuplicate={(id) => {
@@ -706,7 +751,7 @@ export default function BrowserScreen() {
         onNewTab={(r) => newTabFrom(r)}
         zoom={zoom}
         zoomEnabled={phase === 'off'}
-        onZoomStart={startZoom}
+        onZoomStart={() => startZoom()}
         onZoomEnd={zoomSettled}
         extraX={dockX}
         extraY={dockY}

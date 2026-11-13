@@ -27,6 +27,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { faviconFor } from '@/lib/url';
+import { NewTabPage } from './new-tab-page';
 import type { TabLayout } from '@/state/settings';
 import type { Tab } from '@/state/tabs';
 import { colors, useTheme } from '@/theme';
@@ -76,8 +77,8 @@ interface Props {
   onNewTab: (r: Rect | null) => void;
 }
 
-const LAYOUT_ANIM = LinearTransition.springify().damping(18).stiffness(180);
-const ENTER = ZoomIn.springify().damping(15).stiffness(170);
+const LAYOUT_ANIM = LinearTransition.springify().damping(24).stiffness(200);
+const ENTER = ZoomIn.springify().damping(22).stiffness(200);
 const EXIT = ZoomOut.duration(170);
 const TITLE_H = 28;
 
@@ -187,13 +188,28 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
             </Txt>
           </>
         ) : (
-          <Ionicons name="add" size={Math.min(44, width / 3)} color={colors.textFaint} />
+          <HomeMini width={width} />
         )}
       </Pressable>
       {titleBelow && titleRow}
     </View>
   );
 }
+
+/** Trang chủ Ryx thu nhỏ đúng tỉ lệ để làm ảnh xem trước của thẻ đang ở trang chủ */
+function HomeMini({ width }: { width: number }) {
+  const { width: W, height: H } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const s = width / W;
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg }]}>
+      <View style={{ width: W, height: H, transformOrigin: 'left top', transform: [{ scale: s }] }}>
+        <NewTabPage onSubmit={noop} onOpen={noop} onOpenNewTab={noop} paddingTop={insets.top} paddingBottom={0} />
+      </View>
+    </View>
+  );
+}
+const noop = () => {};
 
 /** Vỏ mỗi thẻ: hiệu ứng thêm/xoá + dồn chỗ có nảy, vuốt để đóng */
 function Item({
@@ -622,15 +638,17 @@ export function TabOverview(props: Props) {
       style={[StyleSheet.absoluteFill, styles.root, fade]}
       pointerEvents={phase === 'open' ? 'auto' : 'none'}
     >
-      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+      <View style={[styles.header, { marginTop: insets.top + 4 }]}>
         <Pressable onPress={props.onCloseAll} accessibilityRole="button" hitSlop={8} style={styles.headBtn}>
           <Txt weight="medium" size={15} color={colors.danger}>
             Đóng tất cả
           </Txt>
         </Pressable>
-        <Txt weight="bold" size={17} accessibilityRole="header">
-          {tabs.length} thẻ
-        </Txt>
+        <View pointerEvents="none" style={styles.count}>
+          <Txt weight="bold" size={17} accessibilityRole="header">
+            {tabs.length} thẻ
+          </Txt>
+        </View>
         <Pressable
           ref={plusRef}
           collapsable={false}
@@ -685,7 +703,7 @@ export function TabOverview(props: Props) {
 }
 
 const styles = StyleSheet.create({
-  root: { backgroundColor: '#07090D' },
+  root: { backgroundColor: colors.bgDeep },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -694,7 +712,8 @@ const styles = StyleSheet.create({
     height: 52,
   },
   headBtn: { minHeight: 44, justifyContent: 'center', minWidth: 90 },
-  plus: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginLeft: 50 },
+  plus: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  count: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   chips: { flexGrow: 0, marginTop: 6 },
   chipsRow: { paddingHorizontal: 12, gap: 6, height: 40, alignItems: 'center' },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 17 },
