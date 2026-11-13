@@ -617,7 +617,8 @@ function TabOverviewImpl(props: Props) {
   // Màn các thẻ hiện dần theo mức thu nhỏ của trang
   const fade = useAnimatedStyle(() => ({
     opacity: interpolate(zoom.value, [0, 0.55], [0, 1], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(zoom.value, [0, 1], [1.06, 1], Extrapolation.CLAMP) }],
+    // Không phóng/thu cả màn: vị trí thẻ được đo khi màn này còn đang hiện dần, mà thu phóng thì số đo sai
+    // (trước đây lệch 6% → trang bay vào khung to hơn thẻ thật rồi giật về đúng chỗ).
   }));
 
   const bodyH = H - insets.top - 104 - bottomPad;

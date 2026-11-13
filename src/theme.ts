@@ -137,6 +137,11 @@ export const THEME_MODE: ThemeMode = loaded.mode;
 /** Sáng hay tối thực tế (chế độ "Theo máy" lấy theo máy lúc mở app) */
 export const SCHEME: 'dark' | 'light' =
   THEME_MODE === 'system' ? (Appearance.getColorScheme() === 'light' ? 'light' : 'dark') : THEME_MODE;
+// Ép giao diện hệ thống của app theo chế độ đang dùng: thanh trạng thái (giờ, pin) đổi sang chữ tối ở chế độ sáng,
+// bảng chọn/thông báo của iOS cũng sáng/tối theo. ("Theo máy" thì để iOS tự quyết.)
+try {
+  Appearance.setColorScheme(THEME_MODE === 'system' ? 'auto' : SCHEME);
+} catch {}
 export function saveAppearance(theme: ThemeId, mode: ThemeMode) {
   const f = themeFile();
   if (!f.exists) f.create();
