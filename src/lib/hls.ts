@@ -2,24 +2,10 @@ import { requireOptionalNativeModule, type EventSubscription } from 'expo';
 import { Directory, File, FileMode, Paths } from 'expo-file-system';
 
 import { log } from './logger';
+import { TsJoiner, type MuxLib } from './ts-join';
 // mux.js chỉ có bản CommonJS, không kèm khai báo kiểu
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const muxjs = require('mux.js') as {
-  mp4: {
-    Transmuxer: new (opts?: { remux?: boolean; keepOriginalTimestamps?: boolean }) => MuxTransmuxer;
-  };
-};
-
-interface MuxSegment {
-  initSegment: Uint8Array;
-  data: Uint8Array;
-}
-interface MuxTransmuxer {
-  on(event: 'data', cb: (s: MuxSegment) => void): void;
-  on(event: 'done', cb: () => void): void;
-  push(bytes: Uint8Array): void;
-  flush(): void;
-}
+const muxjs = require('mux.js') as MuxLib;
 
 /**
  * Tải video HLS (.m3u8) về thành một file .mp4:
@@ -100,6 +86,10 @@ interface Segment {
   url: string;
   key?: { url: string; iv?: string };
   seqNo: number;
+  /** Thời lượng theo #EXTINF (giây) */
+  dur: number;
+  /** Có #EXT-X-DISCONTINUITY ngay trước đoạn này */
+  disc: boolean;
 }
 interface MediaPlaylist {
   init?: { url: string; key?: { url: string; iv?: string } };
@@ -112,8 +102,12 @@ function parseMedia(text: string, base: string): MediaPlaylist {
   let key: Segment['key'];
   let init: MediaPlaylist['init'];
   const segments: Segment[] = [];
+  let dur = 0;
+  let disc = false;
   for (const l of lines) {
-    if (l.startsWith('#EXT-X-MEDIA-SEQUENCE:')) seqNo = parseInt(l.split(':')[1], 10) || 0;
+    if (l.startsWith('#EXTINF:')) dur = parseFloat(l.slice(8)) || 0;
+    else if (l.startsWith('#EXT-X-DISCONTINUITY') && !l.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE')) disc = true;
+    else if (l.startsWith('#EXT-X-MEDIA-SEQUENCE:')) seqNo = parseInt(l.split(':')[1], 10) || 0;
     else if (l.startsWith('#EXT-X-KEY:')) {
       const method = attr(l, 'METHOD');
       if (method === 'NONE') key = undefined;
@@ -121,7 +115,11 @@ function parseMedia(text: string, base: string): MediaPlaylist {
       else throw new HlsError(`Video được bảo vệ (${method}), không tải được`);
     } else if (l.startsWith('#EXT-X-MAP:')) init = { url: resolveUrl(attr(l, 'URI') ?? '', base), key };
     else if (l.startsWith('#EXT-X-BYTERANGE')) throw new HlsError('Kiểu HLS này (BYTERANGE) chưa hỗ trợ');
-    else if (l && !l.startsWith('#')) segments.push({ url: resolveUrl(l, base), key, seqNo: seqNo++ });
+    else if (l && !l.startsWith('#')) {
+      segments.push({ url: resolveUrl(l, base), key, seqNo: seqNo++, dur, disc });
+      dur = 0;
+      disc = false;
+    }
   }
   return { init, segments };
 }
@@ -215,19 +213,7 @@ export async function downloadHls(opts: {
       if (isFmp4) {
         if (pl.init) await write(await getBytes(pl.init.url, 'init', pl.init.key));
       }
-      let mux: MuxTransmuxer | null = null;
-      let wroteInit = false;
-      const pending: Uint8Array[] = [];
-      if (!isFmp4) {
-        mux = new muxjs.mp4.Transmuxer({ remux: true });
-        mux.on('data', (seg) => {
-          if (!wroteInit) {
-            pending.push(seg.initSegment);
-            wroteInit = true;
-          }
-          pending.push(seg.data);
-        });
-      }
+      const joiner = isFmp4 ? null : new TsJoiner(muxjs);
       for (let i = 0; i < pl.segments.length; i++) {
         if (isCancelled()) throw new HlsError('Đã huỷ');
         const s = pl.segments[i];
@@ -237,14 +223,20 @@ export async function downloadHls(opts: {
           const f = new File(work, n);
           if (f.exists) f.delete();
         }
-        if (mux) {
-          mux.push(b);
-          mux.flush();
-          while (pending.length) await write(pending.shift()!);
-        } else await write(b);
+        if (joiner) for (const part of joiner.push(b, s.dur, s.disc)) await write(part);
+        else await write(b);
         opts.onProgress({ done: i + 1, total: pl.segments.length, bytes });
       }
-      if (mux && !wroteInit) throw new HlsError('Không đọc được hình/tiếng trong video (có thể là H.265)');
+      if (joiner && !joiner.hasInit) throw new HlsError('Không đọc được hình/tiếng trong video (có thể là H.265)');
+      const total = pl.segments.reduce((a, x) => a + x.dur, 0);
+      log.info(
+        'download',
+        `Ghép HLS: ${pl.segments.length} đoạn, ${Math.round(total)} s theo playlist`,
+        `Dạng đoạn: ${isFmp4 ? 'fMP4' : 'TS'} · có mã hoá: ${pl.segments.some((x) => x.key) ? 'có' : 'không'}` +
+          (joiner
+            ? ` · số chỗ nối thời gian: ${joiner.groups - 1} · đoạn có phần đầu giả (ảnh): ${joiner.strippedHeaders}`
+            : ''),
+      );
     } finally {
       h.close();
     }
@@ -253,6 +245,7 @@ export async function downloadHls(opts: {
     const dest = new File(opts.destUri);
     try {
       await native.exportMp4(toPath(frag.uri), toPath(dest.uri));
+      log.debug('download', 'Đã chuyển video HLS sang MP4 thường', dest.name);
     } catch (e) {
       log.warn('download', 'Không chuyển được sang MP4 thường, giữ bản MP4 phân mảnh', e);
       if (dest.exists) dest.delete();
