@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, StyleSheet, View, type HostInstance } from 'react-native';
+import { Linking, StyleSheet, type HostInstance } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { WebView as RNWebView } from 'react-native-webview';
 import type {
   ShouldStartLoadRequest,
@@ -138,6 +139,12 @@ function BrowserTabImpl({
   const ref = useRef<WebViewHandle>(null);
   // Màu đầu trang (trang tự đo, xem lib/inject): tô dải dưới giờ/pin cho trang liền lên tận mép
   const [topColor, setTopColor] = useState<string | null>(null);
+  // Đổi màu dải trên cùng mượt (chuyển dần ~0.3 s) thay vì đổi cái rụp khi sang trang khác màu
+  const topBg = useSharedValue<string>(colors.bg);
+  useEffect(() => {
+    if (topColor) topBg.set(withTiming(topColor, { duration: 320, easing: Easing.out(Easing.cubic) }));
+  }, [topColor, topBg]);
+  const topBgStyle = useAnimatedStyle(() => ({ backgroundColor: topBg.get() }));
   const lastPageCounts = useRef<Counts>({ ...EMPTY_COUNTS });
   const urlRef = useRef(tab.url);
   const loadStartedAt = useRef(0);
@@ -633,12 +640,13 @@ function BrowserTabImpl({
   if (!tab.sourceUrl) return null;
 
   return (
-    <View
+    <Animated.View
       ref={shotRef}
       collapsable={false}
       // Không dùng display:none: thẻ ẩn có thể bị dựng lại từ đầu và quay về trang đầu tiên, mất lịch sử lùi/tiến
       pointerEvents={visible ? 'auto' : 'none'}
-      style={[StyleSheet.absoluteFill, visible ? styles.shown : styles.hidden]}
+      // Nền khung = màu đầu trang (WebView trong suốt nên dải dưới giờ/pin hiện màu này)
+      style={[StyleSheet.absoluteFill, visible ? styles.shown : styles.hidden, topBgStyle]}
     >
       <WebView
         ref={setRef}
@@ -646,7 +654,7 @@ function BrowserTabImpl({
         // Mặc định thư viện chỉ cho http/https/about:blank, còn lại (vd about:srcdoc của khung trình phát video)
         // bị chặn và bị mở ra ngoài app → video không chạy. Ryx tự lọc lược đồ trong onShouldStart.
         originWhitelist={ALL_ORIGINS}
-        style={[styles.web, topColor ? { backgroundColor: topColor } : null]}
+        style={styles.web}
         containerStyle={StyleSheet.absoluteFill}
         // Chẩn đoán chạy từ đầu trang chính (bắt được cả script lỗi lúc tải), rồi tới script chính của Ryx
         injectedJavaScriptBeforeContentLoaded={diag ? FRAME_DIAG_SCRIPT + '\n' + script : script}
@@ -684,14 +692,14 @@ function BrowserTabImpl({
         contentMode="mobile"
         keyboardDisplayRequiresUserAction={false}
       />
-    </View>
+    </Animated.View>
   );
 }
 
 export const BrowserTab = memo(BrowserTabImpl);
 
 const styles = StyleSheet.create({
-  web: { backgroundColor: colors.bg },
+  web: { backgroundColor: 'transparent' },
   // Không đặt zIndex: khung bọc thẻ có thể bị gộp (view flattening) lên cùng cấp với dock/thanh địa chỉ,
   // zIndex khi đó đẩy trang web đè lên che mất dock. Thẻ ẩn đã trong suốt và không nhận chạm nên thứ tự không quan trọng.
   shown: { opacity: 1 },
