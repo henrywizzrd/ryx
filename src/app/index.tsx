@@ -7,7 +7,13 @@ import { ActionSheetIOS, Alert, Linking, Pressable, Share, StyleSheet, View } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ADDRESS_BAR_HEIGHT, AddressBar } from '@/components/address-bar';
-import { BrowserTab, type ChapterInfo, type MediaPress, type PickedElement } from '@/components/browser-tab';
+import {
+  BrowserTab,
+  type ChapterInfo,
+  type LinkPress,
+  type MediaPress,
+  type PickedElement,
+} from '@/components/browser-tab';
 import { NoticeBanner, type Notice } from '@/components/notice-banner';
 import { PopupBanner, type BlockedPopup } from '@/components/popup-banner';
 import { configureContentBlocker, refreshContentBlocker } from '@/lib/content-blocker';
@@ -16,6 +22,7 @@ import { log } from '@/lib/logger';
 import { getRyxNetStatus, setRyxNetEnabled } from '@/lib/ryx-net';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { Dock, dockMetrics } from '@/components/dock';
+import { EdgeSwipeBack } from '@/components/edge-swipe';
 import { Glass } from '@/components/glass';
 import { Txt } from '@/components/txt';
 import { MenuSheet, type MenuAction } from '@/components/menu-sheet';
@@ -43,7 +50,7 @@ export default function BrowserScreen() {
   const kb = useKeyboardHeight();
   const { settings, prefsFor, setSitePref, update } = useSettings();
   const { record } = useStats();
-  const { tabs, active, newTab, closeTab, patchTab, open, refs } = useTabs();
+  const { tabs, active, newTab, closeTab, patchTab, open, refs, setActive } = useTabs();
 
   const [addrFocused, setAddrFocused] = useState(false);
   const [shieldOpen, setShieldOpen] = useState(false);
@@ -258,16 +265,24 @@ export default function BrowserScreen() {
         });
     };
     const items: { label: string; run: () => void }[] = [];
-    if (m.src)
+    const canFetch = /^https?:/.test(m.src);
+    // Video: "Tải video" luôn đứng đầu
+    if (isVideo) {
       items.push({
-        label: isVideo ? 'Lưu video vào Ảnh' : 'Lưu vào Ảnh',
-        run: () => save(m.src, m.kind),
+        label: 'Tải video',
+        run: () =>
+          canFetch
+            ? download(m.src, m.pageUrl, 'mp4')
+            : Alert.alert(
+                'Chưa tải được video này',
+                'Video phát theo dạng luồng (HLS) nên không có một file mp4 để tải. Ryx hiện chỉ tải được video mp4.',
+              ),
       });
-    if (/^https?:/.test(m.src))
-      items.push({
-        label: 'Tải về (xem trong Tải về)',
-        run: () => download(m.src, m.pageUrl, isVideo ? 'mp4' : 'jpg'),
-      });
+      if (canFetch) items.push({ label: 'Lưu video vào Ảnh', run: () => save(m.src, 'video') });
+    } else if (m.src) {
+      items.push({ label: 'Lưu vào Ảnh', run: () => save(m.src, 'image') });
+      if (canFetch) items.push({ label: 'Tải về', run: () => download(m.src, m.pageUrl, 'jpg') });
+    }
     if (isVideo && m.poster)
       items.push({
         label: 'Lưu ảnh bìa video',
@@ -288,8 +303,29 @@ export default function BrowserScreen() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     ActionSheetIOS.showActionSheetWithOptions(
       {
-        title: isVideo ? 'Video' : 'Ảnh',
-        message: getHost(m.src) || undefined,
+        title: isVideo ? (m.playing ? 'Video đang phát' : 'Video') : 'Ảnh',
+        message: (isVideo && m.pageTitle) || getHost(m.src) || undefined,
+        options: [...items.map((i) => i.label), 'Huỷ'],
+        cancelButtonIndex: items.length,
+      },
+      (i) => items[i]?.run(),
+    );
+  };
+
+  // Nhấn giữ link
+  const onLinkLongPress = (l: LinkPress) => {
+    const items: { label: string; run: () => void }[] = [
+      { label: 'Mở trong thẻ mới', run: () => newTab(l.href) },
+      { label: 'Mở ở đây', run: () => open(active.id, l.href) },
+      { label: 'Sao chép link', run: () => void Clipboard.setStringAsync(l.href) },
+      { label: 'Chia sẻ link…', run: () => void Share.share({ url: l.href, message: l.href }).catch(() => {}) },
+      { label: 'Tải file về', run: () => download(l.href, l.pageUrl) },
+    ];
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: l.text || getHost(l.href) || 'Link',
+        message: l.href.length > 120 ? `${l.href.slice(0, 120)}…` : l.href,
         options: [...items.map((i) => i.label), 'Huỷ'],
         cancelButtonIndex: items.length,
       },
@@ -389,6 +425,7 @@ export default function BrowserScreen() {
             onOpenInNewTab={openInNewTab}
             onPopupBlocked={onPopupBlocked}
             onMediaLongPress={onMediaLongPress}
+            onLinkLongPress={onLinkLongPress}
             onPick={onPick}
             onSlowLoad={onSlowLoad}
             onChapter={onChapter}
@@ -408,6 +445,18 @@ export default function BrowserScreen() {
         )}
       </View>
 
+      {/* Vuốt từ mép trái để lùi: trang đầu của thẻ thì về trang Thẻ mới; đang ở Thẻ mới thì không làm gì */}
+      {!active.home && !picking && (
+        <EdgeSwipeBack
+          top={addrTop ? insets.top + ADDRESS_BAR_HEIGHT + 12 : insets.top}
+          bottom={chromeBottom}
+          onBack={() => {
+            log.debug('nav', `Vuốt lùi (trang có lịch sử lùi: ${active.canGoBack ? 'có' : 'không'})`, active.url ?? '');
+            goBack();
+          }}
+        />
+      )}
+
       {/* Che vùng thanh trạng thái để nội dung trang không chạy dưới đồng hồ/pin */}
       <View style={[styles.statusCover, { height: insets.top }]} pointerEvents="none" />
 
@@ -421,6 +470,15 @@ export default function BrowserScreen() {
           blocked={blocked.total}
           onPress={onDockPress}
           onNewTab={() => newTab()}
+          onSwipeUp={() => void captureTab(active.id).finally(() => router.push('/tabs'))}
+          onSwipeSide={(dir) => {
+            const i = tabs.findIndex((t) => t.id === active.id);
+            const next = tabs[dir === 'next' ? i + 1 : i - 1];
+            if (next) {
+              void Haptics.selectionAsync();
+              setActive(next.id);
+            } else void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          }}
         />
       )}
 

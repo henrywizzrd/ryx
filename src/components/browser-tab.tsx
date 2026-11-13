@@ -49,6 +49,8 @@ interface Props {
   onPopupBlocked: (url: string) => void;
   /** Nhấn giữ ảnh/video trong trang. */
   onMediaLongPress: (m: MediaPress) => void;
+  /** Nhấn giữ một link. */
+  onLinkLongPress: (l: LinkPress) => void;
   /** Đang ở chế độ "Chạm để ẩn quảng cáo" và trang báo phần tử vừa chọn. */
   onPick: (p: PickedElement) => void;
   /** Trang chương truyện (có link chương trước/sau), null khi rời trang. */
@@ -84,6 +86,15 @@ export interface MediaPress {
   poster: string;
   link: string;
   pageUrl: string;
+  /** Video đang phát lúc nhấn giữ */
+  playing: boolean;
+  pageTitle: string;
+}
+
+export interface LinkPress {
+  href: string;
+  text: string;
+  pageUrl: string;
 }
 
 
@@ -97,6 +108,7 @@ function BrowserTabImpl({
   onOpenInNewTab,
   onPopupBlocked,
   onMediaLongPress,
+  onLinkLongPress,
   onPick,
   onSlowLoad,
   onChapter,
@@ -455,14 +467,29 @@ function BrowserTabImpl({
         return;
       }
       if (msg.type === 'ryx:media') {
-        const m = msg as unknown as { kind?: string; src?: string; poster?: string; link?: string; url?: string };
+        const m = msg as unknown as {
+          kind?: string;
+          src?: string;
+          poster?: string;
+          link?: string;
+          url?: string;
+          playing?: boolean;
+          title?: string;
+        };
         onMediaLongPress({
           kind: m.kind === 'video' ? 'video' : 'image',
           src: m.src ?? '',
           poster: m.poster ?? '',
           link: m.link ?? '',
           pageUrl: m.url ?? urlRef.current ?? '',
+          playing: !!m.playing,
+          pageTitle: m.title ?? '',
         });
+        return;
+      }
+      if (msg.type === 'ryx:link') {
+        const l = msg as unknown as { href?: string; text?: string; url?: string };
+        if (l.href) onLinkLongPress({ href: l.href, text: l.text ?? '', pageUrl: l.url ?? urlRef.current ?? '' });
         return;
       }
       if (msg.type === 'ryx:diag') {
@@ -510,7 +537,7 @@ function BrowserTabImpl({
       if (delta.ads || delta.gambling || delta.popups) record(delta);
       patchTab(tab.id, { pageCounts: next });
     },
-    [patchTab, record, tab.id, stopWatch, onMediaLongPress, onPick, onChapter],
+    [patchTab, record, tab.id, stopWatch, onMediaLongPress, onLinkLongPress, onPick, onChapter],
   );
 
   if (!tab.sourceUrl) return null;
@@ -548,7 +575,8 @@ function BrowserTabImpl({
       onHttpError={onHttpError}
       onMessage={onMessage}
       onContentProcessDidTerminate={onProcessTerminated}
-      allowsBackForwardNavigationGestures
+      // Vuốt lùi do Ryx tự làm (components/edge-swipe): cử chỉ có sẵn không chạy trong app và sẽ chồng lên nhau
+      allowsBackForwardNavigationGestures={false}
       allowsInlineMediaPlayback
       // Mặc định (true) có thể làm video trên iOS quay vòng mãi không phát (theo tài liệu react-native-webview)
       mediaPlaybackRequiresUserAction={false}

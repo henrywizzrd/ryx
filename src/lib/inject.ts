@@ -210,7 +210,7 @@ document.addEventListener('DOMContentLoaded', function(){
 window.addEventListener('load', scan);
 
 /* Nhấn giữ ảnh/video → app hiện menu (Lưu vào Ảnh, Sao chép link…) */
-styleEl('ryx-lp').textContent = 'img,video{-webkit-touch-callout:none!important;}';
+styleEl('ryx-lp').textContent = 'img,video,a{-webkit-touch-callout:none!important;}';
 var lp = null, lpX = 0, lpY = 0, lpFired = 0;
 function mediaAt(t){
   if (!t || !t.closest) return null;
@@ -221,18 +221,35 @@ function mediaAt(t){
   if (box) { var vv = box.querySelector('video'); if (vv) return vv; }
   return null;
 }
+/* Video lớn nhất nằm dưới ngón tay (kể cả khi bị lớp nút của trình phát phủ lên) */
+function videoAt(x, y){
+  var vs = document.getElementsByTagName('video'), best = null, area = 0;
+  for (var i = 0; i < vs.length; i++) {
+    var r = vs[i].getBoundingClientRect();
+    if (r.width < 120 || x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+    if (r.width * r.height > area) { area = r.width * r.height; best = vs[i]; }
+  }
+  return best;
+}
 document.addEventListener('touchstart', function(e){
   if (!e.touches || e.touches.length !== 1) return;
-  var m = mediaAt(e.target); if (!m) return;
-  lpX = e.touches[0].clientX; lpY = e.touches[0].clientY;
+  var x = e.touches[0].clientX, y = e.touches[0].clientY;
+  var m = videoAt(x, y) || mediaAt(e.target);
+  var link = !m && e.target && e.target.closest ? e.target.closest('a[href]') : null;
+  if (!m && !(link && /^https?:/i.test(link.href))) return;
+  lpX = x; lpY = y;
   clearTimeout(lp);
   lp = setTimeout(function(){
     lp = null; lpFired = Date.now();
+    if (!m) {
+      send({ type: 'ryx:link', href: link.href, text: String(link.textContent || link.title || '').trim().slice(0, 120), url: location.href });
+      return;
+    }
     var isV = m.tagName === 'VIDEO';
     var so = isV && m.querySelector ? m.querySelector('source') : null;
     var src = isV ? (m.currentSrc || m.src || (so ? so.src : '')) : (m.currentSrc || m.src || '');
     var a = m.closest('a');
-    send({ type: 'ryx:media', kind: isV ? 'video' : 'image', src: String(src || ''), poster: isV ? String(m.poster || '') : '', link: a ? a.href : '', url: location.href });
+    send({ type: 'ryx:media', kind: isV ? 'video' : 'image', src: String(src || ''), poster: isV ? String(m.poster || '') : '', link: a ? a.href : '', url: location.href, playing: isV && !m.paused, title: document.title });
   }, 550);
 }, { passive: true, capture: true });
 function lpCancel(e){

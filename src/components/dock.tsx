@@ -1,5 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Haptics from 'expo-haptics';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { DockButtonId, DockStyle } from '@/state/settings';
@@ -45,7 +47,15 @@ interface Props {
   blocked: number;
   onPress: (id: DockButtonId) => void;
   onNewTab: () => void;
+  /** Vuốt lên trên dock → màn các thẻ (giống Safari) */
+  onSwipeUp: () => void;
+  /** Vuốt ngang trên dock → thẻ bên cạnh */
+  onSwipeSide: (dir: 'next' | 'prev') => void;
 }
+
+/** Ngưỡng để coi là "vuốt" (chưa tới thì vẫn là bấm nút bình thường). */
+const SWIPE_UP = 36;
+const SWIPE_SIDE = 56;
 
 function TabCountIcon({ count, size }: { count: number; size: number }) {
   const box = Math.round(size * 0.92);
@@ -63,19 +73,50 @@ function groupButtons(ids: DockButtonId[]): DockButtonId[][] {
   const groups: DockButtonId[][] = [];
   for (const id of ids) {
     const last = groups[groups.length - 1];
-    const pair = last && last.length === 1 && ((last[0] === 'back' && id === 'forward') || (last[0] === 'forward' && id === 'back'));
+    const pair =
+      last &&
+      last.length === 1 &&
+      ((last[0] === 'back' && id === 'forward') || (last[0] === 'forward' && id === 'back'));
     if (pair) last.push(id);
     else groups.push([id]);
   }
   return groups;
 }
 
-export function Dock({ dockStyle, buttons, tabCount, canGoBack, canGoForward, blocked, onPress, onNewTab }: Props) {
+export function Dock({
+  dockStyle,
+  buttons,
+  tabCount,
+  canGoBack,
+  canGoForward,
+  blocked,
+  onPress,
+  onNewTab,
+  onSwipeUp,
+  onSwipeSide,
+}: Props) {
   const insets = useSafeAreaInsets();
   const { accent } = useTheme();
   const s = SIZES[dockStyle];
   const m = dockMetrics(dockStyle, insets.bottom);
   const attached = dockStyle === 'attached';
+
+  // Vuốt trên dock: chỉ kích hoạt khi ngón tay đã di chuyển đủ xa, nên bấm nút vẫn như cũ
+  const swipe = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetY([-12, 12])
+    .activeOffsetX([-18, 18])
+    .onEnd((e) => {
+      const ax = Math.abs(e.translationX);
+      const ay = Math.abs(e.translationY);
+      if (-e.translationY > SWIPE_UP && ay > ax) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onSwipeUp();
+      } else if (ax > SWIPE_SIDE && ax > ay) {
+        onSwipeSide(e.translationX < 0 ? 'next' : 'prev');
+      }
+    });
+  const wrap = (node: React.ReactElement) => <GestureDetector gesture={swipe}>{node}</GestureDetector>;
 
   const renderButton = (id: DockButtonId) => {
     const def = DOCK_BUTTONS[id];
@@ -123,13 +164,20 @@ export function Dock({ dockStyle, buttons, tabCount, canGoBack, canGoForward, bl
         </View>
       ))}
       {attached && (
-        <IconButton icon="add" label="Thẻ mới" size={s.button} iconSize={s.icon + 3} color={accent} onPress={onNewTab} />
+        <IconButton
+          icon="add"
+          label="Thẻ mới"
+          size={s.button}
+          iconSize={s.icon + 3}
+          color={accent}
+          onPress={onNewTab}
+        />
       )}
     </View>
   );
 
   if (attached) {
-    return (
+    return wrap(
       <Glass
         radius={0}
         shadow={false}
@@ -137,11 +185,11 @@ export function Dock({ dockStyle, buttons, tabCount, canGoBack, canGoForward, bl
         contentStyle={{ paddingBottom: insets.bottom }}
       >
         {content}
-      </Glass>
+      </Glass>,
     );
   }
 
-  return (
+  return wrap(
     <View
       pointerEvents="box-none"
       style={[styles.floatRow, { left: s.margin, right: s.margin, bottom: m.bottom, height: s.height }]}
@@ -159,7 +207,7 @@ export function Dock({ dockStyle, buttons, tabCount, canGoBack, canGoForward, bl
           <Ionicons name="add" size={s.icon + 5} color={accent} />
         </Pressable>
       </Glass>
-    </View>
+    </View>,
   );
 }
 
