@@ -16,7 +16,7 @@ import { PageError } from '@/components/page-error';
 import { attachContentBlocker } from '@/lib/content-blocker';
 import { describeDiag, FRAME_DIAG_SCRIPT } from '@/lib/frame-diag';
 import { log } from '@/lib/logger';
-import { captureTab, registerShotTarget } from '@/lib/tab-shots';
+import { registerShotTarget } from '@/lib/tab-shots';
 import { getHost, registrableDomain, siteKey } from '@/lib/url';
 import { useHistoryActions } from '@/state/history';
 import { setSiteTheme } from '@/state/site-themes';
@@ -179,7 +179,8 @@ function BrowserTabImpl({
       registerShotTarget(tab.id, {
         ref: shotRef,
         isVisible: () => visibleRef.current,
-        onShot: (uri) => patchTab(tab.id, { thumb: uri }),
+        // Ảnh thẻ giờ do màn trình duyệt chụp cả trang (kèm thanh địa chỉ) lúc mở màn các thẻ
+        onShot: () => {},
       }),
     [tab.id, patchTab],
   );
@@ -554,9 +555,6 @@ function BrowserTabImpl({
         pageReady.current = true;
         // Nội dung trang đã hiện & dùng được: cho thanh tiến trình xong luôn, không đợi quảng cáo/ảnh tải hết
         stopWatch();
-        // Chụp ảnh thu nhỏ một lúc sau khi trang hiện (cho màn quản lý thẻ)
-        if (shotTimer.current) clearTimeout(shotTimer.current);
-        shotTimer.current = setTimeout(() => void captureTab(tab.id), 1500);
         if (loadStartedAt.current) {
           log.debug(
             'web',

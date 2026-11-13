@@ -3,7 +3,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ActionSheetIOS, Alert, Linking, Pressable, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
+import {
+  ActionSheetIOS,
+  Alert,
+  Linking,
+  Pressable,
+  Share,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type HostInstance,
+} from 'react-native';
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -33,7 +43,7 @@ import { getRyxNetStatus, setRyxNetEnabled } from '@/lib/ryx-net';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { ContextMenu, type ContextMenuState, type MenuItem } from '@/components/context-menu';
 import { Dock, dockMetrics, ZOOM_SPRING } from '@/components/dock';
-import { TabOverview, type FullPhase, type Rect } from '@/components/tab-overview';
+import { TabOverview, thumbKeyOf, type FullPhase, type Rect } from '@/components/tab-overview';
 import { EdgeSwipeBack } from '@/components/edge-swipe';
 import { Glass } from '@/components/glass';
 import { Txt } from '@/components/txt';
@@ -41,7 +51,7 @@ import { MenuSheet, type MenuAction } from '@/components/menu-sheet';
 import { NewTabPage } from '@/components/new-tab-page';
 import { ShieldSheet } from '@/components/shield-sheet';
 import { buildInjectedScript, type InjectConfig } from '@/lib/inject';
-import { captureTab } from '@/lib/tab-shots';
+import { captureRef } from 'react-native-view-shot';
 import { useSiteThemes } from '@/state/site-themes';
 import { getHost, resolveInput, siteKey } from '@/lib/url';
 import { useKeyboardHeight } from '@/lib/use-keyboard-height';
@@ -74,6 +84,7 @@ export default function BrowserScreen() {
   const fy = useSharedValue(H * 0.15);
   const fw = useSharedValue(W * 0.8);
   const fh = useSharedValue(H * 0.6);
+  const fr = useSharedValue(20);
   const dockX = useSharedValue(0);
   const dockY = useSharedValue(0);
   /** off: xem trang · drag: đang kéo · open: đang ở màn các thẻ · closing: thẻ đang phóng to ra · fly: thẻ mới bay ra */
@@ -112,6 +123,7 @@ export default function BrowserScreen() {
   };
 
   const [ovToken, setOvToken] = useState(0);
+  const pageShotRef = useRef<HostInstance>(null);
   const phaseRef = useRef(phase);
   useEffect(() => {
     phaseRef.current = phase;
@@ -130,8 +142,9 @@ export default function BrowserScreen() {
       fy.set(withTiming(r.y, cfg));
       fw.set(withTiming(r.w, cfg));
       fh.set(withTiming(r.h, cfg));
+      if (r.radius !== undefined) fr.set(r.radius);
     },
-    [fx, fy, fw, fh],
+    [fx, fy, fw, fh, fr],
   );
 
   const setFrame = (r: Rect, animate: boolean) => {
@@ -140,6 +153,7 @@ export default function BrowserScreen() {
     fy.set(animate ? withTiming(r.y, cfg) : r.y);
     fw.set(animate ? withTiming(r.w, cfg) : r.w);
     fh.set(animate ? withTiming(r.h, cfg) : r.h);
+    fr.set(r.radius ?? 20);
   };
   const zoomTo = (to: 0 | 1, done: (open: boolean) => void) => {
     const open = to === 1;
@@ -151,17 +165,33 @@ export default function BrowserScreen() {
           if (f) runOnJS(done)(open);
         });
   };
+  const awaitingShot = useRef<string | null>(null);
+  /** Đổi trang thật (đang nằm trong khung thẻ) sang thẻ trong màn các thẻ */
+  const revealOverview = (uri: string | null) => {
+    if (uri !== null && awaitingShot.current !== uri) return;
+    awaitingShot.current = null;
+    setHideId(null);
+    setPhase((p) => (p === 'drag' ? 'open' : p));
+  };
   const zoomSettled = (open: boolean) => {
     endTrack(open ? 'Mở' : 'Về trang');
     if (open) {
-      // Chụp trang lúc hiệu ứng đã dừng (chụp giữa chừng làm rớt khung hình), rồi mới đổi trang thật sang ảnh của thẻ
-      const id = active.id;
-      void Promise.race([captureTab(id), new Promise((res) => setTimeout(res, 400))]).then(() =>
-        setTimeout(() => {
-          setHideId(null);
-          setPhase((p) => (p === 'drag' ? 'open' : p));
-        }, 50),
-      );
+      // Hiệu ứng dừng rồi mới chụp cả trang (chụp giữa chừng làm rớt khung hình). Ảnh chụp giống hệt trang thật
+      // đang nằm trong khung, nên chỉ đổi sang ảnh khi ảnh ĐÃ HIỆN trên thẻ → không nháy.
+      const tab = active;
+      const t0 = Date.now();
+      captureRef(pageShotRef, { format: 'jpg', quality: 0.75, width: Math.round(W * 1.5), result: 'tmpfile' })
+        .then((uri) => {
+          awaitingShot.current = uri;
+          patchTab(tab.id, { thumb: uri, thumbKey: thumbKeyOf(tab) });
+          log.debug('ui', `Chụp thẻ xong sau ${Date.now() - t0} ms`);
+          // Phòng khi ảnh không báo đã hiện
+          setTimeout(() => revealOverview(uri), 600);
+        })
+        .catch((e: unknown) => {
+          log.warn('ui', 'Không chụp được trang cho thẻ', e);
+          revealOverview(null);
+        });
       return;
     }
     setHideId(null);
@@ -228,7 +258,7 @@ export default function BrowserScreen() {
     const scale = 1 + (s - 1) * p;
     return {
       height: H + (fh.value / s - H) * p,
-      borderRadius: (20 * p) / scale,
+      borderRadius: (fr.value * p) / scale,
       transform: [{ translateX: fx.value * p }, { translateY: fy.value * p }, { scale }],
     };
   });
@@ -614,6 +644,7 @@ export default function BrowserScreen() {
         phase={phase}
         token={ovToken}
         onActiveMeasurer={onActiveMeasurer}
+        onActiveThumbShown={(uri) => revealOverview(uri)}
         zoom={zoom}
         dockShift={dockX}
         tabs={tabs}
@@ -646,7 +677,11 @@ export default function BrowserScreen() {
         pointerEvents={pageOn ? 'box-none' : 'none'}
         style={[styles.page, { width: W, opacity: phase === 'open' ? 0 : 1 }, pageStyle]}
       >
-        <View style={{ position: 'absolute', left: 0, top: 0, width: W, height: H }}>
+        <View
+          ref={pageShotRef}
+          collapsable={false}
+          style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, backgroundColor: colors.bg }}
+        >
           <View style={[styles.webArea, { top: contentTop, bottom: webContainerBottom }]}>
             {tabs.map((t) => (
               <BrowserTab

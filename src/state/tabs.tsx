@@ -22,6 +22,8 @@ export interface Tab {
   pageCounts: Counts;
   /** Ảnh chụp thu nhỏ của trang (file tạm) cho màn quản lý thẻ. */
   thumb?: string;
+  /** Ảnh chụp ứng với trạng thái nào của thẻ (`home|url`); lệch thì không dùng ảnh nữa */
+  thumbKey?: string;
 }
 
 let seq = 0;
@@ -90,23 +92,20 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
     return tab.id;
   }, []);
 
-  const closeTab = useCallback(
-    (id: string) => {
-      refs.current.delete(id);
-      setTabs((list) => {
-        const idx = list.findIndex((t) => t.id === id);
-        const next = list.filter((t) => t.id !== id);
-        if (next.length === 0) {
-          const fresh = makeTab();
-          setActiveId(fresh.id);
-          return [fresh];
-        }
-        setActiveId((cur) => (cur === id ? next[Math.max(0, idx - 1)].id : cur));
-        return next;
-      });
-    },
-    [],
-  );
+  const closeTab = useCallback((id: string) => {
+    refs.current.delete(id);
+    setTabs((list) => {
+      const idx = list.findIndex((t) => t.id === id);
+      const next = list.filter((t) => t.id !== id);
+      if (next.length === 0) {
+        const fresh = makeTab();
+        setActiveId(fresh.id);
+        return [fresh];
+      }
+      setActiveId((cur) => (cur === id ? next[Math.max(0, idx - 1)].id : cur));
+      return next;
+    });
+  }, []);
 
   const closeAll = useCallback(() => {
     refs.current.clear();

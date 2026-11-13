@@ -43,7 +43,12 @@ export interface Rect {
   y: number;
   w: number;
   h: number;
+  /** Bo góc của khung thẻ (để trang thu nhỏ bo đúng bằng thẻ) */
+  radius?: number;
 }
+
+/** Khoá trạng thái của thẻ mà ảnh chụp phải khớp */
+export const thumbKeyOf = (t: Tab) => `${t.home}|${t.url ?? ''}`;
 
 export const TAB_LAYOUTS: { id: TabLayout; icon: IconName; label: string }[] = [
   { id: 'grid', icon: 'grid-outline', label: 'Lưới' },
@@ -76,6 +81,7 @@ interface Props {
   token: number;
   /** Nhận hàm đo vị trí thẻ đang mở (để nút Các thẻ phóng đúng chỗ) */
   onActiveMeasurer: (fn: Measurer) => void;
+  onActiveThumbShown: (uri: string) => void;
   onPick: (id: string, r: Rect | null) => void;
   onClose: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -114,6 +120,8 @@ interface CardProps {
 type Measurer = (cb: (r: Rect | null) => void) => void;
 
 interface Ctx {
+  /** Ảnh của thẻ đang mở đã hiện xong (để đổi từ trang thật sang ảnh không bị nháy) */
+  onActiveThumbShown: (uri: string) => void;
   token: number;
   onActiveMeasurer: (fn: Measurer) => void;
   onPick: (id: string, r: Rect | null) => void;
@@ -133,13 +141,13 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
     // Đợi bố cục cuộn tới thẻ (2 khung hình) rồi mới đo
     let id2 = 0;
     const id1 = requestAnimationFrame(() => {
-      id2 = requestAnimationFrame(() => measure(ref, (r) => r && onActiveFrame(r)));
+      id2 = requestAnimationFrame(() => measure(ref, (r) => r && onActiveFrame({ ...r, radius })));
     });
     return () => {
       cancelAnimationFrame(id1);
       cancelAnimationFrame(id2);
     };
-  }, [active, token, onActiveMeasurer, onActiveFrame]);
+  }, [active, token, onActiveMeasurer, onActiveFrame, radius]);
 
   const titleRow = noTitle ? null : (
     <View style={[styles.titleRow, { width }]}>
@@ -170,7 +178,7 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
         collapsable={false}
         onPress={() => {
           void Haptics.selectionAsync();
-          measure(ref, (r) => ctx.onPick(tab.id, r));
+          measure(ref, (r) => ctx.onPick(tab.id, r && { ...r, radius }));
         }}
         onLongPress={() =>
           showTabMenu(
@@ -191,13 +199,15 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
           previewStyle,
         ]}
       >
-        {showPage && tab.thumb ? (
+        {tab.thumb && tab.thumbKey === thumbKeyOf(tab) ? (
+          // Ảnh chụp cả màn hình, khớp chiều ngang, cắt phần dưới — đúng như trang thật khi thu nhỏ vào khung
           <Image
             source={{ uri: tab.thumb }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             contentPosition="top"
-            transition={120}
+            transition={0}
+            onDisplay={active ? () => ctx.onActiveThumbShown(tab.thumb!) : undefined}
             accessibilityIgnoresInvertColors
           />
         ) : showPage ? (
@@ -528,45 +538,46 @@ function Coverflow({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
 
 /** Chia đôi: các thẻ khác nhỏ, nghiêng ở cột trái; thẻ vừa thu nhỏ to bên phải */
 function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
-  const leftW = Math.round(W * 0.36);
-  const smallW = leftW - 26;
+  const pad = 16;
+  const gap = 16;
   const others = tabs.filter((t) => t.id !== activeId);
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0];
-  // Thẻ lớn: chừa lề phải 16, giữ tỉ lệ gần với màn hình (không cao quá)
-  const bigW = W - leftW - 30;
-  const bigH = Math.min(H - 20 - TITLE_H, Math.round(bigW * 1.85));
+  // Cân đối: lề trái = lề phải = 16, khoảng giữa 2 cột 16; chỉ có 1 thẻ thì thẻ lớn nằm giữa
+  const alone = others.length === 0;
+  const leftW = alone ? 0 : Math.round((W - pad * 2 - gap) * 0.34);
+  const bigW = alone ? Math.round(W * 0.72) : W - pad * 2 - gap - leftW;
+  const bigH = Math.min(H - 24 - TITLE_H, Math.round(bigW * 1.9));
+  const smallW = leftW;
   return (
-    <View style={{ flex: 1, flexDirection: 'row' }}>
-      <ScrollView
-        style={{ width: leftW }}
-        contentContainerStyle={{ paddingLeft: 16, paddingTop: 8, paddingBottom: 40, gap: 14 }}
-      >
-        {others.length === 0 ? (
-          <Txt size={12} color={colors.textMuted} style={{ width: smallW, paddingTop: 20 }}>
-            Chưa có thẻ nào khác
-          </Txt>
-        ) : null}
-        {others.map((t) => (
-          <Item
-            key={t.id}
-            tab={t}
-            dir="horizontal"
-            ctx={ctx}
-            style={{ transform: [{ perspective: 700 }, { rotateY: '16deg' }] }}
-          >
-            <Card
+    <View style={{ flex: 1, flexDirection: 'row', paddingHorizontal: pad, gap, justifyContent: 'center' }}>
+      {!alone && (
+        <ScrollView
+          style={{ width: leftW, flexGrow: 0 }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingTop: 8, paddingBottom: 40, gap: 14 }}
+        >
+          {others.map((t) => (
+            <Item
+              key={t.id}
               tab={t}
-              active={false}
-              hidden={t.id === hideId}
-              width={smallW}
-              height={Math.round(smallW * 1.5)}
-              radius={14}
+              dir="horizontal"
               ctx={ctx}
-            />
-          </Item>
-        ))}
-      </ScrollView>
-      <View style={{ width: bigW, marginLeft: 14, paddingTop: 8, paddingBottom: 12, justifyContent: 'center' }}>
+              style={{ transform: [{ perspective: 700 }, { rotateY: '14deg' }] }}
+            >
+              <Card
+                tab={t}
+                active={false}
+                hidden={t.id === hideId}
+                width={smallW}
+                height={Math.round(smallW * 1.6)}
+                radius={14}
+                ctx={ctx}
+              />
+            </Item>
+          ))}
+        </ScrollView>
+      )}
+      <View style={{ width: bigW, paddingTop: 8, paddingBottom: 16, justifyContent: 'center' }}>
         <Card
           tab={active}
           active
@@ -600,6 +611,7 @@ function TabOverviewImpl(props: Props) {
     onActiveFrame: props.onActiveFrame,
     token: props.token,
     onActiveMeasurer: props.onActiveMeasurer,
+    onActiveThumbShown: props.onActiveThumbShown,
   };
 
   // Màn các thẻ hiện dần theo mức thu nhỏ của trang
@@ -743,7 +755,8 @@ const styles = StyleSheet.create({
 });
 
 /** Khoá nội dung của thẻ ảnh hưởng tới màn các thẻ (bỏ qua tiến trình tải… để không vẽ lại liên tục) */
-const tabsKey = (tabs: Tab[]) => tabs.map((t) => `${t.id}|${t.title}|${t.url}|${t.home}|${t.thumb}`).join('\n');
+const tabsKey = (tabs: Tab[]) =>
+  tabs.map((t) => `${t.id}|${t.title}|${t.url}|${t.home}|${t.thumb}|${t.thumbKey}`).join('\n');
 
 /**
  * Màn các thẻ luôn được gắn sẵn (ẩn) để lúc kéo dock không phải dựng từ đầu → không khựng khung hình đầu.
