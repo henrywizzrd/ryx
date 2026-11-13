@@ -4,7 +4,6 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
-  ActionSheetIOS,
   Alert,
   Linking,
   Pressable,
@@ -263,6 +262,14 @@ export default function BrowserScreen() {
     };
   });
 
+  // Viền màu nhấn của thẻ đang mở: hiện dần theo mức thu nhỏ, đúng 2pt khi trang nằm gọn trong khung thẻ
+  const pageBorder = useAnimatedStyle(() => {
+    const p = zoom.value;
+    const s = Math.max(0.05, fw.value / W);
+    const scale = 1 + (s - 1) * p;
+    return { borderWidth: (2 * p) / scale, borderRadius: (fr.value * p) / scale };
+  });
+
   const [addrFocused, setAddrFocused] = useState(false);
   const [shieldOpen, setShieldOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -375,39 +382,49 @@ export default function BrowserScreen() {
   const [picking, setPicking] = useState(false);
   // Không bọc useCallback: React Compiler tự ghi nhớ
   const runInActive = (js: string) => refs.current.get(active.id)?.injectJavaScript(`${js}; true;`);
+  const [pickCount, setPickCount] = useState(0);
   const setPick = (on: boolean) => {
     setPicking(on);
+    setPickCount(0);
     runInActive(`window.__ryx && window.__ryx.pick(${on})`);
   };
   const onPick = (p: PickedElement) => {
-    void Haptics.selectionAsync();
+    if (p.kind === 'count') {
+      void Haptics.selectionAsync();
+      setPickCount(p.count);
+      return;
+    }
+    if (p.kind === 'menu') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      showMenu(p.x, p.y, `Đã chọn ${p.count} mục`, `Đang giữ <${p.tag}> ${p.w}×${p.h}`, [
+        {
+          label: p.count > 1 ? `Ẩn ${p.count} mục đã chọn` : 'Ẩn mục này',
+          icon: 'eye-off-outline',
+          destructive: true,
+          run: () => runInActive('window.__ryx && window.__ryx.pickHide()'),
+        },
+        {
+          label: 'Chọn khung lớn hơn',
+          icon: 'expand-outline',
+          run: () => runInActive('window.__ryx && window.__ryx.pickParent()'),
+        },
+        {
+          label: 'Bỏ chọn tất cả',
+          icon: 'close-circle-outline',
+          run: () => runInActive('window.__ryx && window.__ryx.pickClear()'),
+        },
+      ]);
+      return;
+    }
+    // done: lưu các bộ chọn cho trang này
     const pageSite = siteKey(active.url);
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: `Đã chọn khối <${p.tag}> ${p.w}×${p.h}`,
-        message: 'Khối được tô đỏ trên trang sẽ bị ẩn mỗi lần cậu vào trang này.',
-        options: ['Ẩn khối này', 'Chọn khối lớn hơn', 'Chọn lại', 'Thoát'],
-        destructiveButtonIndex: 0,
-        cancelButtonIndex: 3,
-      },
-      (i) => {
-        if (i === 0 && pageSite) {
-          const list = settings.customHides[pageSite] ?? [];
-          if (!list.includes(p.selector)) {
-            update({
-              customHides: {
-                ...settings.customHides,
-                [pageSite]: [...list, p.selector],
-              },
-            });
-          }
-          log.info('block', `Tự ẩn phần tử trên ${pageSite}`, p.selector);
-          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          setPick(false);
-        } else if (i === 1) runInActive('window.__ryx && window.__ryx.pickParent()');
-        else if (i === 3) setPick(false);
-      },
-    );
+    if (!pageSite || p.selectors.length === 0) return setPick(false);
+    const list = settings.customHides[pageSite] ?? [];
+    const add = p.selectors.filter((x) => !list.includes(x));
+    update({ customHides: { ...settings.customHides, [pageSite]: [...list, ...add] } });
+    log.info('block', `Tự ẩn ${p.selectors.length} phần tử trên ${pageSite}`, p.selectors.join('\n'));
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setPick(false);
   };
 
   const hasPage = !active.home && !!active.url;
@@ -522,8 +539,9 @@ export default function BrowserScreen() {
     if (canFetch)
       items.push({ label: 'Sao chép link', icon: 'copy-outline', run: () => void Clipboard.setStringAsync(m.src) });
     showMenu(
-      m.x,
-      m.y,
+      // Trong khung nhúng không biết vị trí thật của ngón tay → đặt menu giữa màn hình
+      m.inFrame ? W / 2 : m.x,
+      m.inFrame ? H * 0.32 : m.y,
       isVideo ? (m.playing ? 'Video đang phát' : 'Video') : 'Ảnh',
       (isVideo && m.pageTitle) || getHost(m.src) || '',
       items.slice(0, 5),
@@ -756,7 +774,9 @@ export default function BrowserScreen() {
               <Glass radius={24} contentStyle={styles.pickRow}>
                 <Ionicons name="hand-left-outline" size={18} color={colors.text} />
                 <Txt weight="medium" size={14} style={{ flex: 1 }} accessibilityRole="alert">
-                  Chạm vào quảng cáo cần ẩn
+                  {pickCount === 0
+                    ? 'Chạm để chọn quảng cáo (chọn được nhiều mục)'
+                    : `Đã chọn ${pickCount} mục · giữ một mục để ẩn`}
                 </Txt>
                 <Pressable
                   onPress={() => setPick(false)}
@@ -810,6 +830,10 @@ export default function BrowserScreen() {
             </View>
           )}
         </View>
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { borderColor: settings.accent }, pageBorder]}
+        />
       </Animated.View>
 
       <Dock

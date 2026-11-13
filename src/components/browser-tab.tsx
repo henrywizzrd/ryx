@@ -11,7 +11,7 @@ import type {
 } from 'react-native-webview/lib/WebViewTypes';
 
 import { shouldBlock, type BlockCategory } from '@/lib/blocker';
-import { buildUpdateCall, type InjectConfig } from '@/lib/inject';
+import { buildUpdateCall, FRAME_MEDIA_SCRIPT, type InjectConfig } from '@/lib/inject';
 import { PageError } from '@/components/page-error';
 import { attachContentBlocker } from '@/lib/content-blocker';
 import { describeDiag, FRAME_DIAG_SCRIPT } from '@/lib/frame-diag';
@@ -75,12 +75,11 @@ export interface ChapterInfo {
   prev: string | null;
 }
 
-export interface PickedElement {
-  selector: string;
-  tag: string;
-  w: number;
-  h: number;
-}
+/** Sự kiện từ chế độ "Chạm để ẩn quảng cáo" (chọn nhiều mục, giữ một mục để hiện menu) */
+export type PickedElement =
+  | { kind: 'count'; count: number }
+  | { kind: 'menu'; count: number; tag: string; w: number; h: number; x: number; y: number }
+  | { kind: 'done'; selectors: string[] };
 
 export interface MediaPress {
   kind: 'image' | 'video';
@@ -92,6 +91,8 @@ export interface MediaPress {
   playing: boolean;
   /** Video hỗ trợ Hình trong hình */
   pip: boolean;
+  /** Nhấn giữ trong khung nhúng: toạ độ tính theo khung đó, không dùng được để đặt menu */
+  inFrame: boolean;
   pageTitle: string;
   /** Chỗ nhấn giữ, tính trong khung trang web */
   x: number;
@@ -499,8 +500,8 @@ function BrowserTabImpl({
         return;
       }
       if (msg.type === 'ryx:pick') {
-        const p = msg as unknown as Partial<PickedElement>;
-        if (p.selector) onPick({ selector: p.selector, tag: p.tag ?? '', w: p.w ?? 0, h: p.h ?? 0 });
+        const p = msg as unknown as PickedElement;
+        if (p.kind === 'count' || p.kind === 'menu' || p.kind === 'done') onPick(p);
         return;
       }
       if (msg.type === 'ryx:media') {
@@ -512,6 +513,7 @@ function BrowserTabImpl({
           url?: string;
           playing?: boolean;
           pip?: boolean;
+          inFrame?: boolean;
           title?: string;
           x?: number;
           y?: number;
@@ -524,6 +526,7 @@ function BrowserTabImpl({
           pageUrl: m.url ?? urlRef.current ?? '',
           playing: !!m.playing,
           pip: !!m.pip,
+          inFrame: !!m.inFrame,
           pageTitle: m.title ?? '',
           x: m.x ?? 0,
           y: m.y ?? 0,
@@ -616,8 +619,9 @@ function BrowserTabImpl({
         // Chẩn đoán chạy từ đầu trang chính (bắt được cả script lỗi lúc tải), rồi tới script chính của Ryx
         injectedJavaScriptBeforeContentLoaded={diag ? FRAME_DIAG_SCRIPT + '\n' + script : script}
         // Script chẩn đoán video chạy cả trong iframe (trình phát thường nằm trong iframe)
-        injectedJavaScript={diag ? FRAME_DIAG_SCRIPT : undefined}
-        injectedJavaScriptForMainFrameOnly={!diag}
+        // Chạy trong cả khung nhúng: nhấn giữ video trong iframe (trình phát của trang khác) cũng hiện menu của Ryx
+        injectedJavaScript={diag ? FRAME_MEDIA_SCRIPT + '\n' + FRAME_DIAG_SCRIPT : FRAME_MEDIA_SCRIPT}
+        injectedJavaScriptForMainFrameOnly={false}
         onShouldStartLoadWithRequest={onShouldStart}
         onOpenWindow={onOpenWindow}
         onFileDownload={(e) => onDownload(e.nativeEvent.downloadUrl, urlRef.current ?? null)}

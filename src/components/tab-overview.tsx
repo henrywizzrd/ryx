@@ -193,7 +193,6 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
         style={({ pressed }) => [
           styles.preview,
           { width, height, borderRadius: radius, backgroundColor: tint },
-          active && { borderColor: accent, borderWidth: 2 },
           hidden && { opacity: 0 },
           pressed && { transform: [{ scale: 0.97 }] },
           previewStyle,
@@ -220,6 +219,17 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
         ) : (
           <HomeMini width={width} />
         )}
+        {/* Viền vẽ ĐÈ lên ảnh (không đẩy ảnh vào trong), giống hệt viền mà trang thật có lúc thu nhỏ → đổi qua lại không nháy */}
+        <View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            { borderRadius: radius },
+            active
+              ? { borderWidth: 2, borderColor: accent }
+              : { borderWidth: StyleSheet.hairlineWidth, borderColor: fg(0.14) },
+          ]}
+        />
       </Pressable>
       {titleBelow && titleRow}
     </View>
@@ -736,8 +746,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: fg(0.14),
   },
   listRow: {
     flexDirection: 'row',

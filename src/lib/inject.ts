@@ -387,6 +387,8 @@ function pipFallback(v, why){
 function pipFromMenu(){
   var v = lpVideo;
   if (!v || !v.isConnected) { var vs = document.getElementsByTagName('video'); v = vs.length ? vs[0] : null; }
+  /* Video nằm trong khung nhúng (iframe) của trang khác: nhờ script trong khung đó bật */
+  if (!v) { var fr = document.getElementsByTagName('iframe'); for (var i = 0; i < fr.length; i++) { try { fr[i].contentWindow.postMessage({ ryxPip: 1 }, '*'); } catch (e) {} } return; }
   if (!v || !pipSupported(v)) { send({ type: 'ryx:log', level: 'warn', msg: 'Video này không hỗ trợ PiP', url: location.href }); return; }
   try {
     var want = pipToggle(v);
@@ -409,16 +411,20 @@ function reportPending(){
 }
 
 /* "Chạm để ẩn quảng cáo": chọn phần tử, app hỏi lại rồi lưu bộ chọn cho trang này */
-var pickOn = false, picked = null;
+var pickOn = false, pickSet = [], pickHeld = null, pickLp = null, pickLpFired = 0, pickX = 0, pickY = 0;
 function pickCss(){
   styleEl('ryx-pick').textContent = pickOn ?
-    '[data-ryx-pick]{outline:3px solid #F87171!important;outline-offset:-3px!important;background-color:rgba(248,113,113,.18)!important;}iframe,video{pointer-events:none!important;}' : '';
+    '[data-ryx-pick]{outline:3px solid #F87171!important;outline-offset:-3px!important;background-color:rgba(248,113,113,.18)!important;}iframe,video{pointer-events:none!important;}*{-webkit-touch-callout:none!important;-webkit-user-select:none!important;}' : '';
 }
-function mark(el){
-  if (picked) picked.removeAttribute('data-ryx-pick');
-  picked = el || null;
-  if (picked) picked.setAttribute('data-ryx-pick', '');
+function setMark(el, on){ if (on) el.setAttribute('data-ryx-pick', ''); else el.removeAttribute('data-ryx-pick'); }
+function pickClearAll(){ for (var i = 0; i < pickSet.length; i++) setMark(pickSet[i], false); pickSet = []; pickHeld = null; }
+/* Thêm 1 mục: bỏ các mục đã chọn nằm bên trong nó (đã gồm rồi) */
+function pickAdd(el){
+  pickSet = pickSet.filter(function(x){ if (el.contains(x)) { setMark(x, false); return false; } return true; });
+  pickSet.push(el); setMark(el, true);
 }
+function pickedOf(t){ if (!t || !t.closest) return null; var c = t.closest('[data-ryx-pick]'); return c && pickSet.indexOf(c) >= 0 ? c : null; }
+function pickCount(){ send({ type: 'ryx:pick', kind: 'count', count: pickSet.length }); }
 function esc(x){ return (window.CSS && CSS.escape) ? CSS.escape(x) : x; }
 function goodToken(t){ return !!t && t.length < 40 && !/[0-9]{3,}/.test(t) && t.indexOf('ryx') < 0; }
 function selFor(el){
@@ -444,26 +450,53 @@ function selFor(el){
   }
   return parts.join(' > ');
 }
-function reportPick(){
-  if (!picked) return;
-  var r = picked.getBoundingClientRect();
-  send({ type: 'ryx:pick', selector: selFor(picked), tag: picked.tagName.toLowerCase(), w: Math.round(r.width), h: Math.round(r.height) });
+/* Chế độ chọn: chạm = chọn/bỏ chọn; giữ đúng một mục đã chọn = app hiện menu (ẩn / chọn khung lớn hơn / bỏ chọn) */
+function pickSwallow(e){
+  if (!pickOn) return;
+  if (e.type === 'touchstart' && e.touches && e.touches.length === 1) {
+    pickX = e.touches[0].clientX; pickY = e.touches[0].clientY;
+    var held = pickedOf(e.target);
+    clearTimeout(pickLp); pickLp = null;
+    if (held) pickLp = setTimeout(function(){
+      pickLp = null; pickLpFired = Date.now(); pickHeld = held;
+      var r = held.getBoundingClientRect();
+      send({ type: 'ryx:pick', kind: 'menu', count: pickSet.length, tag: held.tagName.toLowerCase(), w: Math.round(r.width), h: Math.round(r.height), x: pickX, y: pickY });
+    }, 450);
+  } else if (e.type === 'touchend') { clearTimeout(pickLp); pickLp = null; }
+  e.stopImmediatePropagation();
 }
-function pickSwallow(e){ if (pickOn) { e.stopImmediatePropagation(); } }
 ['pointerdown', 'mousedown', 'touchstart', 'touchend', 'mouseup', 'pointerup'].forEach(function(t){ window.addEventListener(t, pickSwallow, true); });
+window.addEventListener('touchmove', function(e){
+  if (!pickOn || !pickLp || !e.touches || !e.touches[0]) return;
+  if (Math.abs(e.touches[0].clientX - pickX) + Math.abs(e.touches[0].clientY - pickY) > 12) { clearTimeout(pickLp); pickLp = null; }
+}, { passive: true, capture: true });
 window.addEventListener('click', function(e){
   if (!pickOn) return;
   e.preventDefault(); e.stopImmediatePropagation();
-  var t = e.target; if (!t || t === document.body || t === root) return;
-  mark(t); reportPick();
+  if (Date.now() - pickLpFired < 700) return;
+  var t = e.target; if (!t || t === document.body || t === root || t === document.documentElement) return;
+  var already = pickedOf(t);
+  if (already) { pickSet.splice(pickSet.indexOf(already), 1); setMark(already, false); }
+  else pickAdd(t);
+  pickCount();
 }, true);
 
 window.__ryx = {
   pending: reportPending,
-  pick: function(on){ pickOn = !!on; if (!pickOn) mark(null); pickCss(); },
+  pick: function(on){ pickOn = !!on; if (!pickOn) pickClearAll(); pickCss(); },
+  /* Mục đang giữ → khung cha của nó */
   pickParent: function(){
-    if (picked && picked.parentElement && picked.parentElement !== document.body && picked.parentElement !== root) { mark(picked.parentElement); }
-    reportPick();
+    var h = pickHeld, p = h && h.parentElement;
+    if (!h || !p || p === document.body || p === root || p === document.documentElement) return;
+    pickSet.splice(pickSet.indexOf(h), 1); setMark(h, false);
+    pickAdd(p); pickHeld = p; pickCount();
+  },
+  pickClear: function(){ pickClearAll(); pickCount(); },
+  /* Ẩn tất cả mục đã chọn: gửi bộ chọn cho app lưu lại */
+  pickHide: function(){
+    var sels = [];
+    for (var i = 0; i < pickSet.length; i++) { var x = selFor(pickSet[i]); if (x && sels.indexOf(x) < 0) sels.push(x); }
+    send({ type: 'ryx:pick', kind: 'done', selectors: sels });
   },
   update: function(c){ CFG = c; P = prefs(); applyAll(); post(); },
   pip: pipFromMenu,
@@ -478,3 +511,57 @@ window.__ryx = {
 export function buildUpdateCall(cfg: InjectConfig): string {
   return `window.__ryx && window.__ryx.update(${JSON.stringify(cfg)}); true;`;
 }
+
+
+/**
+ * Script nhỏ chạy trong các khung nhúng (iframe), vd trình phát video của trang khác.
+ * Script chính chỉ chạy ở trang chính, nên trước đây nhấn giữ video trong iframe thì iOS tô xám video thay vì hiện menu của Ryx.
+ * Ở đây: tắt menu/tô chọn của iOS trên video & ảnh, nhấn giữ video → gửi cho app hiện menu (Tải video, PiP…).
+ */
+export const FRAME_MEDIA_SCRIPT = `(function(){
+if (window.top === window || window.__ryxFrame) return; window.__ryxFrame = 1;
+function send(o){ try { window.webkit.messageHandlers.ReactNativeWebView.postMessage(JSON.stringify(o)); } catch (e) {} }
+try {
+  var st = document.createElement('style');
+  st.textContent = 'video,img,a{-webkit-touch-callout:none!important;-webkit-user-select:none!important;user-select:none!important;-webkit-tap-highlight-color:transparent!important;}';
+  (document.head || document.documentElement).appendChild(st);
+} catch (e) {}
+function videoAt(x, y){
+  var vs = document.getElementsByTagName('video'), best = null, area = 0;
+  for (var i = 0; i < vs.length; i++) {
+    var r = vs[i].getBoundingClientRect();
+    if (r.width < 80 || x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+    if (r.width * r.height > area) { area = r.width * r.height; best = vs[i]; }
+  }
+  return best;
+}
+var lp = null, lx = 0, ly = 0, fired = 0, last = null;
+function pipOk(v){ return !!(v && v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode('picture-in-picture')); }
+document.addEventListener('touchstart', function(e){
+  if (!e.touches || e.touches.length !== 1) return;
+  lx = e.touches[0].clientX; ly = e.touches[0].clientY;
+  var v = videoAt(lx, ly); if (!v) return;
+  clearTimeout(lp);
+  lp = setTimeout(function(){
+    lp = null; fired = Date.now(); last = v;
+    var so = v.querySelector ? v.querySelector('source') : null;
+    send({ type: 'ryx:media', inFrame: true, kind: 'video', src: String(v.currentSrc || v.src || (so ? so.src : '') || ''), poster: String(v.poster || ''), link: '', url: location.href, playing: !v.paused, pip: pipOk(v), title: document.title, x: lx, y: ly });
+  }, 550);
+}, { passive: true, capture: true });
+function cancel(e){
+  if (!lp) return;
+  if (e.type === 'touchmove' && e.touches && e.touches[0] && Math.abs(e.touches[0].clientX - lx) < 10 && Math.abs(e.touches[0].clientY - ly) < 10) return;
+  clearTimeout(lp); lp = null;
+}
+document.addEventListener('touchmove', cancel, { passive: true, capture: true });
+document.addEventListener('touchend', cancel, { passive: true, capture: true });
+document.addEventListener('touchcancel', cancel, { passive: true, capture: true });
+document.addEventListener('click', function(e){ if (Date.now() - fired < 800) { e.preventDefault(); e.stopPropagation(); } }, true);
+window.addEventListener('message', function(e){
+  if (!e.data || !e.data.ryxPip) return;
+  var v = last || document.getElementsByTagName('video')[0];
+  if (!pipOk(v)) return;
+  try { v.webkitSetPresentationMode(v.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture'); }
+  catch (err) { send({ type: 'ryx:log', level: 'warn', msg: 'Không bật được PiP trong khung nhúng', detail: String(err), url: location.href }); }
+});
+})(); true;`;
