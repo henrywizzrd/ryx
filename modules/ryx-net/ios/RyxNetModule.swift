@@ -5,7 +5,7 @@ public class RyxNetModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RyxNet")
 
-    Events("onLog")
+    Events("onLog", "onDownload")
 
     OnCreate {
       RyxProxy.shared.onLog = { [weak self] level, message in
@@ -14,6 +14,9 @@ public class RyxNetModule: Module {
       RyxBlocker.shared.onLog = { [weak self] level, message in
         self?.sendEvent("onLog", ["level": level, "message": message])
       }
+      RyxDownloader.shared.onEvent = { [weak self] payload in
+        self?.sendEvent("onDownload", payload)
+      }
       // Bật càng sớm càng tốt: WebKit chỉ áp proxy cho các kết nối mở SAU khi cấu hình.
       RyxProxy.shared.startIfEnabled()
     }
@@ -21,6 +24,7 @@ public class RyxNetModule: Module {
     OnDestroy {
       RyxProxy.shared.onLog = nil
       RyxBlocker.shared.onLog = nil
+      RyxDownloader.shared.onEvent = nil
     }
 
     /// iOS 17+ mới có ProxyConfiguration cho WKWebView.
@@ -46,6 +50,16 @@ public class RyxNetModule: Module {
     /// Xoá bộ nhớ đệm DNS (khi đổi máy chủ).
     Function("clearCache") {
       RyxProxy.shared.clearCache()
+    }
+
+    // MARK: Tải về (đi qua DNS riêng + cookie của WebView)
+
+    Function("startDownload") { (id: String, url: String, path: String, headers: [String: String]) in
+      RyxDownloader.shared.start(id: id, url: url, path: path, headers: headers)
+    }
+
+    Function("cancelDownload") { (id: String) in
+      RyxDownloader.shared.cancel(id: id)
     }
 
     // MARK: Content Blocking (bộ lọc quảng cáo của WebKit)

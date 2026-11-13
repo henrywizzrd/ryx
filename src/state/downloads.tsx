@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths, type DownloadTask } from 'expo-file-system';
+import { requireOptionalNativeModule, type EventSubscription } from 'expo';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { log } from '@/lib/logger';
@@ -27,10 +28,35 @@ export interface DownloadItem {
 const STORAGE_KEY = 'ryx:downloads:v1';
 const MAX_ITEMS = 200;
 
+/** Trình tải native (bản 1.0.4+): đi qua DNS riêng của Ryx và mang theo cookie của trang. */
+interface NativeDl {
+  startDownload(id: string, url: string, path: string, headers: Record<string, string>): void;
+  cancelDownload(id: string): void;
+  addListener(event: 'onDownload', cb: (e: NativeDlEvent) => void): EventSubscription;
+}
+interface NativeDlEvent {
+  id: string;
+  type: 'start' | 'progress' | 'done' | 'error';
+  written?: number;
+  total?: number;
+  size?: number;
+  message?: string;
+  viaProxy?: boolean;
+  cookies?: number;
+}
+const NativeMod = requireOptionalNativeModule<Partial<NativeDl>>('RyxNet');
+const nativeDl = NativeMod && typeof NativeMod.startDownload === 'function' ? (NativeMod as NativeDl) : null;
+
+/** file:///…/a%20b.mp4 → /…/a b.mp4 */
+function toPath(uri: string): string {
+  return decodeURIComponent(uri.replace(/^file:\/\//, ''));
+}
+
 let seq = 0;
 const newId = () => `d-${Date.now().toString(36)}-${seq++}`;
 
-const KNOWN_EXT = /\.(mp4|m4v|mov|webm|mkv|mp3|m4a|aac|wav|flac|jpe?g|png|gif|webp|heic|pdf|zip|rar|7z|ipa|apk|epub|txt|docx?|xlsx?|pptx?)$/i;
+const KNOWN_EXT =
+  /\.(mp4|m4v|mov|webm|mkv|mp3|m4a|aac|wav|flac|jpe?g|png|gif|webp|heic|pdf|zip|rar|7z|ipa|apk|epub|txt|docx?|xlsx?|pptx?)$/i;
 
 /** Tên file từ link: phần cuối đường dẫn (bỏ tham số), giải mã, bỏ ký tự cấm. */
 export function fileNameFromUrl(url: string, fallbackExt = ''): string {
@@ -119,8 +145,48 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
     setItems((list) => list.map((d) => (d.id === id ? { ...d, ...p } : d)));
   }, []);
 
+  // Sự kiện từ trình tải native
+  const nativeMeta = useRef(new Map<string, { item: DownloadItem; started: number; got: boolean }>());
+  useEffect(() => {
+    if (!nativeDl) return;
+    const sub = nativeDl.addListener('onDownload', (e) => {
+      const meta = nativeMeta.current.get(e.id);
+      if (!meta) return;
+      if (e.type === 'start') {
+        log.debug(
+          'download',
+          `Kết nối tải ${meta.item.name}`,
+          `Qua DNS riêng: ${e.viaProxy ? 'có' : 'không'} · cookie: ${e.cookies ?? 0}`,
+        );
+      } else if (e.type === 'progress') {
+        if ((e.written ?? 0) > 0) meta.got = true;
+        patch(e.id, { received: e.written ?? 0, total: e.total ?? 0 });
+      } else if (e.type === 'done') {
+        nativeMeta.current.delete(e.id);
+        const size = e.size ?? 0;
+        patch(e.id, { status: 'done', received: size, total: size });
+        log.info(
+          'download',
+          `Tải xong ${meta.item.name} (${(size / 1048576).toFixed(1)} MB, ${((Date.now() - meta.started) / 1000).toFixed(0)} s)`,
+          meta.item.url,
+        );
+        onFinished.current?.({ ...meta.item, status: 'done', received: size, total: size });
+      } else if (e.type === 'error') {
+        nativeMeta.current.delete(e.id);
+        patch(e.id, { status: 'error', error: e.message ?? 'không rõ' });
+        log.error('download', `Tải ${meta.item.name} thất bại`, `${meta.item.url}\n${e.message ?? ''}`);
+      }
+    });
+    return () => sub.remove();
+  }, [patch]);
+
   const run = useCallback(
     (item: DownloadItem) => {
+      if (nativeDl) {
+        nativeMeta.current.set(item.id, { item, started: Date.now(), got: false });
+        nativeDl.startDownload(item.id, item.url, toPath(item.uri), item.referer ? { Referer: item.referer } : {});
+        return;
+      }
       const dest = new File(item.uri);
       let last = 0;
       const task = File.createDownloadTask(item.url, dest, {
@@ -161,7 +227,11 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
           const size = file.size ?? 0;
           const done: DownloadItem = { ...item, status: 'done', received: size, total: size };
           patch(item.id, { status: 'done', received: size, total: size });
-          log.info('download', `Tải xong ${item.name} (${(size / 1048576).toFixed(1)} MB, ${((Date.now() - started) / 1000).toFixed(0)} s)`, item.url);
+          log.info(
+            'download',
+            `Tải xong ${item.name} (${(size / 1048576).toFixed(1)} MB, ${((Date.now() - started) / 1000).toFixed(0)} s)`,
+            item.url,
+          );
           onFinished.current?.(done);
         })
         .catch((e: unknown) => {
@@ -200,6 +270,7 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
 
   const cancel = useCallback(
     (id: string) => {
+      if (nativeMeta.current.delete(id)) nativeDl?.cancelDownload(id);
       tasks.current.get(id)?.cancel();
       tasks.current.delete(id);
       patch(id, { status: 'canceled' });
@@ -208,6 +279,7 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
   );
 
   const remove = useCallback((id: string) => {
+    if (nativeMeta.current.delete(id)) nativeDl?.cancelDownload(id);
     tasks.current.get(id)?.cancel();
     tasks.current.delete(id);
     setItems((list) => {
@@ -227,7 +299,14 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
       const d = itemsRef.current.find((x) => x.id === id);
       if (!d) return;
       deleteFile(d.uri);
-      const again: DownloadItem = { ...d, status: 'downloading', received: 0, total: 0, error: undefined, t: Date.now() };
+      const again: DownloadItem = {
+        ...d,
+        status: 'downloading',
+        received: 0,
+        total: 0,
+        error: undefined,
+        t: Date.now(),
+      };
       setItems((list) => list.map((x) => (x.id === id ? again : x)));
       run(again);
     },

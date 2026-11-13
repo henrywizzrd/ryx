@@ -161,6 +161,9 @@ final class RyxProxy {
     }
   }
 
+  /// Cổng proxy đang chạy (0 = tắt). Dùng cho trình tải về để đi cùng đường DNS riêng.
+  var activePort: UInt16 { queue.sync { port } }
+
   private func applyProxy() {
     guard port > 0, let nwPort = NWEndpoint.Port(rawValue: port) else { return }
     DispatchQueue.main.async {
