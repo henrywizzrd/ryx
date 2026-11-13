@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, StyleSheet, View, type HostInstance } from 'react-native';
 import { WebView as RNWebView } from 'react-native-webview';
 import type {
@@ -136,6 +136,8 @@ function BrowserTabImpl({
   const { patchTab, refs } = useTabs();
   const { record: recordHistory } = useHistoryActions();
   const ref = useRef<WebViewHandle>(null);
+  // Màu đầu trang (trang tự đo, xem lib/inject): tô dải dưới giờ/pin cho trang liền lên tận mép
+  const [topColor, setTopColor] = useState<string | null>(null);
   const lastPageCounts = useRef<Counts>({ ...EMPTY_COUNTS });
   const urlRef = useRef(tab.url);
   const loadStartedAt = useRef(0);
@@ -489,6 +491,7 @@ function BrowserTabImpl({
         kind?: string;
         src?: string;
         level?: string;
+        color?: string;
       };
       try {
         msg = JSON.parse(e.nativeEvent.data);
@@ -599,6 +602,10 @@ function BrowserTabImpl({
         log.perf('video', `Video ở ${msg.host || 'trang'} ${what} ${s} s mới phát`, msg.src || undefined);
         return;
       }
+      if (msg.type === 'ryx:top') {
+        if (typeof msg.color === 'string' && /^#[0-9a-f]{6}$/.test(msg.color)) setTopColor(msg.color);
+        return;
+      }
       if (msg.type === 'ryx:theme') {
         if (msg.host) setSiteTheme(msg.host, !!msg.dark);
         return;
@@ -639,7 +646,7 @@ function BrowserTabImpl({
         // Mặc định thư viện chỉ cho http/https/about:blank, còn lại (vd about:srcdoc của khung trình phát video)
         // bị chặn và bị mở ra ngoài app → video không chạy. Ryx tự lọc lược đồ trong onShouldStart.
         originWhitelist={ALL_ORIGINS}
-        style={styles.web}
+        style={[styles.web, topColor ? { backgroundColor: topColor } : null]}
         containerStyle={StyleSheet.absoluteFill}
         // Chẩn đoán chạy từ đầu trang chính (bắt được cả script lỗi lúc tải), rồi tới script chính của Ryx
         injectedJavaScriptBeforeContentLoaded={diag ? FRAME_DIAG_SCRIPT + '\n' + script : script}

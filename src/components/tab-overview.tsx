@@ -552,14 +552,15 @@ function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
   const gap = 16;
   const others = tabs.filter((t) => t.id !== activeId);
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0];
-  // Cân đối: lề trái = lề phải = 16, khoảng giữa 2 cột 16; chỉ có 1 thẻ thì thẻ lớn nằm giữa
+  // Cân đối: lề trái = lề phải = 16, khoảng giữa 2 cột 16; chỉ có 1 thẻ thì thẻ lớn nằm giữa.
+  // Thẻ nhỏ ở bên phải cho vừa tầm ngón cái tay phải (row-reverse), nghiêng vào phía thẻ lớn.
   const alone = others.length === 0;
   const leftW = alone ? 0 : Math.round((W - pad * 2 - gap) * 0.34);
   const bigW = alone ? Math.round(W * 0.72) : W - pad * 2 - gap - leftW;
   const bigH = Math.min(H - 24 - TITLE_H, Math.round(bigW * 1.9));
   const smallW = leftW;
   return (
-    <View style={{ flex: 1, flexDirection: 'row', paddingHorizontal: pad, gap, justifyContent: 'center' }}>
+    <View style={{ flex: 1, flexDirection: 'row-reverse', paddingHorizontal: pad, gap, justifyContent: 'center' }}>
       {!alone && (
         <ScrollView
           style={{ width: leftW, flexGrow: 0 }}
@@ -572,7 +573,7 @@ function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
               tab={t}
               dir="horizontal"
               ctx={ctx}
-              style={{ transform: [{ perspective: 700 }, { rotateY: '14deg' }] }}
+              style={{ transform: [{ perspective: 700 }, { rotateY: '-14deg' }] }}
             >
               <Card
                 tab={t}

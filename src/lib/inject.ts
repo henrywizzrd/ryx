@@ -209,6 +209,28 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 window.addEventListener('load', scan);
 
+/* Màu đầu trang: app tô dải dưới giờ/pin bằng màu này để trang nhìn liền lên tận mép (giống Safari) */
+function rgbOf(s){ var m = /rgba?\(([^)]+)\)/.exec(s || ''); if (!m) return null;
+  var p = m[1].split(/[\s,\/]+/).filter(Boolean).map(parseFloat);
+  return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; }
+function bgUp(el){ while (el && el.nodeType === 1) { var c = rgbOf(getComputedStyle(el).backgroundColor); if (c && c.a > 0.5) return c; el = el.parentElement; } return null; }
+/* Trang đang bị Ryx ép tối (invert 0.9 + hue-rotate 180°): đổi màu đo được theo đúng phép lọc đó */
+function viaDark(c){ var f = function(v){ return v * 0.1 + (255 - v) * 0.9; }; var r = f(c.r), g = f(c.g), b = f(c.b);
+  return { r: -0.574 * r + 1.43 * g + 0.144 * b, g: 0.426 * r + 0.43 * g + 0.144 * b, b: 0.426 * r + 1.43 * g - 0.856 * b }; }
+var topSent = '', topAt = 0;
+function sampleTop(){
+  if (window.scrollY > 4 || !document.body) return;
+  var now = Date.now(); if (now - topAt < 150) return; topAt = now;
+  var c = bgUp(document.elementFromPoint(4, 1)) || bgUp(document.body) || bgUp(document.documentElement) || { r: 255, g: 255, b: 255 };
+  if (styleEl('ryx-dark').textContent) c = viaDark(c);
+  var hex = '#' + [c.r, c.g, c.b].map(function(v){ v = Math.max(0, Math.min(255, Math.round(v))); return (v < 16 ? '0' : '') + v.toString(16); }).join('');
+  if (hex !== topSent) { topSent = hex; send({ type: 'ryx:top', color: hex }); }
+}
+document.addEventListener('DOMContentLoaded', function(){ sampleTop(); setTimeout(sampleTop, 600); });
+window.addEventListener('load', function(){ setTimeout(sampleTop, 200); setTimeout(sampleTop, 1500); });
+window.addEventListener('scroll', function(){ if (window.scrollY <= 4) sampleTop(); }, { passive: true });
+setInterval(function(){ if (document.visibilityState === 'visible') sampleTop(); }, 2000);
+
 /* Nhấn giữ ảnh/video → app hiện menu (Lưu vào Ảnh, Sao chép link…) */
 /* Chữ trong link không bị iOS tô chọn khi nhấn giữ (để chỉ hiện menu của Ryx); giữ rồi kéo thì Ryx tự tô */
 styleEl('ryx-lp').textContent = 'img,video,a{-webkit-touch-callout:none!important;}video,[data-ryx-v],[data-ryx-v] *{-webkit-tap-highlight-color:transparent!important;-webkit-touch-callout:none!important;-webkit-user-select:none!important;user-select:none!important;}a,a *{-webkit-user-select:none!important;user-select:none!important;}a.ryx-sel,a.ryx-sel *{-webkit-user-select:text!important;user-select:text!important;}';
@@ -537,7 +559,6 @@ window.__ryx = {
 export function buildUpdateCall(cfg: InjectConfig): string {
   return `window.__ryx && window.__ryx.update(${JSON.stringify(cfg)}); true;`;
 }
-
 
 /**
  * Script nhỏ chạy trong các khung nhúng (iframe), vd trình phát video của trang khác.
