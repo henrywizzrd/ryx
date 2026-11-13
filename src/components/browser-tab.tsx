@@ -89,12 +89,17 @@ export interface MediaPress {
   /** Video đang phát lúc nhấn giữ */
   playing: boolean;
   pageTitle: string;
+  /** Chỗ nhấn giữ, tính trong khung trang web */
+  x: number;
+  y: number;
 }
 
 export interface LinkPress {
   href: string;
   text: string;
   pageUrl: string;
+  x: number;
+  y: number;
 }
 
 
@@ -475,6 +480,8 @@ function BrowserTabImpl({
           url?: string;
           playing?: boolean;
           title?: string;
+          x?: number;
+          y?: number;
         };
         onMediaLongPress({
           kind: m.kind === 'video' ? 'video' : 'image',
@@ -484,12 +491,21 @@ function BrowserTabImpl({
           pageUrl: m.url ?? urlRef.current ?? '',
           playing: !!m.playing,
           pageTitle: m.title ?? '',
+          x: m.x ?? 0,
+          y: m.y ?? 0,
         });
         return;
       }
       if (msg.type === 'ryx:link') {
-        const l = msg as unknown as { href?: string; text?: string; url?: string };
-        if (l.href) onLinkLongPress({ href: l.href, text: l.text ?? '', pageUrl: l.url ?? urlRef.current ?? '' });
+        const l = msg as unknown as { href?: string; text?: string; url?: string; x?: number; y?: number };
+        if (l.href)
+          onLinkLongPress({
+            href: l.href,
+            text: l.text ?? '',
+            pageUrl: l.url ?? urlRef.current ?? '',
+            x: l.x ?? 0,
+            y: l.y ?? 0,
+          });
         return;
       }
       if (msg.type === 'ryx:diag') {

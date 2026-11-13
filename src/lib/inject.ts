@@ -242,14 +242,14 @@ document.addEventListener('touchstart', function(e){
   lp = setTimeout(function(){
     lp = null; lpFired = Date.now();
     if (!m) {
-      send({ type: 'ryx:link', href: link.href, text: String(link.textContent || link.title || '').trim().slice(0, 120), url: location.href });
+      send({ type: 'ryx:link', href: link.href, text: String(link.textContent || link.title || '').trim().slice(0, 120), url: location.href, x: lpX, y: lpY });
       return;
     }
     var isV = m.tagName === 'VIDEO';
     var so = isV && m.querySelector ? m.querySelector('source') : null;
     var src = isV ? (m.currentSrc || m.src || (so ? so.src : '')) : (m.currentSrc || m.src || '');
     var a = m.closest('a');
-    send({ type: 'ryx:media', kind: isV ? 'video' : 'image', src: String(src || ''), poster: isV ? String(m.poster || '') : '', link: a ? a.href : '', url: location.href, playing: isV && !m.paused, title: document.title });
+    send({ type: 'ryx:media', kind: isV ? 'video' : 'image', src: String(src || ''), poster: isV ? String(m.poster || '') : '', link: a ? a.href : '', url: location.href, playing: isV && !m.paused, title: document.title, x: lpX, y: lpY });
   }, 550);
 }, { passive: true, capture: true });
 function lpCancel(e){

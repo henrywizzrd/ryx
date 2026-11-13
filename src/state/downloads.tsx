@@ -126,6 +126,7 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
       const task = File.createDownloadTask(item.url, dest, {
         headers: item.referer ? { Referer: item.referer } : undefined,
         onProgress: ({ bytesWritten, totalBytes }) => {
+          if (bytesWritten > 0) gotBytes = true;
           const now = Date.now();
           if (now - last < 300) return; // đỡ vẽ lại liên tục
           last = now;
@@ -134,9 +135,27 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
       });
       tasks.current.set(item.id, task);
       const started = Date.now();
+      // Không nhận được byte nào sau 25 s: gần như chắc là không kết nối được tới máy chủ
+      // (tải về đi đường mạng của máy, không qua DNS riêng của Ryx → tên miền bị nhà mạng chặn sẽ treo)
+      let gotBytes = false;
+      const stall = setTimeout(() => {
+        if (gotBytes || !tasks.current.has(item.id)) return;
+        task.cancel();
+        tasks.current.delete(item.id);
+        patch(item.id, {
+          status: 'error',
+          error: 'Không kết nối được tới máy chủ (có thể bị nhà mạng chặn)',
+        });
+        log.warn(
+          'download',
+          `Tải ${item.name}: 25 s không nhận được dữ liệu`,
+          `${item.url}\nTải về đi đường mạng của máy, không qua DNS riêng của Ryx. Cài hồ sơ DNS cho cả máy (Menu → DNS bảo mật) để tải được trang bị chặn.`,
+        );
+      }, 25000);
       task
         .downloadAsync()
         .then((file) => {
+          clearTimeout(stall);
           tasks.current.delete(item.id);
           if (!file) return; // đã huỷ
           const size = file.size ?? 0;
@@ -146,6 +165,8 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
           onFinished.current?.(done);
         })
         .catch((e: unknown) => {
+          clearTimeout(stall);
+          if (!tasks.current.has(item.id)) return; // đã huỷ vì treo
           tasks.current.delete(item.id);
           patch(item.id, { status: 'error', error: String(e instanceof Error ? e.message : e).slice(0, 200) });
           log.error('download', `Tải ${item.name} thất bại`, `${item.url}\n${String(e)}`);

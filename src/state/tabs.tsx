@@ -57,7 +57,8 @@ interface TabsCtx {
   activeId: string;
   active: Tab;
   setActive: (id: string) => void;
-  newTab: (url?: string | null) => string;
+  /** background: mở thẻ nhưng vẫn ở lại thẻ hiện tại */
+  newTab: (url?: string | null, opts?: { background?: boolean }) => string;
   closeTab: (id: string) => void;
   closeAll: () => void;
   patchTab: (id: string, patch: Partial<Tab> | ((t: Tab) => Partial<Tab>)) => void;
@@ -82,10 +83,10 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  const newTab = useCallback((url: string | null = null) => {
+  const newTab = useCallback((url: string | null = null, opts?: { background?: boolean }) => {
     const tab = makeTab(url);
     setTabs((list) => [...list, tab]);
-    setActiveId(tab.id);
+    if (!opts?.background) setActiveId(tab.id);
     return tab.id;
   }, []);
 

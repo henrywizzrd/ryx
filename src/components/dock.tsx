@@ -2,6 +2,14 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { DockButtonId, DockStyle } from '@/state/settings';
@@ -54,8 +62,11 @@ interface Props {
 }
 
 /** Ngưỡng để coi là "vuốt" (chưa tới thì vẫn là bấm nút bình thường). */
+const GROUP_GAP = 6;
 const SWIPE_UP = 36;
 const SWIPE_SIDE = 56;
+/** Lò xo kiểu iOS: dứt khoát, nảy rất nhẹ. */
+const SPRING = { damping: 20, stiffness: 260, mass: 0.9 };
 
 function TabCountIcon({ count, size }: { count: number; size: number }) {
   const box = Math.round(size * 0.92);
@@ -101,21 +112,64 @@ export function Dock({
   const m = dockMetrics(dockStyle, insets.bottom);
   const attached = dockStyle === 'attached';
 
-  // Vuốt trên dock: chỉ kích hoạt khi ngón tay đã di chuyển đủ xa, nên bấm nút vẫn như cũ
+  // ---- Vuốt trên dock (chạy trên luồng giao diện cho mượt) ----
+  // Chạm vào dock: dock lún nhẹ. Kéo lên: dock bám theo tay (có lực cản), thả đủ xa → mở màn các thẻ.
+  // Kéo ngang: dock lệch theo tay, thả đủ xa → sang thẻ bên cạnh. Bấm nút vẫn như cũ vì phải kéo quá ngưỡng mới tính.
+  const reduceMotion = useReducedMotion();
+  const ty = useSharedValue(0);
+  const tx = useSharedValue(0);
+  const press = useSharedValue(0);
+
+  const fireUp = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onSwipeUp();
+  };
+  const fireSide = (dir: 'next' | 'prev') => onSwipeSide(dir);
+
   const swipe = Gesture.Pan()
-    .runOnJS(true)
     .activeOffsetY([-12, 12])
     .activeOffsetX([-18, 18])
+    .onBegin(() => {
+      press.value = withSpring(1, SPRING);
+    })
+    .onUpdate((e) => {
+      if (reduceMotion) return;
+      const up = Math.min(0, e.translationY);
+      ty.value = -Math.pow(-up, 0.85) * 0.6;
+      tx.value = Math.abs(e.translationX) > Math.abs(e.translationY) ? e.translationX * 0.35 : 0;
+    })
     .onEnd((e) => {
       const ax = Math.abs(e.translationX);
       const ay = Math.abs(e.translationY);
-      if (-e.translationY > SWIPE_UP && ay > ax) {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onSwipeUp();
-      } else if (ax > SWIPE_SIDE && ax > ay) {
-        onSwipeSide(e.translationX < 0 ? 'next' : 'prev');
+      const goUp = (-e.translationY > SWIPE_UP || e.velocityY < -700) && ay > ax;
+      if (goUp) {
+        // Hất dock lên một nhịp rồi về chỗ, cùng lúc màn các thẻ trượt lên
+        ty.value = withTiming(reduceMotion ? 0 : -56, { duration: 140 }, () => {
+          ty.value = withSpring(0, SPRING);
+        });
+        runOnJS(fireUp)();
+      } else {
+        if (ax > SWIPE_SIDE && ax > ay) runOnJS(fireSide)(e.translationX < 0 ? 'next' : 'prev');
+        ty.value = withSpring(0, SPRING);
       }
+      tx.value = withSpring(0, SPRING);
+    })
+    .onFinalize(() => {
+      press.value = withSpring(0, SPRING);
+      if (ty.value > -40) ty.value = withSpring(0, SPRING);
+      tx.value = withSpring(0, SPRING);
     });
+
+  const motion = useAnimatedStyle(() => {
+    const lift = Math.min(0.06, Math.max(0, -ty.value / 600));
+    return {
+      transform: [
+        { translateY: ty.value },
+        { translateX: tx.value },
+        { scale: reduceMotion ? 1 : 1 - press.value * 0.03 + lift },
+      ],
+    };
+  });
   const wrap = (node: React.ReactElement) => <GestureDetector gesture={swipe}>{node}</GestureDetector>;
 
   const renderButton = (id: DockButtonId) => {
@@ -190,12 +244,19 @@ export function Dock({
   }
 
   return wrap(
-    <View
+    <Animated.View
       pointerEvents="box-none"
-      style={[styles.floatRow, { left: s.margin, right: s.margin, bottom: m.bottom, height: s.height }]}
+      style={[styles.floatRow, { left: s.margin, right: s.margin, bottom: m.bottom, height: s.height }, motion]}
     >
-      <Glass radius={s.height / 2} style={{ flex: 1, height: s.height }}>
-        {content}
+      {/* Dock nổi chỉ rộng vừa đủ chứa các nút */}
+      <Glass radius={s.height / 2} style={{ height: s.height }}>
+        <View style={[styles.rowFloat, { gap: GROUP_GAP }]}>
+          {groups.map((g) => (
+            <View key={g.join('-')} style={styles.group}>
+              {g.map(renderButton)}
+            </View>
+          ))}
+        </View>
       </Glass>
       <Glass radius={s.height / 2} style={{ width: s.height, height: s.height, marginLeft: 10 }}>
         <Pressable
@@ -207,12 +268,13 @@ export function Dock({
           <Ionicons name="add" size={s.icon + 5} color={accent} />
         </Pressable>
       </Glass>
-    </View>,
+    </Animated.View>,
   );
 }
 
 const styles = StyleSheet.create({
-  floatRow: { position: 'absolute', flexDirection: 'row' },
+  floatRow: { position: 'absolute', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  rowFloat: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, height: '100%' },
   attached: {
     position: 'absolute',
     left: 0,

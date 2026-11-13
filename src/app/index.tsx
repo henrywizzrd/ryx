@@ -21,6 +21,7 @@ import { applyBackgroundPlay } from '@/lib/background-play';
 import { log } from '@/lib/logger';
 import { getRyxNetStatus, setRyxNetEnabled } from '@/lib/ryx-net';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
+import { ContextMenu, type ContextMenuState, type MenuItem } from '@/components/context-menu';
 import { Dock, dockMetrics } from '@/components/dock';
 import { EdgeSwipeBack } from '@/components/edge-swipe';
 import { Glass } from '@/components/glass';
@@ -251,7 +252,17 @@ export default function BrowserScreen() {
 
   const openInNewTab = useCallback((url: string) => newTab(url), [newTab]);
 
-  // Nhấn giữ ảnh/video trong trang
+  // ---- Nhấn giữ trong trang: menu nhỏ bật ra ngay chỗ ngón tay ----
+  const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
+  const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+  const showMenu = (x: number, y: number, title: string, subtitle: string, items: MenuItem[]) => {
+    if (!items.length) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Toạ độ trong trang → toạ độ trên màn hình (trang web bắt đầu từ contentTop)
+    setCtxMenu({ key: Date.now(), x, y: y + contentTop, title, subtitle, items });
+  };
+
+  // Nhấn giữ ảnh/video
   const onMediaLongPress = (m: MediaPress) => {
     const isVideo = m.kind === 'video';
     const save = (url: string, kind: 'image' | 'video') => {
@@ -264,12 +275,13 @@ export default function BrowserScreen() {
           Alert.alert('Không lưu được', e instanceof SaveMediaError ? e.message : String(e));
         });
     };
-    const items: { label: string; run: () => void }[] = [];
     const canFetch = /^https?:/.test(m.src);
-    // Video: "Tải video" luôn đứng đầu
+    const items: MenuItem[] = [];
     if (isVideo) {
+      // "Tải video" luôn đứng đầu
       items.push({
         label: 'Tải video',
+        icon: 'download-outline',
         run: () =>
           canFetch
             ? download(m.src, m.pageUrl, 'mp4')
@@ -278,59 +290,55 @@ export default function BrowserScreen() {
                 'Video phát theo dạng luồng (HLS) nên không có một file mp4 để tải. Ryx hiện chỉ tải được video mp4.',
               ),
       });
-      if (canFetch) items.push({ label: 'Lưu video vào Ảnh', run: () => save(m.src, 'video') });
+      if (canFetch) items.push({ label: 'Lưu vào Ảnh', icon: 'images-outline', run: () => save(m.src, 'video') });
+      if (m.poster) items.push({ label: 'Lưu ảnh bìa', icon: 'image-outline', run: () => save(m.poster, 'image') });
     } else if (m.src) {
-      items.push({ label: 'Lưu vào Ảnh', run: () => save(m.src, 'image') });
-      if (canFetch) items.push({ label: 'Tải về', run: () => download(m.src, m.pageUrl, 'jpg') });
+      items.push({ label: 'Lưu vào Ảnh', icon: 'images-outline', run: () => save(m.src, 'image') });
+      if (canFetch)
+        items.push({ label: 'Tải về', icon: 'download-outline', run: () => download(m.src, m.pageUrl, 'jpg') });
     }
-    if (isVideo && m.poster)
-      items.push({
-        label: 'Lưu ảnh bìa video',
-        run: () => save(m.poster, 'image'),
-      });
-    if (m.src)
-      items.push({
-        label: isVideo ? 'Sao chép link video' : 'Sao chép link ảnh',
-        run: () => void Clipboard.setStringAsync(m.src),
-      });
-    if (!isVideo && /^https?:/.test(m.src)) items.push({ label: 'Mở ảnh trong thẻ mới', run: () => newTab(m.src) });
     if (m.link)
       items.push({
         label: 'Mở link trong thẻ mới',
-        run: () => newTab(m.link),
+        icon: 'duplicate-outline',
+        run: () => newTab(m.link, { background: true }),
       });
-    if (!items.length) return;
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: isVideo ? (m.playing ? 'Video đang phát' : 'Video') : 'Ảnh',
-        message: (isVideo && m.pageTitle) || getHost(m.src) || undefined,
-        options: [...items.map((i) => i.label), 'Huỷ'],
-        cancelButtonIndex: items.length,
-      },
-      (i) => items[i]?.run(),
+    if (canFetch)
+      items.push({ label: 'Sao chép link', icon: 'copy-outline', run: () => void Clipboard.setStringAsync(m.src) });
+    showMenu(
+      m.x,
+      m.y,
+      isVideo ? (m.playing ? 'Video đang phát' : 'Video') : 'Ảnh',
+      (isVideo && m.pageTitle) || getHost(m.src) || '',
+      items.slice(0, 5),
     );
   };
 
   // Nhấn giữ link
   const onLinkLongPress = (l: LinkPress) => {
-    const items: { label: string; run: () => void }[] = [
-      { label: 'Mở trong thẻ mới', run: () => newTab(l.href) },
-      { label: 'Mở ở đây', run: () => open(active.id, l.href) },
-      { label: 'Sao chép link', run: () => void Clipboard.setStringAsync(l.href) },
-      { label: 'Chia sẻ link…', run: () => void Share.share({ url: l.href, message: l.href }).catch(() => {}) },
-      { label: 'Tải file về', run: () => download(l.href, l.pageUrl) },
-    ];
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    ActionSheetIOS.showActionSheetWithOptions(
+    showMenu(l.x, l.y, l.text || getHost(l.href) || 'Link', l.href.replace(/^https?:\/\//, ''), [
       {
-        title: l.text || getHost(l.href) || 'Link',
-        message: l.href.length > 120 ? `${l.href.slice(0, 120)}…` : l.href,
-        options: [...items.map((i) => i.label), 'Huỷ'],
-        cancelButtonIndex: items.length,
+        label: 'Mở trong thẻ mới',
+        icon: 'duplicate-outline',
+        run: () => {
+          newTab(l.href, { background: true });
+          setNotice({
+            key: Date.now(),
+            icon: 'duplicate-outline',
+            title: 'Đã mở trong thẻ mới',
+            subtitle: getHost(l.href),
+            autoHide: 2000,
+          });
+        },
       },
-      (i) => items[i]?.run(),
-    );
+      { label: 'Mở và chuyển tới', icon: 'open-outline', run: () => newTab(l.href) },
+      { label: 'Sao chép link', icon: 'copy-outline', run: () => void Clipboard.setStringAsync(l.href) },
+      {
+        label: 'Chia sẻ…',
+        icon: 'share-outline',
+        run: () => void Share.share({ url: l.href, message: l.href }).catch(() => {}),
+      },
+    ]);
   };
 
   const share = () => {
@@ -557,6 +565,8 @@ export default function BrowserScreen() {
           ) : null}
         </View>
       )}
+
+      <ContextMenu menu={ctxMenu} onClose={closeCtxMenu} />
 
       <NoticeBanner notice={notice} bottom={chromeBottom + GAP} onClose={closeNotice} />
 
