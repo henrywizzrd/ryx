@@ -3,7 +3,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 export type DockStyle = 'floating' | 'compact' | 'attached';
 export type AddressBarPosition = 'top' | 'bottom';
-export type TabLayout = 'grid' | 'grid3' | 'list' | 'split' | 'carousel' | 'coverflow' | 'cascade' | 'stack';
+export type TabLayout = 'grid' | 'list' | 'split' | 'carousel' | 'coverflow' | 'cascade';
+const TAB_LAYOUT_IDS: TabLayout[] = ['grid', 'list', 'split', 'carousel', 'coverflow', 'cascade'];
 export type DockButtonId =
   | 'back'
   | 'forward'
@@ -83,6 +84,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
             ...DEFAULT_SETTINGS,
             ...saved,
             shield: { ...DEFAULT_SETTINGS.shield, ...saved.shield },
+            // Kiểu thẻ đã bỏ (Lưới 3 cột, Xếp chồng) → về Lưới
+            tabLayout: TAB_LAYOUT_IDS.includes(saved.tabLayout as TabLayout)
+              ? (saved.tabLayout as TabLayout)
+              : DEFAULT_SETTINGS.tabLayout,
           });
         }
       })

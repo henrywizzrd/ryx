@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Animated, Easing, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fg } from '@/theme';
@@ -13,51 +22,49 @@ interface Props {
   children: React.ReactNode;
 }
 
-/** Bảng trượt từ dưới lên, nổi cách mép, nền kính. Chạm nền tối để đóng. */
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
+
+/**
+ * Bảng trượt từ dưới lên, nổi cách mép, nền kính. Chạm nền tối để đóng.
+ * Chạy hoàn toàn trên luồng giao diện (Reanimated, 120 Hz) và không dùng Modal của iOS
+ * (mở Modal tốn vài khung hình đầu → trông như hiệu ứng bị khựng). Đặt bảng ở cuối cây giao diện để nó nằm trên cùng.
+ */
 export function Sheet({ visible, onClose, title, children }: Props) {
   const insets = useSafeAreaInsets();
-  const [anim] = useState(() => new Animated.Value(0));
+  const reduceMotion = useReducedMotion();
   const [mounted, setMounted] = useState(visible);
-  const [reduceMotion, setReduceMotion] = useState(false);
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled()
-      .then(setReduceMotion)
-      .catch(() => {});
-    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => sub.remove();
-  }, []);
-  // Gắn modal ngay khi được yêu cầu mở (điều chỉnh state trong lúc render, theo khuyến nghị của React)
+  const t = useSharedValue(0);
+  // Gắn bảng ngay khi được yêu cầu mở (điều chỉnh state trong lúc render, theo khuyến nghị của React)
   if (visible && !mounted) setMounted(true);
 
   useEffect(() => {
-    if (visible && reduceMotion) {
-      anim.setValue(1);
-    } else if (visible) {
-      Animated.spring(anim, { toValue: 1, useNativeDriver: true, damping: 32, stiffness: 240, mass: 0.9 }).start();
+    if (!mounted) return;
+    if (visible) {
+      t.set(reduceMotion ? withTiming(1, { duration: 150 }) : withSpring(1, { duration: 320, dampingRatio: 1 }));
     } else {
-      Animated.timing(anim, {
-        toValue: 0,
-        duration: reduceMotion ? 0 : 180,
-        easing: Easing.in(Easing.quad),
-        useNativeDriver: true,
-      }).start(({ finished }) => finished && setMounted(false));
+      t.set(
+        withTiming(0, { duration: reduceMotion ? 120 : 200, easing: EASE_OUT }, (done) => {
+          if (done) scheduleOnRN(setMounted, false);
+        }),
+      );
     }
-  }, [visible, anim, reduceMotion]);
+  }, [visible, mounted, reduceMotion, t]);
+
+  const backdrop = useAnimatedStyle(() => ({ opacity: t.get() }));
+  const panel = useAnimatedStyle(() => ({
+    opacity: reduceMotion ? t.get() : 1,
+    // Dịch theo chính chiều cao của bảng: bảng cao bao nhiêu cũng trượt ra khỏi màn hình vừa đủ
+    transform: [{ translateY: reduceMotion ? 0 : `${(1 - t.get()) * 110}%` }],
+  }));
 
   if (!mounted) return null;
 
   return (
-    <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, { opacity: anim }]}>
+    <View style={StyleSheet.absoluteFill} accessibilityViewIsModal>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, backdrop]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Đóng" />
       </Animated.View>
-      <Animated.View
-        style={[
-          styles.wrap,
-          { bottom: Math.max(insets.bottom, 12) },
-          { transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [500, 0] }) }] },
-        ]}
-      >
+      <Animated.View style={[styles.wrap, { bottom: Math.max(insets.bottom, 12) }, panel]}>
         <Glass radius={32} contentStyle={styles.content}>
           <View style={styles.grabber} />
           {title ? (
@@ -68,7 +75,7 @@ export function Sheet({ visible, onClose, title, children }: Props) {
           {children}
         </Glass>
       </Animated.View>
-    </Modal>
+    </View>
   );
 }
 

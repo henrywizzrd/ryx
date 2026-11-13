@@ -90,6 +90,8 @@ export interface MediaPress {
   pageUrl: string;
   /** Video đang phát lúc nhấn giữ */
   playing: boolean;
+  /** Video hỗ trợ Hình trong hình */
+  pip: boolean;
   pageTitle: string;
   /** Chỗ nhấn giữ, tính trong khung trang web */
   x: number;
@@ -473,6 +475,7 @@ function BrowserTabImpl({
         ms?: number;
         kind?: string;
         src?: string;
+        level?: string;
       };
       try {
         msg = JSON.parse(e.nativeEvent.data);
@@ -507,6 +510,7 @@ function BrowserTabImpl({
           link?: string;
           url?: string;
           playing?: boolean;
+          pip?: boolean;
           title?: string;
           x?: number;
           y?: number;
@@ -518,6 +522,7 @@ function BrowserTabImpl({
           link: m.link ?? '',
           pageUrl: m.url ?? urlRef.current ?? '',
           playing: !!m.playing,
+          pip: !!m.pip,
           pageTitle: m.title ?? '',
           x: m.x ?? 0,
           y: m.y ?? 0,
@@ -573,7 +578,8 @@ function BrowserTabImpl({
         return;
       }
       if (msg.type === 'ryx:log') {
-        log.error('inject', msg.msg ?? 'Lỗi trong script của trang', `${msg.url ?? ''}\n${msg.detail ?? ''}`.trim());
+        const lvl = msg.level === 'info' || msg.level === 'warn' ? msg.level : 'error';
+        log[lvl]('inject', msg.msg ?? 'Lỗi trong script của trang', `${msg.url ?? ''}\n${msg.detail ?? ''}`.trim());
         return;
       }
       if (msg.type !== 'ryx:counts' || !msg.counts) return;

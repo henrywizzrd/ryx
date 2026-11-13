@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   View,
   type HostInstance,
+  type ScrollViewInstance,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -46,19 +47,19 @@ export interface Rect {
 
 export const TAB_LAYOUTS: { id: TabLayout; icon: IconName; label: string }[] = [
   { id: 'grid', icon: 'grid-outline', label: 'Lưới' },
-  { id: 'grid3', icon: 'apps-outline', label: 'Lưới 3 cột' },
   { id: 'list', icon: 'list-outline', label: 'Danh sách' },
   { id: 'split', icon: 'browsers-outline', label: 'Chia đôi' },
   { id: 'carousel', icon: 'albums-outline', label: 'Trượt ngang' },
   { id: 'coverflow', icon: 'film-outline', label: 'Coverflow 3D' },
   { id: 'cascade', icon: 'reorder-four-outline', label: 'Xếp tầng' },
-  { id: 'stack', icon: 'layers-outline', label: 'Xếp chồng' },
 ];
 
 export type OverviewPhase = 'drag' | 'open' | 'closing';
+/** off/fly: màn các thẻ ẩn */
+export type FullPhase = OverviewPhase | 'off' | 'fly';
 
 interface Props {
-  phase: OverviewPhase;
+  phase: FullPhase;
   /** 0 = đang xem trang, 1 = màn các thẻ (chạy theo ngón tay khi kéo dock) */
   zoom: SharedValue<number>;
   /** Kiểu Trượt ngang: dock trượt theo thẻ đang mở */
@@ -71,6 +72,10 @@ interface Props {
   bottomPad: number;
   onLayoutChange: (l: TabLayout) => void;
   onActiveFrame: (r: Rect) => void;
+  /** Tăng mỗi lần mở màn các thẻ: cuộn tới thẻ đang mở rồi đo lại vị trí của nó */
+  token: number;
+  /** Nhận hàm đo vị trí thẻ đang mở (để nút Các thẻ phóng đúng chỗ) */
+  onActiveMeasurer: (fn: Measurer) => void;
   onPick: (id: string, r: Rect | null) => void;
   onClose: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -106,7 +111,11 @@ interface CardProps {
   ctx: Ctx;
 }
 
+type Measurer = (cb: (r: Rect | null) => void) => void;
+
 interface Ctx {
+  token: number;
+  onActiveMeasurer: (fn: Measurer) => void;
   onPick: (id: string, r: Rect | null) => void;
   onClose: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -117,6 +126,20 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
   const { accent } = useTheme();
   const ref = useRef<HostInstance>(null);
   const { showPage, title, host, tint } = tabInfo(tab);
+  const { token, onActiveMeasurer, onActiveFrame } = ctx;
+  useEffect(() => {
+    if (!active) return;
+    onActiveMeasurer((cb) => measure(ref, cb));
+    // Đợi bố cục cuộn tới thẻ (2 khung hình) rồi mới đo
+    let id2 = 0;
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => measure(ref, (r) => r && onActiveFrame(r)));
+    });
+    return () => {
+      cancelAnimationFrame(id1);
+      cancelAnimationFrame(id2);
+    };
+  }, [active, token, onActiveMeasurer, onActiveFrame]);
 
   const titleRow = noTitle ? null : (
     <View style={[styles.titleRow, { width }]}>
@@ -145,10 +168,6 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
       <Pressable
         ref={ref}
         collapsable={false}
-        onLayout={() => {
-          // Đo vị trí khung của thẻ đang mở để trang thật bay đúng vào đó
-          if (active) requestAnimationFrame(() => measure(ref, (r) => r && ctx.onActiveFrame(r)));
-        }}
         onPress={() => {
           void Haptics.selectionAsync();
           measure(ref, (r) => ctx.onPick(tab.id, r));
@@ -237,7 +256,17 @@ function Item({
 
 // ---------- Các kiểu sắp xếp ----------
 
+/** Mỗi lần mở màn các thẻ: cuộn (không hiệu ứng) để thẻ đang mở nằm trong tầm nhìn */
+function useReveal(token: number, x: number, y: number) {
+  const ref = useRef<ScrollViewInstance>(null);
+  useEffect(() => {
+    ref.current?.scrollTo({ x, y, animated: false });
+  }, [token, x, y]);
+  return ref;
+}
+
 interface LayoutProps {
+  token: number;
   tabs: Tab[];
   activeId: string;
   hideId: string | null;
@@ -247,7 +276,7 @@ interface LayoutProps {
   dockShift: SharedValue<number>;
 }
 
-function Grid({ tabs, activeId, hideId, ctx, W, H, cols }: LayoutProps & { cols: number }) {
+function Grid({ tabs, activeId, hideId, ctx, W, H, token, cols }: LayoutProps & { cols: number }) {
   const pad = 16;
   const gap = cols === 2 ? 14 : 10;
   const w = Math.floor((W - pad * 2 - gap * (cols - 1)) / cols);
@@ -258,8 +287,9 @@ function Grid({ tabs, activeId, hideId, ctx, W, H, cols }: LayoutProps & { cols:
     tabs.findIndex((t) => t.id === activeId),
   );
   const y0 = Math.max(0, Math.floor(ai / cols) * rowH - H * 0.3);
+  const ref = useReveal(token, 0, y0);
   return (
-    <ScrollView contentOffset={{ x: 0, y: y0 }} contentContainerStyle={[styles.wrap, { padding: pad, gap }]}>
+    <ScrollView ref={ref} contentOffset={{ x: 0, y: y0 }} contentContainerStyle={[styles.wrap, { padding: pad, gap }]}>
       {tabs.map((t) => (
         <Item key={t.id} tab={t} dir="horizontal" ctx={ctx}>
           <Card
@@ -277,14 +307,16 @@ function Grid({ tabs, activeId, hideId, ctx, W, H, cols }: LayoutProps & { cols:
   );
 }
 
-function List({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
+function List({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
   const { accentSoft } = useTheme();
   const ai = Math.max(
     0,
     tabs.findIndex((t) => t.id === activeId),
   );
+  const ref = useReveal(token, 0, Math.max(0, ai * 82 - H * 0.3));
   return (
     <ScrollView
+      ref={ref}
       contentOffset={{ x: 0, y: Math.max(0, ai * 82 - H * 0.3) }}
       contentContainerStyle={{ padding: 16, gap: 10 }}
     >
@@ -329,47 +361,8 @@ function List({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
   );
 }
 
-/** Xếp chồng nghiêng 3D (kiểu cũ) */
-function Stack({ tabs, activeId, hideId, ctx, W }: LayoutProps) {
-  const h = 280;
-  const visible = 96;
-  const ai = Math.max(
-    0,
-    tabs.findIndex((t) => t.id === activeId),
-  );
-  return (
-    <ScrollView
-      contentOffset={{ x: 0, y: Math.max(0, ai * visible - 120) }}
-      contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
-    >
-      {tabs.map((t, i) => (
-        <Item
-          key={t.id}
-          tab={t}
-          dir="horizontal"
-          ctx={ctx}
-          style={{
-            marginTop: i === 0 ? 0 : -(h + TITLE_H - visible),
-            transform: [{ perspective: 1200 }, { rotateX: '-10deg' }],
-          }}
-        >
-          <Card
-            tab={t}
-            active={t.id === activeId}
-            hidden={t.id === hideId}
-            width={W - 32}
-            height={h}
-            radius={22}
-            ctx={ctx}
-          />
-        </Item>
-      ))}
-    </ScrollView>
-  );
-}
-
 /** Xếp tầng: thẻ to chồng thẳng lên nhau, thẻ sau thu nhỏ dần (không nghiêng) */
-function Cascade({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
+function Cascade({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
   const h = Math.round(H * 0.46);
   const step = 128;
   const ai = Math.max(
@@ -377,8 +370,10 @@ function Cascade({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
     tabs.findIndex((t) => t.id === activeId),
   );
   const n = tabs.length;
+  const ref = useReveal(token, 0, Math.max(0, ai * step - 60));
   return (
     <ScrollView
+      ref={ref}
       contentOffset={{ x: 0, y: Math.max(0, ai * step - 60) }}
       contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 60 }}
     >
@@ -411,7 +406,7 @@ function Cascade({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
 }
 
 /** Trượt ngang kiểu Safari: thẻ hiện tại ở giữa, thẻ khác ló hai bên; dock trượt theo thẻ đang mở */
-function Carousel({ tabs, activeId, hideId, ctx, W, H, dockShift }: LayoutProps) {
+function Carousel({ tabs, activeId, hideId, ctx, W, H, token, dockShift }: LayoutProps) {
   const w = Math.round(W * 0.76);
   const h = Math.min(Math.round(H * 0.56), Math.round(w * 2));
   const gap = 16;
@@ -423,9 +418,11 @@ function Carousel({ tabs, activeId, hideId, ctx, W, H, dockShift }: LayoutProps)
   const onScroll = useAnimatedScrollHandler((e) => {
     dockShift.set(ai * step - e.contentOffset.x);
   });
+  const ref = useReveal(token, ai * step, 0);
   return (
     <View style={{ flex: 1, justifyContent: 'center' }}>
       <Animated.ScrollView
+        ref={ref as never}
         horizontal
         onScroll={onScroll}
         scrollEventThrottle={16}
@@ -482,7 +479,7 @@ function CoverItem({
 }
 
 /** Coverflow 3D: thẻ giữa đứng thẳng, hai bên xoay nghiêng */
-function Coverflow({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
+function Coverflow({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
   const w = Math.round(W * 0.62);
   const h = Math.min(Math.round(H * 0.5), Math.round(w * 1.9));
   const step = Math.round(w * 0.78);
@@ -494,9 +491,11 @@ function Coverflow({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
   const onScroll = useAnimatedScrollHandler((e) => {
     scroll.value = e.contentOffset.x;
   });
+  const ref = useReveal(token, ai * step, 0);
   return (
     <View style={{ flex: 1, justifyContent: 'center' }}>
       <Animated.ScrollView
+        ref={ref as never}
         horizontal
         onScroll={onScroll}
         scrollEventThrottle={16}
@@ -533,7 +532,9 @@ function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
   const smallW = leftW - 26;
   const others = tabs.filter((t) => t.id !== activeId);
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0];
-  const bigW = W - leftW - 14;
+  // Thẻ lớn: chừa lề phải 16, giữ tỉ lệ gần với màn hình (không cao quá)
+  const bigW = W - leftW - 30;
+  const bigH = Math.min(H - 20 - TITLE_H, Math.round(bigW * 1.85));
   return (
     <View style={{ flex: 1, flexDirection: 'row' }}>
       <ScrollView
@@ -565,13 +566,13 @@ function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
           </Item>
         ))}
       </ScrollView>
-      <View style={{ width: bigW, paddingTop: 8, paddingBottom: 12, flex: 0 }}>
+      <View style={{ width: bigW, marginLeft: 14, paddingTop: 8, paddingBottom: 12, justifyContent: 'center' }}>
         <Card
           tab={active}
           active
           hidden={active.id === hideId}
           width={bigW}
-          height={Math.max(200, H - 20 - TITLE_H)}
+          height={Math.max(200, bigH)}
           radius={22}
           ctx={ctx}
         />
@@ -582,7 +583,7 @@ function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
 
 // ---------- Màn các thẻ ----------
 
-export function TabOverview(props: Props) {
+function TabOverviewImpl(props: Props) {
   const { phase, zoom, dockShift, tabs, activeId, hideId, layout, bottomPad } = props;
   const insets = useSafeAreaInsets();
   const { width: W, height: H } = useWindowDimensions();
@@ -597,6 +598,8 @@ export function TabOverview(props: Props) {
     },
     onDuplicate: props.onDuplicate,
     onActiveFrame: props.onActiveFrame,
+    token: props.token,
+    onActiveMeasurer: props.onActiveMeasurer,
   };
 
   // Màn các thẻ hiện dần theo mức thu nhỏ của trang
@@ -606,17 +609,11 @@ export function TabOverview(props: Props) {
   }));
 
   const bodyH = H - insets.top - 104 - bottomPad;
-  const lp: LayoutProps = { tabs, activeId, hideId, ctx, W, H: bodyH, dockShift };
+  const lp: LayoutProps = { tabs, activeId, hideId, ctx, W, H: bodyH, dockShift, token: props.token };
   let body: React.ReactNode;
   switch (layout) {
-    case 'grid3':
-      body = <Grid {...lp} cols={3} />;
-      break;
     case 'list':
       body = <List {...lp} />;
-      break;
-    case 'stack':
-      body = <Stack {...lp} />;
       break;
     case 'cascade':
       body = <Cascade {...lp} />;
@@ -743,4 +740,22 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: -6 },
   },
+});
+
+/** Khoá nội dung của thẻ ảnh hưởng tới màn các thẻ (bỏ qua tiến trình tải… để không vẽ lại liên tục) */
+const tabsKey = (tabs: Tab[]) => tabs.map((t) => `${t.id}|${t.title}|${t.url}|${t.home}|${t.thumb}`).join('\n');
+
+/**
+ * Màn các thẻ luôn được gắn sẵn (ẩn) để lúc kéo dock không phải dựng từ đầu → không khựng khung hình đầu.
+ * Khi đang xem trang (phase off) chỉ vẽ lại nếu danh sách thẻ đổi.
+ */
+export const TabOverview = memo(TabOverviewImpl, (a, b) => {
+  if (a.phase !== b.phase || b.phase !== 'off') return false;
+  return (
+    a.activeId === b.activeId &&
+    a.layout === b.layout &&
+    a.bottomPad === b.bottomPad &&
+    a.hideId === b.hideId &&
+    tabsKey(a.tabs) === tabsKey(b.tabs)
+  );
 });

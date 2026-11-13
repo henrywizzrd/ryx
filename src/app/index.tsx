@@ -33,7 +33,7 @@ import { getRyxNetStatus, setRyxNetEnabled } from '@/lib/ryx-net';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { ContextMenu, type ContextMenuState, type MenuItem } from '@/components/context-menu';
 import { Dock, dockMetrics, ZOOM_SPRING } from '@/components/dock';
-import { TabOverview, type OverviewPhase, type Rect } from '@/components/tab-overview';
+import { TabOverview, type FullPhase, type Rect } from '@/components/tab-overview';
 import { EdgeSwipeBack } from '@/components/edge-swipe';
 import { Glass } from '@/components/glass';
 import { Txt } from '@/components/txt';
@@ -77,7 +77,7 @@ export default function BrowserScreen() {
   const dockX = useSharedValue(0);
   const dockY = useSharedValue(0);
   /** off: xem trang · drag: đang kéo · open: đang ở màn các thẻ · closing: thẻ đang phóng to ra · fly: thẻ mới bay ra */
-  const [phase, setPhase] = useState<OverviewPhase | 'off' | 'fly'>('off');
+  const [phase, setPhase] = useState<FullPhase>('off');
   const [hideId, setHideId] = useState<string | null>(null);
 
   // ---- Nhật ký giao diện: đo độ mượt của hiệu ứng thu nhỏ/phóng to (khung hình > 25 ms = bị giật) ----
@@ -111,12 +111,35 @@ export default function BrowserScreen() {
     uiTrack.current.what = '';
   };
 
+  const [ovToken, setOvToken] = useState(0);
+  const phaseRef = useRef(phase);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+  const activeMeasure = useRef<((cb: (r: Rect | null) => void) => void) | null>(null);
+  const onActiveMeasurer = useCallback((fn: (cb: (r: Rect | null) => void) => void) => {
+    activeMeasure.current = fn;
+  }, []);
+  /** Vị trí thẻ đang mở vừa đo được: trang đang thu nhỏ bay dần về đó */
+  const onActiveFrame = useCallback(
+    (r: Rect) => {
+      if (phaseRef.current !== 'drag') return;
+      uiTrack.current.measured = true;
+      const cfg = { duration: 140 };
+      fx.set(withTiming(r.x, cfg));
+      fy.set(withTiming(r.y, cfg));
+      fw.set(withTiming(r.w, cfg));
+      fh.set(withTiming(r.h, cfg));
+    },
+    [fx, fy, fw, fh],
+  );
+
   const setFrame = (r: Rect, animate: boolean) => {
     const cfg = { duration: 140 };
-    fx.value = animate ? withTiming(r.x, cfg) : r.x;
-    fy.value = animate ? withTiming(r.y, cfg) : r.y;
-    fw.value = animate ? withTiming(r.w, cfg) : r.w;
-    fh.value = animate ? withTiming(r.h, cfg) : r.h;
+    fx.set(animate ? withTiming(r.x, cfg) : r.x);
+    fy.set(animate ? withTiming(r.y, cfg) : r.y);
+    fw.set(animate ? withTiming(r.w, cfg) : r.w);
+    fh.set(animate ? withTiming(r.h, cfg) : r.h);
   };
   const zoomTo = (to: 0 | 1, done: (open: boolean) => void) => {
     const open = to === 1;
@@ -130,12 +153,20 @@ export default function BrowserScreen() {
   };
   const zoomSettled = (open: boolean) => {
     endTrack(open ? 'Mở' : 'Về trang');
-    setHideId(null);
-    if (open) setPhase('open');
-    else {
-      setPhase('off');
-      dockX.value = 0;
+    if (open) {
+      // Chụp trang lúc hiệu ứng đã dừng (chụp giữa chừng làm rớt khung hình), rồi mới đổi trang thật sang ảnh của thẻ
+      const id = active.id;
+      void Promise.race([captureTab(id), new Promise((res) => setTimeout(res, 400))]).then(() =>
+        setTimeout(() => {
+          setHideId(null);
+          setPhase((p) => (p === 'drag' ? 'open' : p));
+        }, 50),
+      );
+      return;
     }
+    setHideId(null);
+    setPhase('off');
+    dockX.value = 0;
   };
   /** Bắt đầu thu nhỏ: dựng màn các thẻ bên dưới, chụp ảnh trang hiện tại cho thẻ của nó */
   const startZoom = (how: 'kéo dock' | 'nút' = 'kéo dock') => {
@@ -144,7 +175,7 @@ export default function BrowserScreen() {
     dockX.value = 0;
     setHideId(active.id);
     setPhase('drag');
-    void captureTab(active.id);
+    setOvToken((n) => n + 1);
   };
   const openOverview = () => {
     if (phase !== 'off') return;
@@ -440,6 +471,12 @@ export default function BrowserScreen() {
               ),
       });
       if (canFetch) items.push({ label: 'Lưu vào Ảnh', icon: 'images-outline', run: () => save(m.src, 'video') });
+      if (m.pip)
+        items.push({
+          label: 'Hình trong hình',
+          icon: 'browsers-outline',
+          run: () => webRef()?.injectJavaScript('window.__ryx && window.__ryx.pip(); true;'),
+        });
       if (m.poster) items.push({ label: 'Lưu ảnh bìa', icon: 'image-outline', run: () => save(m.poster, 'image') });
     } else if (m.src) {
       items.push({ label: 'Lưu vào Ảnh', icon: 'images-outline', run: () => save(m.src, 'image') });
@@ -503,7 +540,10 @@ export default function BrowserScreen() {
         log.debug('nav', `Bấm tiến (trang có lịch sử tiến: ${active.canGoForward ? 'có' : 'không'})`, active.url ?? '');
         return webRef()?.goForward();
       case 'tabs':
-        if (phase === 'open') return pickTab(active.id, null);
+        if (phase === 'open') {
+          const m = activeMeasure.current;
+          return m ? m((r) => pickTab(active.id, r)) : pickTab(active.id, null);
+        }
         return openOverview();
       case 'menu':
         return setMenuOpen(true);
@@ -570,40 +610,36 @@ export default function BrowserScreen() {
   const pageOn = phase === 'off';
   return (
     <View style={styles.root}>
-      {phase !== 'off' && phase !== 'fly' && (
-        <TabOverview
-          phase={phase}
-          zoom={zoom}
-          dockShift={dockX}
-          tabs={tabs}
-          activeId={active.id}
-          hideId={hideId}
-          layout={settings.tabLayout}
-          bottomPad={dock.top + 14}
-          onLayoutChange={(l) => {
-            log.info('ui', 'Đổi kiểu thẻ', `${settings.tabLayout} → ${l}`);
-            update({ tabLayout: l });
-          }}
-          onActiveFrame={(r) => {
-            if (phase !== 'drag') return;
-            uiTrack.current.measured = true;
-            setFrame(r, true);
-          }}
-          onPick={pickTab}
-          onClose={closeTab}
-          onDuplicate={(id) => {
-            const t = tabs.find((x) => x.id === id);
-            if (t?.url) newTab(t.url, { background: true });
-          }}
-          onCloseAll={() => {
-            closeAll();
-            setHideId(null);
-            zoomTo(0, zoomSettled);
-            setPhase('closing');
-          }}
-          onNewTab={(r) => newTabFrom(r)}
-        />
-      )}
+      <TabOverview
+        phase={phase}
+        token={ovToken}
+        onActiveMeasurer={onActiveMeasurer}
+        zoom={zoom}
+        dockShift={dockX}
+        tabs={tabs}
+        activeId={active.id}
+        hideId={hideId}
+        layout={settings.tabLayout}
+        bottomPad={dock.top + 14}
+        onLayoutChange={(l) => {
+          log.info('ui', 'Đổi kiểu thẻ', `${settings.tabLayout} → ${l}`);
+          update({ tabLayout: l });
+        }}
+        onActiveFrame={onActiveFrame}
+        onPick={pickTab}
+        onClose={closeTab}
+        onDuplicate={(id) => {
+          const t = tabs.find((x) => x.id === id);
+          if (t?.url) newTab(t.url, { background: true });
+        }}
+        onCloseAll={() => {
+          closeAll();
+          setHideId(null);
+          zoomTo(0, zoomSettled);
+          setPhase('closing');
+        }}
+        onNewTab={(r) => newTabFrom(r)}
+      />
 
       {/* Toàn bộ trang (web + thanh địa chỉ) nằm trong một lớp để thu nhỏ thành thẻ */}
       <Animated.View

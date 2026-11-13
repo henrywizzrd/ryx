@@ -224,7 +224,10 @@ export interface Converted {
 }
 
 /** Chuyển nội dung (nhiều file nối lại) thành danh sách luật WebKit. */
-export function convertFilters(text: string): Converted {
+/** Nhường luồng JS một chút để giao diện (cử chỉ, hiệu ứng) không bị đứng trong lúc chuyển đổi */
+const yieldToUi = () => new Promise<void>((res) => setTimeout(res, 0));
+
+export async function convertFilters(text: string): Promise<Converted> {
   const block: WkRule[] = [];
   const allow: WkRule[] = [];
   const generic: string[] = [];
@@ -232,7 +235,10 @@ export function convertFilters(text: string): Converted {
   const specific = new Map<string, { d: { inc: string[]; exc: string[] }; sels: string[] }>();
   const stats: ConvertStats = { lines: 0, block: 0, hide: 0, allow: 0, skipped: 0 };
 
+  let n = 0;
   for (const raw of text.split('\n')) {
+    // Cứ ~2000 dòng thì nhường một nhịp (mỗi nhịp chỉ vài ms) thay vì chặn liền ~600 ms
+    if (++n % 2000 === 0) await yieldToUi();
     const line = raw.trim();
     if (!line || line.startsWith('!') || line.startsWith('[')) continue;
     stats.lines++;

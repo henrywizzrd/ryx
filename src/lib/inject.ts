@@ -251,7 +251,8 @@ document.addEventListener('touchstart', function(e){
     var so = isV && m.querySelector ? m.querySelector('source') : null;
     var src = isV ? (m.currentSrc || m.src || (so ? so.src : '')) : (m.currentSrc || m.src || '');
     var a = m.closest('a');
-    send({ type: 'ryx:media', kind: isV ? 'video' : 'image', src: String(src || ''), poster: isV ? String(m.poster || '') : '', link: a ? a.href : '', url: location.href, playing: isV && !m.paused, title: document.title, x: lpX, y: lpY });
+    if (isV) lpVideo = m;
+    send({ type: 'ryx:media', pip: isV && pipSupported(m), kind: isV ? 'video' : 'image', src: String(src || ''), poster: isV ? String(m.poster || '') : '', link: a ? a.href : '', url: location.href, playing: isV && !m.paused, title: document.title, x: lpX, y: lpY });
   }, 550);
 }, { passive: true, capture: true });
 function lpCancel(e){
@@ -355,46 +356,43 @@ if (CFG.bgPlay) {
   } catch (e) {}
 }
 
-/* Nút PiP nổi trên video lớn đang phát (bấm thật nên iOS cho bật Picture-in-Picture) */
-var pipBtn = null, pipVideo = null, pipTimer = null;
+/* Hình trong hình (PiP): bật từ menu nhấn giữ video của Ryx, không còn nút nổi đè lên video */
+var lpVideo = null, pipTap = null;
 function pipSupported(v){ return !!(v && (v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode('picture-in-picture'))); }
-function placePip(){
-  if (!pipBtn || !pipVideo) return;
-  var r = pipVideo.getBoundingClientRect();
-  if (r.width < 200 || r.bottom < 0 || r.top > window.innerHeight) { pipBtn.style.display = 'none'; return; }
-  pipBtn.style.display = 'flex';
-  pipBtn.style.top = (r.top + window.scrollY + 10) + 'px';
-  pipBtn.style.left = (r.right + window.scrollX - 50) + 'px';
+function pipToggle(v){
+  var mode = v.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
+  v.webkitSetPresentationMode(mode);
+  return mode;
 }
-function showPip(v){
-  if (!pipSupported(v) || (v.offsetWidth || 0) < 200) return;
-  pipVideo = v;
-  if (!pipBtn) {
-    pipBtn = document.createElement('div');
-    pipBtn.setAttribute('role', 'button');
-    pipBtn.setAttribute('aria-label', 'Hình trong hình');
-    pipBtn.style.cssText = 'position:absolute;z-index:2147483647;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;-webkit-backdrop-filter:blur(8px);';
-    pipBtn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><rect x="12" y="11" width="8" height="6" rx="1.5" fill="#fff"/></svg>';
-    pipBtn.addEventListener('click', function(e){
-      e.preventDefault(); e.stopPropagation();
-      var v2 = pipVideo; if (!v2) return;
-      try {
-        var mode = v2.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
-        v2.webkitSetPresentationMode(mode);
-      } catch (err) { send({ type: 'ryx:log', msg: 'Không bật được PiP', detail: String(err), url: location.href }); }
-    }, true);
-    (document.body || root).appendChild(pipBtn);
-    window.addEventListener('scroll', placePip, { passive: true });
-    window.addEventListener('resize', placePip);
-  }
-  placePip();
-  clearTimeout(pipTimer);
-  pipTimer = setInterval(placePip, 1000);
+/* iOS có thể đòi một cú chạm thật: hiện nút "Chạm để mở PiP" giữa video trong 4 giây */
+function pipFallback(v, why){
+  if (pipTap) pipTap.remove();
+  var r = v.getBoundingClientRect();
+  pipTap = document.createElement('div');
+  pipTap.setAttribute('role', 'button');
+  pipTap.textContent = 'Chạm để mở Hình trong hình';
+  pipTap.style.cssText = 'position:absolute;z-index:2147483647;padding:10px 16px;border-radius:22px;background:rgba(0,0,0,.7);color:#fff;font:600 14px -apple-system,system-ui;-webkit-backdrop-filter:blur(8px);';
+  pipTap.style.top = (r.top + window.scrollY + r.height / 2 - 20) + 'px';
+  pipTap.style.left = (r.left + window.scrollX + Math.max(8, r.width / 2 - 110)) + 'px';
+  pipTap.addEventListener('click', function(e){
+    e.preventDefault(); e.stopPropagation();
+    try { pipToggle(v); send({ type: 'ryx:log', level: 'info', msg: 'Đã bật PiP bằng nút chạm', url: location.href }); }
+    catch (err) { send({ type: 'ryx:log', level: 'error', msg: 'Không bật được PiP', detail: String(err), url: location.href }); }
+    pipTap.remove(); pipTap = null;
+  }, true);
+  (document.body || root).appendChild(pipTap);
+  setTimeout(function(){ if (pipTap) { pipTap.remove(); pipTap = null; } }, 4000);
+  send({ type: 'ryx:log', level: 'info', msg: 'iOS không cho bật PiP từ menu, hiện nút chạm', detail: String(why || ''), url: location.href });
 }
-function hidePip(){ if (pipBtn) pipBtn.style.display = 'none'; clearInterval(pipTimer); }
-document.addEventListener('playing', function(e){ if (e.target && e.target.tagName === 'VIDEO') showPip(e.target); }, true);
-document.addEventListener('pause', function(e){ if (e.target === pipVideo && e.target.webkitPresentationMode !== 'picture-in-picture') hidePip(); }, true);
-document.addEventListener('ended', function(e){ if (e.target === pipVideo) hidePip(); }, true);
+function pipFromMenu(){
+  var v = lpVideo;
+  if (!v || !v.isConnected) { var vs = document.getElementsByTagName('video'); v = vs.length ? vs[0] : null; }
+  if (!v || !pipSupported(v)) { send({ type: 'ryx:log', level: 'warn', msg: 'Video này không hỗ trợ PiP', url: location.href }); return; }
+  try {
+    var want = pipToggle(v);
+    setTimeout(function(){ if (v.webkitPresentationMode !== want) pipFallback(v, 'chế độ vẫn là ' + v.webkitPresentationMode); }, 700);
+  } catch (err) { pipFallback(v, err); }
+}
 
 /* Ghi lại script/CSS nào đã tải xong hoặc lỗi, để biết trang đang chờ tệp nào khi bị treo */
 function trackRes(e){ var t = e.target; if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) t.__ryxDone = e.type; }
@@ -468,6 +466,7 @@ window.__ryx = {
     reportPick();
   },
   update: function(c){ CFG = c; P = prefs(); applyAll(); post(); },
+  pip: pipFromMenu,
   report: post
 };
 } catch (err) {

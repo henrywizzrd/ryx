@@ -259,7 +259,7 @@ async function download(): Promise<boolean> {
     }),
   );
   if (texts.some((t) => t === null)) return false;
-  const { rules, stats } = convertFilters(texts.join('\n'));
+  const { rules, stats } = await convertFilters(texts.join('\n'));
   const main = rules.filter((r) => r.action.type !== 'ignore-previous-rules');
   const allow = rules.filter((r) => r.action.type === 'ignore-previous-rules');
   const f = new File(Paths.document, CACHE_FILE);
