@@ -198,7 +198,8 @@ export async function downloadHls(opts: {
     };
 
     // 3. Ghép thành MP4 phân mảnh
-    const frag = new File(work, 'out.fmp4');
+    // Đuôi .mp4: bộ đọc video của iOS đoán định dạng theo đuôi file (đuôi lạ → không mở/không xuất được)
+    const frag = new File(work, 'out.mp4');
     frag.create();
     const h = frag.open(FileMode.ReadWrite);
     let bytes = 0;
@@ -228,6 +229,12 @@ export async function downloadHls(opts: {
         opts.onProgress({ done: i + 1, total: pl.segments.length, bytes });
       }
       if (joiner && !joiner.hasInit) throw new HlsError('Không đọc được hình/tiếng trong video (có thể là H.265)');
+      // Ghi lại phần đầu file với thời lượng thật (mux.js để "không rõ" → iOS hiện ~13 tiếng)
+      const fixedInit = joiner?.finalInit();
+      if (fixedInit) {
+        h.offset = 0;
+        await h.writeBytes(fixedInit);
+      }
       const total = pl.segments.reduce((a, x) => a + x.dur, 0);
       log.info(
         'download',
@@ -249,9 +256,11 @@ export async function downloadHls(opts: {
     } catch (e) {
       log.warn('download', 'Không chuyển được sang MP4 thường, giữ bản MP4 phân mảnh', e);
       if (dest.exists) dest.delete();
-      frag.move(dest);
+      // Phải chuyển xong TRƯỚC khi xoá thư mục tạm (bản trước gọi move bất đồng bộ → file bị xoá mất)
+      frag.moveSync(dest);
     }
-    return dest.exists ? (dest.size ?? bytes) : bytes;
+    if (!dest.exists || !dest.size) throw new HlsError('Ghép xong nhưng không lưu được file video');
+    return dest.size;
   } finally {
     try {
       if (work.exists) work.delete();

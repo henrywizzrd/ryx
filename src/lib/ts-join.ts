@@ -93,6 +93,34 @@ function shiftFragments(b: Uint8Array, offsetSec: number, scales: Map<number, nu
   }
 }
 
+/**
+ * mux.js ghi thời lượng "không rõ" (0xFFFFFFFF ở thang 90 000 = ~13,3 tiếng) vào đoạn khởi tạo, vì nó làm cho phát trực tiếp.
+ * Trình phát của iOS tin con số đó → video hiện dài ~12–13 tiếng, phần sau đen. Ghi lại thời lượng thật (sửa trên bản sao).
+ */
+export function withDuration(init: Uint8Array, seconds: number): Uint8Array {
+  const b = new Uint8Array(init);
+  const clamp = (v: number) => Math.min(0xfffffffe, Math.max(0, Math.round(v)));
+  for (const moov of boxes(b, 0, b.length)) {
+    if (moov.type !== 'moov') continue;
+    let movieScale = CLOCK;
+    for (const c of boxes(b, moov.at + 8, moov.at + moov.size)) {
+      if (c.type === 'mvhd' && b[c.at + 8] === 0) {
+        movieScale = u32(b, c.at + 20) || CLOCK;
+        setU32(b, c.at + 24, clamp(seconds * movieScale));
+      }
+      if (c.type !== 'trak') continue;
+      for (const t of boxes(b, c.at + 8, c.at + c.size)) {
+        if (t.type === 'tkhd' && b[t.at + 8] === 0) setU32(b, t.at + 28, clamp(seconds * movieScale));
+        if (t.type === 'mdia')
+          for (const m of boxes(b, t.at + 8, t.at + t.size))
+            if (m.type === 'mdhd' && b[m.at + 8] === 0)
+              setU32(b, m.at + 24, clamp(seconds * (u32(b, m.at + 20) || CLOCK)));
+      }
+    }
+  }
+  return b;
+}
+
 /** Một số trang giấu đoạn video sau phần đầu của file ảnh (PNG/JPG giả): tìm chỗ bắt đầu thật của TS */
 export function findTsStart(b: Uint8Array): number {
   const max = Math.min(b.length - 377, 1 << 20);
@@ -157,5 +185,10 @@ export class TsJoiner {
 
   get hasInit() {
     return !!this.init;
+  }
+
+  /** Đoạn khởi tạo kèm thời lượng thật (ghi đè lên phần đầu file khi ghép xong, cùng độ dài) */
+  finalInit(): Uint8Array | null {
+    return this.init ? withDuration(this.init, this.elapsed) : null;
   }
 }

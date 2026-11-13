@@ -147,7 +147,17 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
             `Tự xoá ${expired.length} file tải về đã quá ${KEEP_DAYS} ngày`,
             expired.map((d) => d.name).join('\n'),
           );
-        const saved = all.filter((d) => now - d.t <= KEEP_MS);
+        const fileGone = (d: DownloadItem) => {
+          try {
+            return d.status === 'done' && !new File(d.uri).exists;
+          } catch {
+            return false;
+          }
+        };
+        // File đã mất (vd bản tải HLS lỗi trước đây) → hiện lỗi để tải lại, thay vì bấm vào báo "không có quyền"
+        const saved = all
+          .filter((d) => now - d.t <= KEEP_MS)
+          .map((d) => (fileGone(d) ? { ...d, status: 'error' as const, error: 'File không còn trên máy, chạm để tải lại' } : d));
         setItems((cur) => [...cur, ...saved.filter((s) => !cur.some((c) => c.id === s.id))]);
       })
       .catch(() => {})
