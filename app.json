@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ryx",
     "slug": "ryx",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -28,7 +28,8 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoadsInWebContent": true,
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "CADisableMinimumFrameDurationOnPhone": true
       }
     },
     "android": {
