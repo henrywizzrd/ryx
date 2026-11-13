@@ -210,8 +210,8 @@ document.addEventListener('DOMContentLoaded', function(){
 window.addEventListener('load', scan);
 
 /* Màu đầu trang: app tô dải dưới giờ/pin bằng màu này để trang nhìn liền lên tận mép (giống Safari) */
-function rgbOf(s){ var m = /rgba?\(([^)]+)\)/.exec(s || ''); if (!m) return null;
-  var p = m[1].split(/[\s,\/]+/).filter(Boolean).map(parseFloat);
+function rgbOf(s){ var m = /rgba?\\(([^)]+)\\)/.exec(s || ''); if (!m) return null;
+  var p = m[1].split(/[\\s,\\/]+/).filter(Boolean).map(parseFloat);
   return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; }
 function bgUp(el){ while (el && el.nodeType === 1) { var c = rgbOf(getComputedStyle(el).backgroundColor); if (c && c.a > 0.5) return c; el = el.parentElement; } return null; }
 /* Trang đang bị Ryx ép tối (invert 0.9 + hue-rotate 180°): đổi màu đo được theo đúng phép lọc đó */
