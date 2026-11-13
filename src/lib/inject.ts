@@ -211,7 +211,7 @@ window.addEventListener('load', scan);
 
 /* Nhấn giữ ảnh/video → app hiện menu (Lưu vào Ảnh, Sao chép link…) */
 /* Chữ trong link không bị iOS tô chọn khi nhấn giữ (để chỉ hiện menu của Ryx); giữ rồi kéo thì Ryx tự tô */
-styleEl('ryx-lp').textContent = 'img,video,a{-webkit-touch-callout:none!important;}a,a *{-webkit-user-select:none!important;user-select:none!important;}a.ryx-sel,a.ryx-sel *{-webkit-user-select:text!important;user-select:text!important;}';
+styleEl('ryx-lp').textContent = 'img,video,a{-webkit-touch-callout:none!important;}video,[data-ryx-v],[data-ryx-v] *{-webkit-tap-highlight-color:transparent!important;-webkit-touch-callout:none!important;-webkit-user-select:none!important;user-select:none!important;}a,a *{-webkit-user-select:none!important;user-select:none!important;}a.ryx-sel,a.ryx-sel *{-webkit-user-select:text!important;user-select:text!important;}';
 var lp = null, lpX = 0, lpY = 0, lpFired = 0, lpArm = null, lpSel = null;
 function mediaAt(t){
   if (!t || !t.closest) return null;
@@ -232,10 +232,28 @@ function videoAt(x, y){
   }
   return best;
 }
+/* Khung trình phát quanh video: tắt lớp tô xám / chọn chữ của iOS khi nhấn giữ (lớp phủ nút của trình phát
+   mới là thứ bị tô, không phải thẻ <video>) — đánh dấu video + vài lớp cha có kích thước gần bằng video */
+function markPlayer(v){
+  try {
+    var r = v.getBoundingClientRect(), area = Math.max(1, r.width * r.height), n = v;
+    for (var i = 0; i < 5 && n && n !== document.body && n !== root; i++) {
+      var q = n.getBoundingClientRect();
+      if (i > 0 && q.width * q.height > area * 2.5) break;
+      if (!n.hasAttribute('data-ryx-v')) n.setAttribute('data-ryx-v', '');
+      n = n.parentElement;
+    }
+  } catch (e) {}
+}
+['loadstart', 'loadedmetadata', 'playing'].forEach(function(t){ document.addEventListener(t, function(e){ if (e.target && e.target.tagName === 'VIDEO') markPlayer(e.target); }, true); });
+function inPlayer(t){ return !!(t && t.closest && t.closest('[data-ryx-v]')); }
+document.addEventListener('selectstart', function(e){ if (inPlayer(e.target)) e.preventDefault(); }, true);
+document.addEventListener('contextmenu', function(e){ if (inPlayer(e.target)) e.preventDefault(); }, true);
 document.addEventListener('touchstart', function(e){
   if (!e.touches || e.touches.length !== 1) return;
   var x = e.touches[0].clientX, y = e.touches[0].clientY;
-  var m = videoAt(x, y) || mediaAt(e.target);
+  var vv = videoAt(x, y); if (vv) markPlayer(vv);
+  var m = vv || mediaAt(e.target);
   var link = !m && e.target && e.target.closest ? e.target.closest('a[href]') : null;
   if (!m && !(link && /^https?:/i.test(link.href))) return;
   lpX = x; lpY = y;
@@ -531,7 +549,8 @@ if (window.top === window || window.__ryxFrame) return; window.__ryxFrame = 1;
 function send(o){ try { window.webkit.messageHandlers.ReactNativeWebView.postMessage(JSON.stringify(o)); } catch (e) {} }
 try {
   var st = document.createElement('style');
-  st.textContent = 'video,img,a{-webkit-touch-callout:none!important;-webkit-user-select:none!important;user-select:none!important;-webkit-tap-highlight-color:transparent!important;}';
+  /* Khung nhúng thường chỉ là trình phát: tắt lớp tô xám, menu và chọn chữ của iOS cho mọi phần tử trong khung */
+  st.textContent = '*{-webkit-tap-highlight-color:transparent!important;-webkit-touch-callout:none!important;}video,img,a,video~*,[class*=player],[class*=player] *,[id*=player],[id*=player] *{-webkit-user-select:none!important;user-select:none!important;}';
   (document.head || document.documentElement).appendChild(st);
 } catch (e) {}
 function videoAt(x, y){
@@ -552,6 +571,8 @@ var lp = null, lx = 0, ly = 0, fired = 0, last = null;
   try { var f0 = window.fetch; if (f0) window.fetch = function(i){ hls(i && i.url ? i.url : i); return f0.apply(this, arguments); }; } catch (e) {}
   document.addEventListener('loadstart', function(e){ var v = e.target; if (v && v.tagName === 'VIDEO') hls(v.currentSrc || v.src); }, true);
 })();
+document.addEventListener('selectstart', function(e){ if (videoAt(lx, ly)) e.preventDefault(); }, true);
+document.addEventListener('contextmenu', function(e){ e.preventDefault(); }, true);
 function pipOk(v){ return !!(v && v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode('picture-in-picture')); }
 document.addEventListener('touchstart', function(e){
   if (!e.touches || e.touches.length !== 1) return;

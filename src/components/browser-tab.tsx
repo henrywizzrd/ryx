@@ -645,6 +645,8 @@ function BrowserTabImpl({
         // Vuốt lùi do Ryx tự làm (components/edge-swipe): cử chỉ có sẵn không chạy trong app và sẽ chồng lên nhau
         allowsBackForwardNavigationGestures={false}
         allowsInlineMediaPlayback
+        // Tắt xem trước link/ảnh của iOS khi nhấn giữ: Ryx tự hiện menu riêng
+        allowsLinkPreview={false}
         // Mặc định (true) có thể làm video trên iOS quay vòng mãi không phát (theo tài liệu react-native-webview)
         mediaPlaybackRequiresUserAction={false}
         pullToRefreshEnabled
