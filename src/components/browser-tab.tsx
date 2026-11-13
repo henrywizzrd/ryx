@@ -65,6 +65,8 @@ interface Props {
   onSlowLoad: (url: string) => void;
   /** Bật script chẩn đoán video (Tuỳ chỉnh → Nâng cao). */
   diag: boolean;
+  /** Khoảng trên cùng bị che (thanh trạng thái + thanh địa chỉ nếu đặt trên): trang bắt đầu dưới nó nhưng cuộn lên được bên dưới lớp mờ. */
+  insetTop: number;
   insetBottom: number;
 }
 
@@ -127,6 +129,7 @@ function BrowserTabImpl({
   onChapter,
   onDownload,
   diag,
+  insetTop,
   insetBottom,
 }: Props) {
   const { patchTab, refs } = useTabs();
@@ -656,7 +659,7 @@ function BrowserTabImpl({
         decelerationRate="normal"
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
-        contentInset={{ top: 0, bottom: insetBottom }}
+        contentInset={{ top: insetTop, bottom: insetBottom }}
         contentMode="mobile"
         keyboardDisplayRequiresUserAction={false}
       />

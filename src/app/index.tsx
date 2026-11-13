@@ -23,6 +23,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 
 import { ADDRESS_BAR_HEIGHT, AddressBar } from '@/components/address-bar';
 import {
@@ -733,7 +734,7 @@ export default function BrowserScreen() {
           collapsable={false}
           style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, backgroundColor: colors.bg }}
         >
-          <View style={[styles.webArea, { top: contentTop, bottom: webContainerBottom }]}>
+          <View style={[styles.webArea, { top: 0, bottom: webContainerBottom }]}>
             {tabs.map((t) => (
               <BrowserTab
                 key={t.id}
@@ -754,6 +755,7 @@ export default function BrowserScreen() {
                 onChapter={onChapter}
                 onDownload={(url, referer) => download(url, referer)}
                 diag={settings.diagVideo}
+                insetTop={contentTop}
                 insetBottom={webBottomInset}
               />
             ))}
@@ -762,7 +764,7 @@ export default function BrowserScreen() {
                 onSubmit={go}
                 onOpen={(url) => open(active.id, url)}
                 onOpenNewTab={(url) => newTab(url)}
-                paddingTop={0}
+                paddingTop={contentTop}
                 paddingBottom={chromeBottom}
               />
             )}
@@ -784,8 +786,16 @@ export default function BrowserScreen() {
             />
           )}
 
-          {/* Che vùng thanh trạng thái để nội dung trang không chạy dưới đồng hồ/pin */}
-          <View style={[styles.statusCover, { height: insets.top }]} pointerEvents="none" />
+          {/* Vùng thanh trạng thái: trang web cuộn lên bên dưới, phủ một lớp mờ hơi tối (kiểu Safari / app Claude)
+              để giờ/pin vẫn đọc rõ mà vẫn thấy màu trang chạy phía sau */}
+          <View style={[styles.statusCover, { height: insets.top }]} pointerEvents="none">
+            <BlurView
+              tint={colors.scheme === 'light' ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark'}
+              intensity={60}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={[StyleSheet.absoluteFill, styles.statusDim]} />
+          </View>
           <View
             pointerEvents="box-none"
             style={[styles.addrWrap, addrTop ? { top: insets.top + 4 } : { bottom: addrBottom }]}
@@ -954,8 +964,10 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: colors.bg,
+    overflow: 'hidden',
   },
+  // lớp tối mỏng trên lớp mờ: chế độ tối tối hơn hẳn, chế độ sáng chỉ hơi xám để chữ giờ/pin màu tối vẫn rõ
+  statusDim: { backgroundColor: colors.scheme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.28)' },
   addrWrap: { position: 'absolute', left: 16, right: 16 },
   pickWrap: { position: 'absolute', left: 16, right: 16 },
   chapWrap: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
