@@ -481,6 +481,14 @@ window.addEventListener('click', function(e){
   pickCount();
 }, true);
 
+/* Ghi lại link playlist HLS (.m3u8) mà trình phát tải về, để "Tải video" ghép được thành mp4 */
+(function(){
+  var seen = {};
+  function hls(u){ try { u = String(u || ''); if (!/\\.m3u8(\\?|#|$)/i.test(u.split('#')[0]) || seen[u]) return; seen[u] = 1; u = new URL(u, location.href).href; send({ type: 'ryx:hls', url: u, page: location.href }); } catch (e) {} }
+  try { var xo = XMLHttpRequest.prototype.open; XMLHttpRequest.prototype.open = function(m, u){ hls(u); return xo.apply(this, arguments); }; } catch (e) {}
+  try { var f0 = window.fetch; if (f0) window.fetch = function(i){ hls(i && i.url ? i.url : i); return f0.apply(this, arguments); }; } catch (e) {}
+  document.addEventListener('loadstart', function(e){ var v = e.target; if (v && v.tagName === 'VIDEO') hls(v.currentSrc || v.src); }, true);
+})();
 window.__ryx = {
   pending: reportPending,
   pick: function(on){ pickOn = !!on; if (!pickOn) pickClearAll(); pickCss(); },
@@ -536,6 +544,14 @@ function videoAt(x, y){
   return best;
 }
 var lp = null, lx = 0, ly = 0, fired = 0, last = null;
+/* Ghi lại link playlist HLS (.m3u8) mà trình phát tải về, để "Tải video" ghép được thành mp4 */
+(function(){
+  var seen = {};
+  function hls(u){ try { u = String(u || ''); if (!/\\.m3u8(\\?|#|$)/i.test(u.split('#')[0]) || seen[u]) return; seen[u] = 1; u = new URL(u, location.href).href; send({ type: 'ryx:hls', url: u, page: location.href }); } catch (e) {} }
+  try { var xo = XMLHttpRequest.prototype.open; XMLHttpRequest.prototype.open = function(m, u){ hls(u); return xo.apply(this, arguments); }; } catch (e) {}
+  try { var f0 = window.fetch; if (f0) window.fetch = function(i){ hls(i && i.url ? i.url : i); return f0.apply(this, arguments); }; } catch (e) {}
+  document.addEventListener('loadstart', function(e){ var v = e.target; if (v && v.tagName === 'VIDEO') hls(v.currentSrc || v.src); }, true);
+})();
 function pipOk(v){ return !!(v && v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode('picture-in-picture')); }
 document.addEventListener('touchstart', function(e){
   if (!e.touches || e.touches.length !== 1) return;

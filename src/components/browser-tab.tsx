@@ -53,6 +53,8 @@ interface Props {
   onLinkLongPress: (l: LinkPress) => void;
   /** Đang giữ link rồi kéo ngón tay → bắt đầu tô chọn chữ (app đóng menu nhấn giữ) */
   onSelectStart?: () => void;
+  /** Trang/khung nhúng tải một playlist HLS (.m3u8) */
+  onHls?: (tabId: string, url: string, page: string) => void;
   /** Đang ở chế độ "Chạm để ẩn quảng cáo" và trang báo phần tử vừa chọn. */
   onPick: (p: PickedElement) => void;
   /** Trang chương truyện (có link chương trước/sau), null khi rời trang. */
@@ -119,6 +121,7 @@ function BrowserTabImpl({
   onMediaLongPress,
   onLinkLongPress,
   onSelectStart,
+  onHls,
   onPick,
   onSlowLoad,
   onChapter,
@@ -545,6 +548,11 @@ function BrowserTabImpl({
           });
         return;
       }
+      if (msg.type === 'ryx:hls') {
+        const h = msg as unknown as { url?: string; page?: string };
+        if (h.url) onHls?.(tab.id, h.url, h.page ?? urlRef.current ?? '');
+        return;
+      }
       if (msg.type === 'ryx:select') {
         onSelectStart?.();
         return;
@@ -595,7 +603,7 @@ function BrowserTabImpl({
       if (delta.ads || delta.gambling || delta.popups) record(delta);
       patchTab(tab.id, { pageCounts: next });
     },
-    [patchTab, record, tab.id, stopWatch, onMediaLongPress, onLinkLongPress, onSelectStart, onPick, onChapter],
+    [patchTab, record, tab.id, stopWatch, onMediaLongPress, onLinkLongPress, onSelectStart, onHls, onPick, onChapter],
   );
 
   if (!tab.sourceUrl) return null;

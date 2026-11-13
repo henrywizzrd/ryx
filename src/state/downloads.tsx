@@ -3,6 +3,7 @@ import { Directory, File, Paths, type DownloadTask } from 'expo-file-system';
 import { requireOptionalNativeModule, type EventSubscription } from 'expo';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
+import { downloadHls, HlsError } from '@/lib/hls';
 import { log } from '@/lib/logger';
 
 /**
@@ -23,7 +24,15 @@ export interface DownloadItem {
   t: number;
   error?: string;
   referer?: string;
+  /** Video HLS (.m3u8): tải từng đoạn rồi ghép thành mp4 */
+  hls?: boolean;
+  segDone?: number;
+  segTotal?: number;
 }
+
+/** File tải về tự xoá sau chừng này ngày */
+export const KEEP_DAYS = 15;
+const KEEP_MS = KEEP_DAYS * 24 * 3600 * 1000;
 
 const STORAGE_KEY = 'ryx:downloads:v1';
 const MAX_ITEMS = 200;
@@ -104,7 +113,7 @@ function deleteFile(uri: string) {
 
 interface Ctx {
   items: DownloadItem[];
-  start: (url: string, opts?: { referer?: string; ext?: string }) => string;
+  start: (url: string, opts?: { referer?: string; ext?: string; hls?: boolean; name?: string }) => string;
   cancel: (id: string) => void;
   remove: (id: string) => void;
   retry: (id: string) => void;
@@ -125,9 +134,20 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((raw) => {
         if (!raw) return;
-        const saved = (JSON.parse(raw) as DownloadItem[]).map((d) =>
+        const now = Date.now();
+        const all = (JSON.parse(raw) as DownloadItem[]).map((d) =>
           d.status === 'downloading' ? { ...d, status: 'error' as const, error: 'Bị gián đoạn khi app tắt' } : d,
         );
+        // Tự xoá file tải về đã quá hạn
+        const expired = all.filter((d) => now - d.t > KEEP_MS);
+        for (const d of expired) deleteFile(d.uri);
+        if (expired.length)
+          log.info(
+            'download',
+            `Tự xoá ${expired.length} file tải về đã quá ${KEEP_DAYS} ngày`,
+            expired.map((d) => d.name).join('\n'),
+          );
+        const saved = all.filter((d) => now - d.t <= KEEP_MS);
         setItems((cur) => [...cur, ...saved.filter((s) => !cur.some((c) => c.id === s.id))]);
       })
       .catch(() => {})
@@ -180,8 +200,47 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [patch]);
 
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  const hlsCancel = useRef(new Set<string>());
   const run = useCallback(
     (item: DownloadItem) => {
+      if (item.hls) {
+        const started = Date.now();
+        hlsCancel.current.delete(item.id);
+        let last = 0;
+        downloadHls({
+          url: item.url,
+          referer: item.referer,
+          destUri: item.uri,
+          isCancelled: () => hlsCancel.current.has(item.id),
+          onProgress: (p) => {
+            const now = Date.now();
+            if (now - last < 300 && p.done < p.total) return;
+            last = now;
+            patch(item.id, { segDone: p.done, segTotal: p.total, received: p.bytes, total: 0 });
+          },
+        })
+          .then((size) => {
+            patch(item.id, { status: 'done', received: size, total: size });
+            log.info(
+              'download',
+              `Tải xong video HLS ${item.name} (${(size / 1048576).toFixed(1)} MB, ${((Date.now() - started) / 1000).toFixed(0)} s)`,
+              item.url,
+            );
+            onFinished.current?.({ ...item, status: 'done', received: size, total: size });
+          })
+          .catch((e: unknown) => {
+            if (hlsCancel.current.delete(item.id)) return;
+            const msg = e instanceof HlsError ? e.message : String(e instanceof Error ? e.message : e);
+            patch(item.id, { status: 'error', error: msg.slice(0, 200) });
+            log.error('download', `Tải video HLS ${item.name} thất bại`, `${item.url}\n${String(e)}`);
+          });
+        return;
+      }
       if (nativeDl) {
         nativeMeta.current.set(item.id, { item, started: Date.now(), got: false });
         nativeDl.startDownload(item.id, item.url, toPath(item.uri), item.referer ? { Referer: item.referer } : {});
@@ -246,9 +305,17 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
   );
 
   const start = useCallback(
-    (url: string, opts?: { referer?: string; ext?: string }) => {
+    (url: string, opts?: { referer?: string; ext?: string; hls?: boolean; name?: string }) => {
       const dir = downloadsDir();
-      const file = uniqueFile(dir, fileNameFromUrl(url, opts?.ext));
+      const wanted = opts?.name
+        ? `${
+            opts.name
+              .replace(/[\\/:*?"<>|]+/g, '_')
+              .trim()
+              .slice(0, 100) || 'video'
+          }.${opts.ext ?? 'mp4'}`
+        : fileNameFromUrl(url, opts?.ext);
+      const file = uniqueFile(dir, wanted);
       const item: DownloadItem = {
         id: newId(),
         url,
@@ -259,6 +326,7 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
         total: 0,
         t: Date.now(),
         referer: opts?.referer,
+        hls: opts?.hls,
       };
       setItems((list) => [item, ...list]);
       log.info('download', `Bắt đầu tải ${item.name}`, url);
@@ -270,6 +338,7 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
 
   const cancel = useCallback(
     (id: string) => {
+      if (itemsRef.current.find((x) => x.id === id)?.hls) hlsCancel.current.add(id);
       if (nativeMeta.current.delete(id)) nativeDl?.cancelDownload(id);
       tasks.current.get(id)?.cancel();
       tasks.current.delete(id);
@@ -279,6 +348,7 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
   );
 
   const remove = useCallback((id: string) => {
+    hlsCancel.current.add(id);
     if (nativeMeta.current.delete(id)) nativeDl?.cancelDownload(id);
     tasks.current.get(id)?.cancel();
     tasks.current.delete(id);
@@ -288,11 +358,6 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
       return list.filter((x) => x.id !== id);
     });
   }, []);
-
-  const itemsRef = useRef(items);
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
 
   const retry = useCallback(
     (id: string) => {

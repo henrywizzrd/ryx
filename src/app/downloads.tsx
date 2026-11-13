@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useState } from 'react';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { ActionSheetIOS, Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
@@ -8,7 +9,7 @@ import type { IconName } from '@/components/icon-button';
 import { Txt } from '@/components/txt';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { displayHost } from '@/lib/url';
-import { useDownloads, type DownloadItem } from '@/state/downloads';
+import { KEEP_DAYS, useDownloads, type DownloadItem } from '@/state/downloads';
 import { colors, useTheme, fg } from '@/theme';
 
 const VIDEO = /\.(mp4|m4v|mov)$/i;
@@ -29,6 +30,8 @@ function mb(n: number) {
 }
 
 export default function DownloadsScreen() {
+  // Mốc thời gian để tính "tự xoá sau N ngày" (lấy 1 lần khi mở màn này)
+  const [now] = useState(() => Date.now());
   const insets = useSafeAreaInsets();
   const { accent } = useTheme();
   const { items, cancel, remove, retry, clearFinished } = useDownloads();
@@ -93,17 +96,22 @@ export default function DownloadsScreen() {
           </View>
         }
         renderItem={({ item: d }) => {
-          const pct = d.total > 0 ? d.received / d.total : 0;
+          const pct = d.hls ? (d.segTotal ? (d.segDone ?? 0) / d.segTotal : 0) : d.total > 0 ? d.received / d.total : 0;
+          const left = Math.max(1, Math.ceil((d.t + KEEP_DAYS * 86400000 - now) / 86400000));
           const sub =
-            d.status === 'downloading'
-              ? d.total > 0
-                ? `${mb(d.received)} / ${mb(d.total)} · ${Math.round(pct * 100)}%`
-                : `${mb(d.received)} · đang tải…`
-              : d.status === 'done'
-                ? `${mb(d.total)} · ${displayHost(d.url)}`
-                : d.status === 'canceled'
-                  ? 'Đã huỷ · chạm để tải lại'
-                  : `Lỗi: ${d.error ?? 'không rõ'}`;
+            d.status === 'downloading' && d.hls
+              ? d.segTotal
+                ? `Đoạn ${d.segDone ?? 0}/${d.segTotal} · ${mb(d.received)} · đang ghép video…`
+                : 'Đang đọc playlist HLS…'
+              : d.status === 'downloading'
+                ? d.total > 0
+                  ? `${mb(d.received)} / ${mb(d.total)} · ${Math.round(pct * 100)}%`
+                  : `${mb(d.received)} · đang tải…`
+                : d.status === 'done'
+                  ? `${mb(d.total)} · ${displayHost(d.url)} · tự xoá sau ${left} ngày`
+                  : d.status === 'canceled'
+                    ? 'Đã huỷ · chạm để tải lại'
+                    : `Lỗi: ${d.error ?? 'không rõ'}`;
           return (
             <Pressable
               onPress={() => (d.status === 'done' ? void share(d) : menu(d))}

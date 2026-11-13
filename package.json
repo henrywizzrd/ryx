@@ -35,6 +35,7 @@
     "expo-updates": "~58.0.22",
     "expo-web-browser": "~58.0.8",
     "lottie-react-native": "~7.5.0",
+    "mux.js": "^6.3.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.1",

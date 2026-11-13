@@ -328,6 +328,35 @@ export default function BrowserScreen() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const closeNotice = useCallback(() => setNotice(null), []);
   // ---- Tải về ----
+  // ---- Video HLS: link playlist trang đã tải (theo từng thẻ, xoá khi thẻ sang trang khác) ----
+  const hlsRef = useRef(new Map<string, { tabUrl: string | null; list: { url: string; page: string }[] }>());
+  const onHls = (tabId: string, url: string, page: string) => {
+    const tabUrl = tabs.find((t) => t.id === tabId)?.url ?? null;
+    const cur = hlsRef.current.get(tabId);
+    const entry = cur && cur.tabUrl === tabUrl ? cur : { tabUrl, list: [] };
+    if (!entry.list.some((x) => x.url === url)) entry.list.push({ url, page });
+    hlsRef.current.set(tabId, entry);
+    log.debug('download', 'Bắt được playlist HLS', `${url}\nTrang: ${page}`);
+  };
+  /** Playlist đầu tiên của trang hiện tại (thường là playlist gốc có đủ các mức chất lượng) */
+  const hlsFor = (tabId: string) => {
+    const e = hlsRef.current.get(tabId);
+    const tabUrl = tabs.find((t) => t.id === tabId)?.url ?? null;
+    return e && e.tabUrl === tabUrl ? (e.list[0] ?? null) : null;
+  };
+  const downloadHlsVideo = (url: string, referer: string, title: string) => {
+    startDownload(url, { referer, hls: true, ext: 'mp4', name: title || getHost(referer) || 'video' });
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setNotice({
+      key: Date.now(),
+      icon: 'download-outline',
+      title: 'Đang tải video (HLS)',
+      subtitle: 'Tải từng đoạn rồi ghép thành mp4',
+      action: { label: 'Xem', run: () => router.push('/downloads') },
+      autoHide: 4000,
+    });
+  };
+
   const download = (url: string, referer: string | null, ext?: string) => {
     startDownload(url, { referer: referer ?? undefined, ext });
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -509,15 +538,19 @@ export default function BrowserScreen() {
       items.push({
         label: 'Tải video',
         icon: 'download-outline',
-        run: () =>
-          canFetch
-            ? download(m.src, m.pageUrl, 'mp4')
-            : Alert.alert(
-                'Chưa tải được video này',
-                'Video phát theo dạng luồng (HLS) nên không có một file mp4 để tải. Ryx hiện chỉ tải được video mp4.',
-              ),
+        run: () => {
+          if (/\.m3u8(\?|#|$)/i.test(m.src)) return downloadHlsVideo(m.src, m.pageUrl, m.pageTitle);
+          if (canFetch) return download(m.src, m.pageUrl, 'mp4');
+          const h = hlsFor(active.id);
+          if (h) return downloadHlsVideo(h.url, h.page, m.pageTitle);
+          Alert.alert(
+            'Chưa tìm thấy luồng video',
+            'Video này phát dạng luồng nhưng Ryx chưa bắt được link playlist (.m3u8). Cho video phát vài giây rồi nhấn giữ lại.',
+          );
+        },
       });
-      if (canFetch) items.push({ label: 'Lưu vào Ảnh', icon: 'images-outline', run: () => save(m.src, 'video') });
+      if (canFetch && !/\.m3u8/i.test(m.src))
+        items.push({ label: 'Lưu vào Ảnh', icon: 'images-outline', run: () => save(m.src, 'video') });
       if (m.pip)
         items.push({
           label: 'Hình trong hình',
@@ -715,6 +748,7 @@ export default function BrowserScreen() {
                 onMediaLongPress={onMediaLongPress}
                 onLinkLongPress={onLinkLongPress}
                 onSelectStart={closeCtxMenu}
+                onHls={onHls}
                 onPick={onPick}
                 onSlowLoad={onSlowLoad}
                 onChapter={onChapter}

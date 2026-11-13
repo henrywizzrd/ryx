@@ -62,6 +62,18 @@ public class RyxNetModule: Module {
       RyxDownloader.shared.cancel(id: id)
     }
 
+    // MARK: Video HLS
+
+    AsyncFunction("decryptAes128") { (inPath: String, outPath: String, keyPath: String, ivHex: String) in
+      try RyxMedia.decryptAES128(inPath: inPath, outPath: outPath, keyPath: keyPath, ivHex: ivHex)
+    }
+
+    AsyncFunction("exportMp4") { (inPath: String, outPath: String, promise: Promise) in
+      RyxMedia.exportMp4(inPath: inPath, outPath: outPath) { error in
+        if let error { promise.reject("ERR_EXPORT", error.localizedDescription) } else { promise.resolve(nil) }
+      }
+    }
+
     // MARK: Content Blocking (bộ lọc quảng cáo của WebKit)
 
     /// Biên dịch luật (JSON định dạng Safari Content Blocker). Trả nil nếu ổn, chuỗi lỗi nếu hỏng.
