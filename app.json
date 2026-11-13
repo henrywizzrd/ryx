@@ -29,7 +29,8 @@
           "NSAllowsArbitraryLoadsInWebContent": true,
           "NSAllowsLocalNetworking": true
         },
-        "CADisableMinimumFrameDurationOnPhone": true
+        "CADisableMinimumFrameDurationOnPhone": true,
+        "UIViewControllerBasedStatusBarAppearance": true
       }
     },
     "android": {

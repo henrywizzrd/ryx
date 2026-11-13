@@ -54,7 +54,15 @@ function RootStack() {
   return (
     <ThemeProvider value={theme}>
       <StatusBar style={colors.scheme === 'light' ? 'dark' : 'light'} />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.bg },
+          // App đang để iOS quyết định thanh trạng thái theo từng màn (UIViewControllerBasedStatusBarAppearance = YES),
+          // nên phải đặt kiểu chữ ở đây: chế độ sáng → giờ/pin chữ tối
+          statusBarStyle: colors.scheme === 'light' ? 'dark' : 'light',
+        }}
+      >
         <Stack.Screen name="index" />
         <Stack.Screen name="customize" options={{ presentation: 'modal' }} />
         <Stack.Screen name="logs" options={{ presentation: 'modal' }} />
