@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 export type DockStyle = 'floating' | 'compact' | 'attached';
 export type AddressBarPosition = 'top' | 'bottom';
-export type TabLayout = 'grid' | 'list' | 'stack' | 'carousel';
+export type TabLayout = 'grid' | 'grid3' | 'list' | 'split' | 'carousel' | 'coverflow' | 'cascade' | 'stack';
 export type DockButtonId =
   | 'back'
   | 'forward'

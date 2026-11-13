@@ -1,6 +1,20 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import Animated, {
+  Easing,
+  FadeInDown,
+  SlideInDown,
+  SlideOutUp,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { displayHost, isSecure } from '@/lib/url';
 import { sameUrl, useBookmarks } from '@/state/bookmarks';
@@ -33,6 +47,64 @@ interface Suggestion {
 }
 
 const MAX_SUGGESTIONS = 6;
+
+/** Thanh tiến trình: chạy theo % tải, có vệt sáng lướt qua; tải xong thì chạy hết rồi mờ đi. */
+function ProgressLine({ loading, progress, color }: { loading: boolean; progress: number; color: string }) {
+  const w = useSharedValue(0);
+  const op = useSharedValue(0);
+  const shine = useSharedValue(0);
+  const reduceMotion = useReducedMotion();
+  useEffect(() => {
+    if (loading) {
+      op.value = withTiming(1, { duration: 120 });
+      w.value = withTiming(Math.max(0.05, progress), { duration: 260 });
+    } else {
+      w.value = withTiming(1, { duration: 180 });
+      op.value = withDelay(
+        200,
+        withTiming(0, { duration: 320 }, (f) => {
+          if (f) w.value = 0;
+        }),
+      );
+    }
+  }, [loading, progress, w, op]);
+  useEffect(() => {
+    if (reduceMotion) return;
+    shine.value = withRepeat(withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.quad) }), -1, false);
+  }, [reduceMotion, shine]);
+  const bar = useAnimatedStyle(() => ({ width: `${w.value * 100}%`, opacity: op.value }));
+  const glint = useAnimatedStyle(() => ({ left: `${shine.value * 130 - 30}%` }));
+  return (
+    <View style={styles.progressTrack} pointerEvents="none">
+      <Animated.View style={[styles.progress, { backgroundColor: color }, bar]}>
+        {!reduceMotion && <Animated.View style={[styles.glint, glint]} />}
+      </Animated.View>
+    </View>
+  );
+}
+
+/** Số đếm lăn như đồng hồ: số cũ trượt lên, số mới trượt từ dưới vào. */
+function RollingCount({ value, color }: { value: number; color: string }) {
+  const text = value > 999 ? '999+' : String(value);
+  return (
+    <View style={styles.rollBox}>
+      {/* Bản ẩn để giữ đúng bề ngang */}
+      <Txt weight="bold" size={13} style={[styles.shieldCount, { opacity: 0 }]}>
+        {text}
+      </Txt>
+      <Animated.View
+        key={text}
+        entering={SlideInDown.duration(220)}
+        exiting={SlideOutUp.duration(220)}
+        style={styles.rollAbs}
+      >
+        <Txt weight="bold" size={13} color={color} style={styles.shieldCount}>
+          {text}
+        </Txt>
+      </Animated.View>
+    </View>
+  );
+}
 
 /** Gợi ý khi gõ: dấu trang trước, rồi lịch sử (mới nhất trước), không trùng link. */
 function useSuggestions(query: string, enabled: boolean): Suggestion[] {
@@ -77,6 +149,26 @@ export function AddressBar({
   const showPage = !tab.home && !!tab.url;
   const host = showPage ? displayHost(tab.url) : '';
 
+  // Chạm vào thanh: phồng nhẹ ra
+  const grow = useSharedValue(0);
+  useEffect(() => {
+    grow.value = withSpring(focused ? 1 : 0, { damping: 16, stiffness: 260 });
+  }, [focused, grow]);
+  const growStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + grow.value * 0.025 }] }));
+
+  // Khiên chớp nhẹ mỗi lần chặn thêm (tối đa 2 lần/giây)
+  const pulse = useSharedValue(1);
+  const lastPulse = useRef({ n: blocked, t: 0 });
+  useEffect(() => {
+    const now = Date.now();
+    if (blocked > lastPulse.current.n && now - lastPulse.current.t > 500) {
+      lastPulse.current.t = now;
+      pulse.value = withSequence(withTiming(1.3, { duration: 110 }), withSpring(1, { damping: 7, stiffness: 320 }));
+    }
+    lastPulse.current.n = blocked;
+  }, [blocked, pulse]);
+  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
+
   const setFocus = (v: boolean) => {
     if (v) setDraft(showPage ? (tab.url ?? '') : '');
     setTyped(false);
@@ -85,7 +177,7 @@ export function AddressBar({
   };
 
   return (
-    <View>
+    <Animated.View style={growStyle}>
       {suggestions.length > 0 && (
         <Glass
           radius={22}
@@ -96,31 +188,36 @@ export function AddressBar({
           contentStyle={{ paddingVertical: 6 }}
         >
           {suggestions.map((s, i) => (
-            <Pressable
-              key={s.url}
-              // onPressIn: chạy trước khi ô nhập mất tiêu điểm (nếu không, bàn phím đóng và gợi ý biến mất trước)
-              onPressIn={() => {
-                onSubmit(s.url);
-                inputRef.current?.blur();
-              }}
-              accessibilityRole="link"
-              accessibilityLabel={`${s.title}, ${displayHost(s.url)}`}
-              style={({ pressed }) => [styles.suggestRow, i > 0 && styles.suggestDivider, pressed && { opacity: 0.6 }]}
-            >
-              <Ionicons
-                name={s.kind === 'bookmark' ? 'star' : 'time-outline'}
-                size={16}
-                color={s.kind === 'bookmark' ? '#FBBF24' : colors.textMuted}
-              />
-              <View style={{ flex: 1 }}>
-                <Txt weight="medium" size={14} numberOfLines={1}>
-                  {s.title || displayHost(s.url)}
-                </Txt>
-                <Txt size={12} color={colors.textMuted} numberOfLines={1}>
-                  {s.url.replace(/^https?:\/\//, '')}
-                </Txt>
-              </View>
-            </Pressable>
+            <Animated.View key={s.url} entering={FadeInDown.delay(i * 35).duration(220)}>
+              <Pressable
+                // onPressIn: chạy trước khi ô nhập mất tiêu điểm (nếu không, bàn phím đóng và gợi ý biến mất trước)
+                onPressIn={() => {
+                  onSubmit(s.url);
+                  inputRef.current?.blur();
+                }}
+                accessibilityRole="link"
+                accessibilityLabel={`${s.title}, ${displayHost(s.url)}`}
+                style={({ pressed }) => [
+                  styles.suggestRow,
+                  i > 0 && styles.suggestDivider,
+                  pressed && { opacity: 0.6 },
+                ]}
+              >
+                <Ionicons
+                  name={s.kind === 'bookmark' ? 'star' : 'time-outline'}
+                  size={16}
+                  color={s.kind === 'bookmark' ? '#FBBF24' : colors.textMuted}
+                />
+                <View style={{ flex: 1 }}>
+                  <Txt weight="medium" size={14} numberOfLines={1}>
+                    {s.title || displayHost(s.url)}
+                  </Txt>
+                  <Txt size={12} color={colors.textMuted} numberOfLines={1}>
+                    {s.url.replace(/^https?:\/\//, '')}
+                  </Txt>
+                </View>
+              </Pressable>
+            </Animated.View>
           ))}
         </Glass>
       )}
@@ -137,16 +234,14 @@ export function AddressBar({
               pressed && { opacity: 0.7 },
             ]}
           >
-            <Ionicons
-              name={shieldOn ? 'shield-checkmark' : 'shield-outline'}
-              size={16}
-              color={shieldOn ? accent : colors.textMuted}
-            />
-            {blocked > 0 && (
-              <Txt weight="bold" size={13} color={accent} style={styles.shieldCount}>
-                {blocked > 999 ? '999+' : blocked}
-              </Txt>
-            )}
+            <Animated.View style={pulseStyle}>
+              <Ionicons
+                name={shieldOn ? 'shield-checkmark' : 'shield-outline'}
+                size={16}
+                color={shieldOn ? accent : colors.textMuted}
+              />
+            </Animated.View>
+            {blocked > 0 && <RollingCount value={blocked} color={accent} />}
           </Pressable>
         )}
 
@@ -232,15 +327,9 @@ export function AddressBar({
           <View style={{ width: 40 }} />
         )}
 
-        {tab.loading && !focused && (
-          <View style={styles.progressTrack} pointerEvents="none">
-            <View
-              style={[styles.progress, { width: `${Math.max(5, tab.progress * 100)}%`, backgroundColor: accent }]}
-            />
-          </View>
-        )}
+        {!focused && showPage && <ProgressLine loading={tab.loading} progress={tab.progress} color={accent} />}
       </Glass>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -255,7 +344,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     justifyContent: 'center',
   },
-  shieldCount: { marginLeft: 4, lineHeight: 16 },
+  shieldCount: { lineHeight: 16 },
   inputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   input: {
     flexShrink: 1,
@@ -279,5 +368,8 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     overflow: 'hidden',
   },
-  progress: { height: 2, borderRadius: 1 },
+  progress: { height: 2, borderRadius: 1, overflow: 'hidden' },
+  glint: { position: 'absolute', top: 0, bottom: 0, width: '30%', backgroundColor: 'rgba(255,255,255,0.55)' },
+  rollBox: { marginLeft: 4, height: 16, overflow: 'hidden', justifyContent: 'center' },
+  rollAbs: { position: 'absolute', left: 0, right: 0, top: 0 },
 });

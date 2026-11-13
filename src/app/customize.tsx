@@ -5,6 +5,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DOCK_BUTTONS } from '@/components/dock';
+import { TAB_LAYOUTS } from '@/components/tab-overview';
 import { getContentBlockerStatus, refreshContentBlocker, subscribeContentBlocker } from '@/lib/content-blocker';
 import { ToggleRow } from '@/components/toggle-row';
 import { Txt } from '@/components/txt';
@@ -15,7 +16,6 @@ import {
   type DockButtonId,
   type DockStyle,
   type Settings,
-  type TabLayout,
 } from '@/state/settings';
 import { ACCENT_PRESETS, GLASS_LABELS, colors, useTheme, withAlpha } from '@/theme';
 
@@ -90,7 +90,14 @@ function DockPreview({ style, accent }: { style: DockStyle; accent: string }) {
         <View
           style={[
             styles.previewBar,
-            { right: 6, bottom: 6, width: bar.height, height: bar.height, borderRadius: bar.height / 2, backgroundColor: withAlpha(accent, 0.6) },
+            {
+              right: 6,
+              bottom: 6,
+              width: bar.height,
+              height: bar.height,
+              borderRadius: bar.height / 2,
+              backgroundColor: withAlpha(accent, 0.6),
+            },
           ]}
         />
       )}
@@ -114,8 +121,7 @@ export default function CustomizeScreen() {
     }
   };
 
-  const setShield = (key: keyof Settings['shield'], v: boolean) =>
-    update({ shield: { ...settings.shield, [key]: v } });
+  const setShield = (key: keyof Settings['shield'], v: boolean) => update({ shield: { ...settings.shield, [key]: v } });
 
   const confirmReset = () =>
     Alert.alert('Khôi phục mặc định?', 'Mọi tuỳ chỉnh giao diện và bảo vệ sẽ trở về ban đầu.', [
@@ -165,17 +171,37 @@ export default function CustomizeScreen() {
           </View>
         </Section>
 
-        <Section title="Kiểu hiển thị thẻ" hint="Cũng đổi được ngay trên màn quản lý thẻ.">
-          <Segmented
-            options={[
-              { value: 'grid' as TabLayout, label: 'Lưới' },
-              { value: 'list' as TabLayout, label: 'Danh sách' },
-              { value: 'stack' as TabLayout, label: 'Xếp chồng' },
-              { value: 'carousel' as TabLayout, label: 'Trượt' },
-            ]}
-            value={settings.tabLayout}
-            onChange={(v) => update({ tabLayout: v })}
-          />
+        <Section title="Kiểu hiển thị thẻ" hint="Cũng đổi được ngay trên màn các thẻ (giữ dock kéo lên).">
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {TAB_LAYOUTS.map((l) => {
+              const on = settings.tabLayout === l.id;
+              return (
+                <Pressable
+                  key={l.id}
+                  onPress={() => update({ tabLayout: l.id })}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  style={({ pressed }) => [
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      height: 36,
+                      paddingHorizontal: 12,
+                      borderRadius: 18,
+                      backgroundColor: on ? accentSoft : colors.surface,
+                    },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Ionicons name={l.icon} size={15} color={on ? accent : colors.textMuted} />
+                  <Txt weight={on ? 'semibold' : 'medium'} size={13} color={on ? accent : colors.textMuted}>
+                    {l.label}
+                  </Txt>
+                </Pressable>
+              );
+            })}
+          </View>
         </Section>
 
         <Section title="Vị trí thanh địa chỉ">
@@ -261,17 +287,37 @@ export default function CustomizeScreen() {
 
         <Section title="Bảo vệ mặc định" hint="Có thể thay đổi riêng cho từng trang trong bảng Shield.">
           <View style={[styles.card, { paddingHorizontal: 14 }]}>
-            <ToggleRow icon="dice-outline" iconColor={colors.gambling} title="Chặn quảng cáo cờ bạc" value={settings.shield.gambling} onChange={(v) => setShield('gambling', v)} />
-            <ToggleRow icon="megaphone-outline" title="Chặn quảng cáo thường" value={settings.shield.ads} onChange={(v) => setShield('ads', v)} />
-            <ToggleRow icon="albums-outline" iconColor={colors.popups} title="Chặn pop-up & chuyển hướng" value={settings.shield.popups} onChange={(v) => setShield('popups', v)} />
-            <ToggleRow icon="moon-outline" iconColor="#93C5FD" title="Chế độ tối cho mọi trang" value={settings.shield.dark} onChange={(v) => setShield('dark', v)} last />
+            <ToggleRow
+              icon="dice-outline"
+              iconColor={colors.gambling}
+              title="Chặn quảng cáo cờ bạc"
+              value={settings.shield.gambling}
+              onChange={(v) => setShield('gambling', v)}
+            />
+            <ToggleRow
+              icon="megaphone-outline"
+              title="Chặn quảng cáo thường"
+              value={settings.shield.ads}
+              onChange={(v) => setShield('ads', v)}
+            />
+            <ToggleRow
+              icon="albums-outline"
+              iconColor={colors.popups}
+              title="Chặn pop-up & chuyển hướng"
+              value={settings.shield.popups}
+              onChange={(v) => setShield('popups', v)}
+            />
+            <ToggleRow
+              icon="moon-outline"
+              iconColor="#93C5FD"
+              title="Chế độ tối cho mọi trang"
+              value={settings.shield.dark}
+              onChange={(v) => setShield('dark', v)}
+              last
+            />
           </View>
           {Object.keys(settings.siteOverrides).length > 0 && (
-            <Pressable
-              onPress={() => update({ siteOverrides: {} })}
-              accessibilityRole="button"
-              style={styles.linkBtn}
-            >
+            <Pressable onPress={() => update({ siteOverrides: {} })} accessibilityRole="button" style={styles.linkBtn}>
               <Txt weight="medium" size={14} color={accent}>
                 Xoá tuỳ chọn riêng của {Object.keys(settings.siteOverrides).length} trang
               </Txt>
@@ -295,7 +341,10 @@ export default function CustomizeScreen() {
           </Pressable>
         </Section>
 
-        <Section title="Nâng cao" hint="Chẩn đoán video: chỉ bật khi cần gửi Nhật ký để dò lỗi. Bật/tắt xong tải lại trang.">
+        <Section
+          title="Nâng cao"
+          hint="Chẩn đoán video: chỉ bật khi cần gửi Nhật ký để dò lỗi. Bật/tắt xong tải lại trang."
+        >
           <View style={[styles.card, { paddingHorizontal: 14 }]}>
             <ToggleRow
               icon="musical-notes-outline"
@@ -406,7 +455,10 @@ function FilterStatus() {
             onPress={() => void refreshContentBlocker(true)}
             disabled={st.busy}
             accessibilityRole="button"
-            style={({ pressed }) => [{ paddingHorizontal: 8, minHeight: 44, justifyContent: 'center' }, (pressed || st.busy) && { opacity: 0.5 }]}
+            style={({ pressed }) => [
+              { paddingHorizontal: 8, minHeight: 44, justifyContent: 'center' },
+              (pressed || st.busy) && { opacity: 0.5 },
+            ]}
           >
             <Txt weight="semibold" size={14} color={accent}>
               Cập nhật

@@ -55,7 +55,6 @@ function RootStack() {
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="tabs" options={{ presentation: 'modal' }} />
         <Stack.Screen name="customize" options={{ presentation: 'modal' }} />
         <Stack.Screen name="logs" options={{ presentation: 'modal' }} />
         <Stack.Screen name="history" options={{ presentation: 'modal' }} />

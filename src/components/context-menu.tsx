@@ -1,7 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Haptics from 'expo-haptics';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
+  FadeInDown,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -71,6 +73,7 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; 
   const origin = { transformOrigin: `${Math.min(Math.max(menu.x - left, 24), WIDTH - 24)}px ${below ? 0 : height}px` };
 
   const run = (item: MenuItem) => {
+    void Haptics.selectionAsync();
     onClose();
     // Đợi menu đóng xong rồi mới chạy (vd mở bảng chia sẻ)
     setTimeout(item.run, 60);
@@ -96,26 +99,30 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; 
             </View>
           ) : null}
           {menu.items.map((item, i) => (
-            <Pressable
+            <Animated.View
               key={item.label}
-              onPress={() => run(item)}
-              accessibilityRole="menuitem"
-              style={({ pressed }) => [
-                styles.row,
-                (i > 0 || menu.title) && styles.divider,
-                pressed && { backgroundColor: 'rgba(255,255,255,0.10)' },
-              ]}
+              entering={reduceMotion ? undefined : FadeInDown.delay(40 + i * 35).duration(200)}
             >
-              <Ionicons name={item.icon} size={20} color={item.destructive ? colors.danger : colors.text} />
-              <Txt
-                size={16}
-                color={item.destructive ? colors.danger : colors.text}
-                numberOfLines={1}
-                style={{ flex: 1 }}
+              <Pressable
+                onPress={() => run(item)}
+                accessibilityRole="menuitem"
+                style={({ pressed }) => [
+                  styles.row,
+                  (i > 0 || menu.title) && styles.divider,
+                  pressed && { backgroundColor: 'rgba(255,255,255,0.10)' },
+                ]}
               >
-                {item.label}
-              </Txt>
-            </Pressable>
+                <Ionicons name={item.icon} size={20} color={item.destructive ? colors.danger : colors.text} />
+                <Txt
+                  size={16}
+                  color={item.destructive ? colors.danger : colors.text}
+                  numberOfLines={1}
+                  style={{ flex: 1 }}
+                >
+                  {item.label}
+                </Txt>
+              </Pressable>
+            </Animated.View>
           ))}
         </Glass>
       </Animated.View>

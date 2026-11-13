@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Pressable, StyleSheet, useWindowDimensions, View, type HostInstance } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -9,6 +10,7 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,6 +18,7 @@ import type { DockButtonId, DockStyle } from '@/state/settings';
 import { colors, useTheme } from '@/theme';
 import { Glass } from './glass';
 import { IconButton, type IconName } from './icon-button';
+import type { Rect } from './tab-overview';
 import { Txt } from './txt';
 
 export const DOCK_BUTTONS: Record<DockButtonId, { icon: IconName; label: string }> = {
@@ -54,19 +57,32 @@ interface Props {
   canGoForward: boolean;
   blocked: number;
   onPress: (id: DockButtonId) => void;
-  onNewTab: () => void;
-  /** Vuốt lên trên dock → màn các thẻ (giống Safari) */
-  onSwipeUp: () => void;
+  /** rect: vị trí nút + (để thẻ mới bay ra từ đó) */
+  onNewTab: (from: Rect | null) => void;
+  /** 0 = trang, 1 = màn các thẻ. Giữ dock kéo lên thì trang thu nhỏ theo tay. */
+  zoom: SharedValue<number>;
+  /** Cho phép kéo dock để thu nhỏ (tắt khi đang ở màn các thẻ) */
+  zoomEnabled: boolean;
+  onZoomStart: () => void;
+  onZoomEnd: (open: boolean) => void;
+  /** Lệch thêm do màn các thẻ (dock đi theo thẻ đang mở / nảy từ dưới lên) */
+  extraX: SharedValue<number>;
+  extraY: SharedValue<number>;
+  /** Ẩn mượt (vd khi đang gõ địa chỉ) */
+  hidden: boolean;
   /** Vuốt ngang trên dock → thẻ bên cạnh */
   onSwipeSide: (dir: 'next' | 'prev') => void;
 }
 
 /** Ngưỡng để coi là "vuốt" (chưa tới thì vẫn là bấm nút bình thường). */
 const GROUP_GAP = 6;
-const SWIPE_UP = 36;
 const SWIPE_SIDE = 56;
 /** Lò xo kiểu iOS: dứt khoát, nảy rất nhẹ. */
 const SPRING = { damping: 20, stiffness: 260, mass: 0.9 };
+/** Dock nảy về chỗ cũ khi thả tay */
+const BOUNCE = { damping: 11, stiffness: 230, mass: 0.8 };
+/** Trang thu nhỏ / phóng to */
+export const ZOOM_SPRING = { damping: 24, stiffness: 230, mass: 1 };
 
 function TabCountIcon({ count, size }: { count: number; size: number }) {
   const box = Math.round(size * 0.92);
@@ -103,9 +119,22 @@ export function Dock({
   blocked,
   onPress,
   onNewTab,
-  onSwipeUp,
   onSwipeSide,
+  zoom,
+  zoomEnabled,
+  onZoomStart,
+  onZoomEnd,
+  extraX,
+  extraY,
+  hidden,
 }: Props) {
+  const { height: H } = useWindowDimensions();
+  const plusRef = useRef<HostInstance>(null);
+  const pressPlus = () => {
+    const node = plusRef.current;
+    if (!node) return onNewTab(null);
+    node.measureInWindow((x, y, w, h) => onNewTab(w > 0 ? { x, y, w, h } : null));
+  };
   const insets = useSafeAreaInsets();
   const { accent } = useTheme();
   const s = SIZES[dockStyle];
@@ -120,53 +149,84 @@ export function Dock({
   const tx = useSharedValue(0);
   const press = useSharedValue(0);
 
-  const fireUp = () => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onSwipeUp();
-  };
   const fireSide = (dir: 'next' | 'prev') => onSwipeSide(dir);
+  const startZoom = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onZoomStart();
+  };
+  const zooming = useSharedValue(false);
+  const dist = H * 0.34;
 
   const swipe = Gesture.Pan()
-    .activeOffsetY([-12, 12])
+    .activeOffsetY([-10, 10])
     .activeOffsetX([-18, 18])
     .onBegin(() => {
       press.value = withSpring(1, SPRING);
     })
     .onUpdate((e) => {
+      const vertical = Math.abs(e.translationY) >= Math.abs(e.translationX);
+      if (zoomEnabled && (zooming.value || (vertical && e.translationY < -4))) {
+        // Giữ dock kéo lên: dock bám theo ngón tay, trang thu nhỏ dần
+        if (!zooming.value) {
+          zooming.value = true;
+          runOnJS(startZoom)();
+        }
+        const up = Math.max(0, -e.translationY);
+        ty.value = -(up > 220 ? 220 + (up - 220) * 0.4 : up);
+        tx.value = 0;
+        zoom.set(Math.min(1, up / dist));
+        return;
+      }
       if (reduceMotion) return;
-      const up = Math.min(0, e.translationY);
-      ty.value = -Math.pow(-up, 0.85) * 0.6;
-      tx.value = Math.abs(e.translationX) > Math.abs(e.translationY) ? e.translationX * 0.35 : 0;
+      ty.value = 0;
+      tx.value = vertical ? 0 : e.translationX * 0.35;
     })
     .onEnd((e) => {
+      if (zooming.value) {
+        zooming.value = false;
+        const open = zoom.value > 0.3 || e.velocityY < -650;
+        zoom.set(
+          reduceMotion
+            ? withTiming(open ? 1 : 0, { duration: 200 }, (f) => {
+                if (f) runOnJS(onZoomEnd)(open);
+              })
+            : withSpring(open ? 1 : 0, { ...ZOOM_SPRING, velocity: -e.velocityY / dist }, (f) => {
+                if (f) runOnJS(onZoomEnd)(open);
+              }),
+        );
+        // Thả tay: dock nảy về chỗ cũ
+        ty.value = withSpring(0, BOUNCE);
+        tx.value = withSpring(0, SPRING);
+        return;
+      }
       const ax = Math.abs(e.translationX);
       const ay = Math.abs(e.translationY);
-      const goUp = (-e.translationY > SWIPE_UP || e.velocityY < -700) && ay > ax;
-      if (goUp) {
-        // Hất dock lên một nhịp rồi về chỗ, cùng lúc màn các thẻ trượt lên
-        ty.value = withTiming(reduceMotion ? 0 : -56, { duration: 140 }, () => {
-          ty.value = withSpring(0, SPRING);
-        });
-        runOnJS(fireUp)();
-      } else {
-        if (ax > SWIPE_SIDE && ax > ay) runOnJS(fireSide)(e.translationX < 0 ? 'next' : 'prev');
-        ty.value = withSpring(0, SPRING);
-      }
+      if (ax > SWIPE_SIDE && ax > ay) runOnJS(fireSide)(e.translationX < 0 ? 'next' : 'prev');
+      ty.value = withSpring(0, SPRING);
       tx.value = withSpring(0, SPRING);
     })
     .onFinalize(() => {
       press.value = withSpring(0, SPRING);
-      if (ty.value > -40) ty.value = withSpring(0, SPRING);
-      tx.value = withSpring(0, SPRING);
+      if (!zooming.value) {
+        ty.value = withSpring(0, BOUNCE);
+        tx.value = withSpring(0, SPRING);
+      }
     });
+
+  // Ẩn/hiện mượt khi gõ địa chỉ
+  const hide = useSharedValue(hidden ? 1 : 0);
+  useEffect(() => {
+    hide.value = withTiming(hidden ? 1 : 0, { duration: hidden ? 160 : 260 });
+  }, [hidden, hide]);
 
   const motion = useAnimatedStyle(() => {
     const lift = Math.min(0.06, Math.max(0, -ty.value / 600));
     return {
+      opacity: 1 - hide.value,
       transform: [
-        { translateY: ty.value },
-        { translateX: tx.value },
-        { scale: reduceMotion ? 1 : 1 - press.value * 0.03 + lift },
+        { translateY: ty.value + extraY.value + hide.value * 40 },
+        { translateX: tx.value + extraX.value * zoom.value },
+        { scale: reduceMotion ? 1 : 1 - press.value * 0.03 + lift - hide.value * 0.06 },
       ],
     };
   });
@@ -224,7 +284,7 @@ export function Dock({
           size={s.button}
           iconSize={s.icon + 3}
           color={accent}
-          onPress={onNewTab}
+          onPress={() => onNewTab(null)}
         />
       )}
     </View>
@@ -232,20 +292,17 @@ export function Dock({
 
   if (attached) {
     return wrap(
-      <Glass
-        radius={0}
-        shadow={false}
-        style={[styles.attached, { height: m.height }]}
-        contentStyle={{ paddingBottom: insets.bottom }}
-      >
-        {content}
-      </Glass>,
+      <Animated.View pointerEvents={hidden ? 'none' : 'box-none'} style={[styles.attached, motion]}>
+        <Glass radius={0} shadow={false} style={{ height: m.height }} contentStyle={{ paddingBottom: insets.bottom }}>
+          {content}
+        </Glass>
+      </Animated.View>,
     );
   }
 
   return wrap(
     <Animated.View
-      pointerEvents="box-none"
+      pointerEvents={hidden ? 'none' : 'box-none'}
       style={[styles.floatRow, { left: s.margin, right: s.margin, bottom: m.bottom, height: s.height }, motion]}
     >
       {/* Dock nổi chỉ rộng vừa đủ chứa các nút */}
@@ -260,7 +317,9 @@ export function Dock({
       </Glass>
       <Glass radius={s.height / 2} style={{ width: s.height, height: s.height, marginLeft: 10 }}>
         <Pressable
-          onPress={onNewTab}
+          ref={plusRef}
+          collapsable={false}
+          onPress={pressPlus}
           accessibilityRole="button"
           accessibilityLabel="Thẻ mới"
           style={({ pressed }) => [styles.plus, pressed && styles.pressed]}

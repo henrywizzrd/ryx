@@ -51,6 +51,8 @@ interface Props {
   onMediaLongPress: (m: MediaPress) => void;
   /** Nhấn giữ một link. */
   onLinkLongPress: (l: LinkPress) => void;
+  /** Đang giữ link rồi kéo ngón tay → bắt đầu tô chọn chữ (app đóng menu nhấn giữ) */
+  onSelectStart?: () => void;
   /** Đang ở chế độ "Chạm để ẩn quảng cáo" và trang báo phần tử vừa chọn. */
   onPick: (p: PickedElement) => void;
   /** Trang chương truyện (có link chương trước/sau), null khi rời trang. */
@@ -102,7 +104,6 @@ export interface LinkPress {
   y: number;
 }
 
-
 function BrowserTabImpl({
   tab,
   visible,
@@ -114,6 +115,7 @@ function BrowserTabImpl({
   onPopupBlocked,
   onMediaLongPress,
   onLinkLongPress,
+  onSelectStart,
   onPick,
   onSlowLoad,
   onChapter,
@@ -151,20 +153,23 @@ function BrowserTabImpl({
     if (watchdog.current) clearTimeout(watchdog.current);
     watchdog.current = null;
   }, []);
-  const startWatch = useCallback((stage: string, url: string, ms: number) => {
-    stopWatch();
-    watchdog.current = setTimeout(() => {
-      const host = getHost(url) || url;
-      log.warn(
-        'nav',
-        `${host}: ${stage} sau ${Math.round(ms / 1000)} giây vẫn chưa xong`,
-        `${url}\nThường do nhà mạng chặn (kết nối bị treo) hoặc máy chủ trang quá chậm. Tiến độ hiện tại: ${Math.round(lastProgress.current * 100)}%`,
-      );
-      // Hỏi trang xem đang chờ tệp nào (script đồng bộ bị treo sẽ làm trang đứng)
-      ref.current?.injectJavaScript('window.__ryx && window.__ryx.pending && window.__ryx.pending(); true;');
-      if (visibleRef.current) onSlowLoad(url);
-    }, ms);
-  }, [stopWatch, onSlowLoad]);
+  const startWatch = useCallback(
+    (stage: string, url: string, ms: number) => {
+      stopWatch();
+      watchdog.current = setTimeout(() => {
+        const host = getHost(url) || url;
+        log.warn(
+          'nav',
+          `${host}: ${stage} sau ${Math.round(ms / 1000)} giây vẫn chưa xong`,
+          `${url}\nThường do nhà mạng chặn (kết nối bị treo) hoặc máy chủ trang quá chậm. Tiến độ hiện tại: ${Math.round(lastProgress.current * 100)}%`,
+        );
+        // Hỏi trang xem đang chờ tệp nào (script đồng bộ bị treo sẽ làm trang đứng)
+        ref.current?.injectJavaScript('window.__ryx && window.__ryx.pending && window.__ryx.pending(); true;');
+        if (visibleRef.current) onSlowLoad(url);
+      }, ms);
+    },
+    [stopWatch, onSlowLoad],
+  );
   useEffect(() => stopWatch, [stopWatch]);
 
   useEffect(
@@ -251,7 +256,11 @@ function BrowserTabImpl({
         const clicked = registrableDomain(getHost(lastClick.current.url));
         const here = registrableDomain(getHost(urlRef.current));
         if (to && to !== clicked && to !== here) {
-          log.info('block', `Chặn quảng cáo mở kèm khi bấm: ${getHost(url)}`, `${url}\nĐã bấm: ${lastClick.current.url}`);
+          log.info(
+            'block',
+            `Chặn quảng cáo mở kèm khi bấm: ${getHost(url)}`,
+            `${url}\nĐã bấm: ${lastClick.current.url}`,
+          );
           countBlocked('popups');
           return false;
         }
@@ -306,7 +315,11 @@ function BrowserTabImpl({
         const here = registrableDomain(getHost(urlRef.current));
         const to = registrableDomain(getHost(url));
         if (!to || to !== here) {
-          log.info('block', `Chặn cửa sổ bật lên sang ${getHost(url) || url}`, `${url}\nĐang ở: ${urlRef.current ?? ''}`);
+          log.info(
+            'block',
+            `Chặn cửa sổ bật lên sang ${getHost(url) || url}`,
+            `${url}\nĐang ở: ${urlRef.current ?? ''}`,
+          );
           countBlocked('popups');
           onPopupBlocked(url);
           return;
@@ -327,7 +340,9 @@ function BrowserTabImpl({
       loadFailed.current = false;
       lastProgress.current = 0.05;
       halfLogged.current = false;
-      const since = navStartedAt.current ? ` (${((Date.now() - navStartedAt.current) / 1000).toFixed(1)} s sau khi bấm)` : '';
+      const since = navStartedAt.current
+        ? ` (${((Date.now() - navStartedAt.current) / 1000).toFixed(1)} s sau khi bấm)`
+        : '';
       log.debug('web', `Bắt đầu tải ${getHost(e.nativeEvent.url) || e.nativeEvent.url}${since}`);
       startWatch('đang kết nối / tải', e.nativeEvent.url, 15000);
       patchTab(tab.id, {
@@ -365,42 +380,55 @@ function BrowserTabImpl({
       lastProgress.current = p;
       if (p >= 0.5 && !halfLogged.current && loadStartedAt.current) {
         halfLogged.current = true;
-        log.debug('web', `Tải được ${Math.round(p * 100)}% sau ${((Date.now() - loadStartedAt.current) / 1000).toFixed(1)} s`);
+        log.debug(
+          'web',
+          `Tải được ${Math.round(p * 100)}% sau ${((Date.now() - loadStartedAt.current) / 1000).toFixed(1)} s`,
+        );
       }
       patchTab(tab.id, { progress: p });
     },
     [patchTab, tab.id],
   );
 
-  const onLoadEnd = useCallback((e: { nativeEvent: { canGoBack?: boolean; canGoForward?: boolean } }) => {
-    stopWatch();
-    const n = e?.nativeEvent;
-    patchTab(tab.id, {
-      loading: false,
-      progress: 1,
-      ...(typeof n?.canGoBack === 'boolean' ? { canGoBack: n.canGoBack, canGoForward: !!n.canGoForward } : null),
-    });
-    if (!loadStartedAt.current) return;
-    if (loadFailed.current) {
+  const onLoadEnd = useCallback(
+    (e: { nativeEvent: { canGoBack?: boolean; canGoForward?: boolean } }) => {
+      stopWatch();
+      const n = e?.nativeEvent;
+      patchTab(tab.id, {
+        loading: false,
+        progress: 1,
+        ...(typeof n?.canGoBack === 'boolean' ? { canGoBack: n.canGoBack, canGoForward: !!n.canGoForward } : null),
+      });
+      if (!loadStartedAt.current) return;
+      if (loadFailed.current) {
+        loadStartedAt.current = 0;
+        return;
+      }
+      const ms = Date.now() - loadStartedAt.current;
       loadStartedAt.current = 0;
-      return;
-    }
-    const ms = Date.now() - loadStartedAt.current;
-    loadStartedAt.current = 0;
-    const host = getHost(urlRef.current ?? '');
-    if (ms >= SLOW_LOAD_MS) log.perf('web', `Trang ${host} tải chậm: ${(ms / 1000).toFixed(1)} s`, urlRef.current);
-    else log.debug('web', `Tải xong ${host} trong ${(ms / 1000).toFixed(1)} s`);
-  }, [patchTab, tab.id, stopWatch]);
+      const host = getHost(urlRef.current ?? '');
+      if (ms >= SLOW_LOAD_MS) log.perf('web', `Trang ${host} tải chậm: ${(ms / 1000).toFixed(1)} s`, urlRef.current);
+      else log.debug('web', `Tải xong ${host} trong ${(ms / 1000).toFixed(1)} s`);
+    },
+    [patchTab, tab.id, stopWatch],
+  );
 
-  const onError = useCallback((e: WebViewErrorEvent) => {
-    stopWatch();
-    const { code, description, url } = e.nativeEvent;
-    // -999 = điều hướng bị huỷ (người dùng bấm link khác/bị chặn): không phải lỗi thật
-    if (code === -999) return;
-    loadFailed.current = true;
-    const target = lastTarget.current ?? url;
-    log.error('web', `Không tải được ${getHost(target) || 'trang'}: ${description}`, `${target}\nMã lỗi: ${code}\nTrang trước: ${url}`);
-  }, [stopWatch]);
+  const onError = useCallback(
+    (e: WebViewErrorEvent) => {
+      stopWatch();
+      const { code, description, url } = e.nativeEvent;
+      // -999 = điều hướng bị huỷ (người dùng bấm link khác/bị chặn): không phải lỗi thật
+      if (code === -999) return;
+      loadFailed.current = true;
+      const target = lastTarget.current ?? url;
+      log.error(
+        'web',
+        `Không tải được ${getHost(target) || 'trang'}: ${description}`,
+        `${target}\nMã lỗi: ${code}\nTrang trước: ${url}`,
+      );
+    },
+    [stopWatch],
+  );
 
   const renderError = useCallback(
     (_domain: string | undefined, code: number, desc: string) => (
@@ -508,6 +536,10 @@ function BrowserTabImpl({
           });
         return;
       }
+      if (msg.type === 'ryx:select') {
+        onSelectStart?.();
+        return;
+      }
       if (msg.type === 'ryx:diag') {
         const d = describeDiag(msg as Record<string, unknown>);
         log[d.level]('video', d.text, d.detail);
@@ -521,7 +553,10 @@ function BrowserTabImpl({
         if (shotTimer.current) clearTimeout(shotTimer.current);
         shotTimer.current = setTimeout(() => void captureTab(tab.id), 1500);
         if (loadStartedAt.current) {
-          log.debug('web', `Nội dung ${getHost(msg.url) || 'trang'} sẵn sàng sau ${((Date.now() - loadStartedAt.current) / 1000).toFixed(1)} s`);
+          log.debug(
+            'web',
+            `Nội dung ${getHost(msg.url) || 'trang'} sẵn sàng sau ${((Date.now() - loadStartedAt.current) / 1000).toFixed(1)} s`,
+          );
         }
         lastProgress.current = 1;
         patchTab(tab.id, { loading: false, progress: 1 });
@@ -553,7 +588,7 @@ function BrowserTabImpl({
       if (delta.ads || delta.gambling || delta.popups) record(delta);
       patchTab(tab.id, { pageCounts: next });
     },
-    [patchTab, record, tab.id, stopWatch, onMediaLongPress, onLinkLongPress, onPick, onChapter],
+    [patchTab, record, tab.id, stopWatch, onMediaLongPress, onLinkLongPress, onSelectStart, onPick, onChapter],
   );
 
   if (!tab.sourceUrl) return null;
@@ -566,46 +601,47 @@ function BrowserTabImpl({
       pointerEvents={visible ? 'auto' : 'none'}
       style={[StyleSheet.absoluteFill, visible ? styles.shown : styles.hidden]}
     >
-    <WebView
-      ref={setRef}
-      source={{ uri: tab.sourceUrl }}
-      // Mặc định thư viện chỉ cho http/https/about:blank, còn lại (vd about:srcdoc của khung trình phát video)
-      // bị chặn và bị mở ra ngoài app → video không chạy. Ryx tự lọc lược đồ trong onShouldStart.
-      originWhitelist={ALL_ORIGINS}
-      style={styles.web}
-      containerStyle={StyleSheet.absoluteFill}
-      // Chẩn đoán chạy từ đầu trang chính (bắt được cả script lỗi lúc tải), rồi tới script chính của Ryx
-      injectedJavaScriptBeforeContentLoaded={diag ? FRAME_DIAG_SCRIPT + '\n' + script : script}
-      // Script chẩn đoán video chạy cả trong iframe (trình phát thường nằm trong iframe)
-      injectedJavaScript={diag ? FRAME_DIAG_SCRIPT : undefined}
-      injectedJavaScriptForMainFrameOnly={!diag}
-      onShouldStartLoadWithRequest={onShouldStart}
-      onOpenWindow={onOpenWindow}
-      onFileDownload={(e) => onDownload(e.nativeEvent.downloadUrl, urlRef.current ?? null)}
-      onLoadStart={onLoadStart}
-      onNavigationStateChange={onNavChange}
-      onLoadProgress={onLoadProgress}
-      onLoadEnd={onLoadEnd}
-      onError={onError}
-      renderError={renderError}
-      onHttpError={onHttpError}
-      onMessage={onMessage}
-      onContentProcessDidTerminate={onProcessTerminated}
-      // Vuốt lùi do Ryx tự làm (components/edge-swipe): cử chỉ có sẵn không chạy trong app và sẽ chồng lên nhau
-      allowsBackForwardNavigationGestures={false}
-      allowsInlineMediaPlayback
-      // Mặc định (true) có thể làm video trên iOS quay vòng mãi không phát (theo tài liệu react-native-webview)
-      mediaPlaybackRequiresUserAction={false}
-      pullToRefreshEnabled
-      sharedCookiesEnabled
-      setSupportMultipleWindows
-      decelerationRate="normal"
-      contentInsetAdjustmentBehavior="never"
-      automaticallyAdjustContentInsets={false}
-      contentInset={{ top: 0, bottom: insetBottom }}
-      contentMode="mobile"
-      keyboardDisplayRequiresUserAction={false}
-    />
+      <WebView
+        ref={setRef}
+        source={{ uri: tab.sourceUrl }}
+        // Mặc định thư viện chỉ cho http/https/about:blank, còn lại (vd about:srcdoc của khung trình phát video)
+        // bị chặn và bị mở ra ngoài app → video không chạy. Ryx tự lọc lược đồ trong onShouldStart.
+        originWhitelist={ALL_ORIGINS}
+        style={styles.web}
+        containerStyle={StyleSheet.absoluteFill}
+        // Chẩn đoán chạy từ đầu trang chính (bắt được cả script lỗi lúc tải), rồi tới script chính của Ryx
+        injectedJavaScriptBeforeContentLoaded={diag ? FRAME_DIAG_SCRIPT + '\n' + script : script}
+        // Script chẩn đoán video chạy cả trong iframe (trình phát thường nằm trong iframe)
+        injectedJavaScript={diag ? FRAME_DIAG_SCRIPT : undefined}
+        injectedJavaScriptForMainFrameOnly={!diag}
+        onShouldStartLoadWithRequest={onShouldStart}
+        onOpenWindow={onOpenWindow}
+        onFileDownload={(e) => onDownload(e.nativeEvent.downloadUrl, urlRef.current ?? null)}
+        onLoadStart={onLoadStart}
+        onNavigationStateChange={onNavChange}
+        onLoadProgress={onLoadProgress}
+        onLoadEnd={onLoadEnd}
+        onError={onError}
+        renderError={renderError}
+        onHttpError={onHttpError}
+        onMessage={onMessage}
+        onContentProcessDidTerminate={onProcessTerminated}
+        // Vuốt lùi do Ryx tự làm (components/edge-swipe): cử chỉ có sẵn không chạy trong app và sẽ chồng lên nhau
+        allowsBackForwardNavigationGestures={false}
+        allowsInlineMediaPlayback
+        // Mặc định (true) có thể làm video trên iOS quay vòng mãi không phát (theo tài liệu react-native-webview)
+        mediaPlaybackRequiresUserAction={false}
+        pullToRefreshEnabled
+        refreshControlLightMode
+        sharedCookiesEnabled
+        setSupportMultipleWindows
+        decelerationRate="normal"
+        contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}
+        contentInset={{ top: 0, bottom: insetBottom }}
+        contentMode="mobile"
+        keyboardDisplayRequiresUserAction={false}
+      />
     </View>
   );
 }

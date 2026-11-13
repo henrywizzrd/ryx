@@ -3,7 +3,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ActionSheetIOS, Alert, Linking, Pressable, Share, StyleSheet, View } from 'react-native';
+import { ActionSheetIOS, Alert, Linking, Pressable, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ADDRESS_BAR_HEIGHT, AddressBar } from '@/components/address-bar';
@@ -22,7 +30,8 @@ import { log } from '@/lib/logger';
 import { getRyxNetStatus, setRyxNetEnabled } from '@/lib/ryx-net';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { ContextMenu, type ContextMenuState, type MenuItem } from '@/components/context-menu';
-import { Dock, dockMetrics } from '@/components/dock';
+import { Dock, dockMetrics, ZOOM_SPRING } from '@/components/dock';
+import { TabOverview, type OverviewPhase, type Rect } from '@/components/tab-overview';
 import { EdgeSwipeBack } from '@/components/edge-swipe';
 import { Glass } from '@/components/glass';
 import { Txt } from '@/components/txt';
@@ -51,7 +60,108 @@ export default function BrowserScreen() {
   const kb = useKeyboardHeight();
   const { settings, prefsFor, setSitePref, update } = useSettings();
   const { record } = useStats();
-  const { tabs, active, newTab, closeTab, patchTab, open, refs, setActive } = useTabs();
+  const { tabs, active, newTab, closeTab, closeAll, patchTab, open, refs, setActive } = useTabs();
+  const { width: W, height: H } = useWindowDimensions();
+  const reduceMotion = useReducedMotion();
+
+  // ---- Thu nhỏ trang thành thẻ (giữ dock kéo lên / nút Các thẻ) ----
+  // zoom 0 = đang xem trang, 1 = trang đã thu vào khung của nó trong màn các thẻ.
+  // Khung đích (fx, fy, fw, fh) đo từ thẻ trong màn các thẻ, toạ độ trên màn hình.
+  const zoom = useSharedValue(0);
+  const fx = useSharedValue(W * 0.1);
+  const fy = useSharedValue(H * 0.15);
+  const fw = useSharedValue(W * 0.8);
+  const fh = useSharedValue(H * 0.6);
+  const dockX = useSharedValue(0);
+  const dockY = useSharedValue(0);
+  /** off: xem trang · drag: đang kéo · open: đang ở màn các thẻ · closing: thẻ đang phóng to ra · fly: thẻ mới bay ra */
+  const [phase, setPhase] = useState<OverviewPhase | 'off' | 'fly'>('off');
+  const [hideId, setHideId] = useState<string | null>(null);
+
+  const setFrame = (r: Rect, animate: boolean) => {
+    const cfg = { duration: 140 };
+    fx.value = animate ? withTiming(r.x, cfg) : r.x;
+    fy.value = animate ? withTiming(r.y, cfg) : r.y;
+    fw.value = animate ? withTiming(r.w, cfg) : r.w;
+    fh.value = animate ? withTiming(r.h, cfg) : r.h;
+  };
+  const zoomTo = (to: 0 | 1, done: (open: boolean) => void) => {
+    const open = to === 1;
+    zoom.value = reduceMotion
+      ? withTiming(to, { duration: 200 }, (f) => {
+          if (f) runOnJS(done)(open);
+        })
+      : withSpring(to, ZOOM_SPRING, (f) => {
+          if (f) runOnJS(done)(open);
+        });
+  };
+  const zoomSettled = (open: boolean) => {
+    setHideId(null);
+    if (open) setPhase('open');
+    else {
+      setPhase('off');
+      dockX.value = 0;
+    }
+  };
+  /** Bắt đầu thu nhỏ: dựng màn các thẻ bên dưới, chụp ảnh trang hiện tại cho thẻ của nó */
+  const startZoom = () => {
+    setFrame({ x: W * 0.1, y: H * 0.18, w: W * 0.8, h: H * 0.6 }, false);
+    dockX.value = 0;
+    setHideId(active.id);
+    setPhase('drag');
+    void captureTab(active.id);
+  };
+  const openOverview = () => {
+    if (phase !== 'off') return;
+    startZoom();
+    setTimeout(() => zoomTo(1, zoomSettled), 60);
+  };
+  /** Chạm một thẻ: trang của thẻ đó phóng từ khung thẻ ra toàn màn hình; đổi thẻ thì dock nảy từ dưới lên */
+  const pickTab = (id: string, r: Rect | null) => {
+    if (r) setFrame(r, false);
+    zoom.value = 1;
+    setHideId(id);
+    setPhase('closing');
+    if (id !== active.id) {
+      dockY.value = 160;
+      setActive(id);
+    }
+    requestAnimationFrame(() => {
+      zoomTo(0, zoomSettled);
+      dockY.value = withSpring(0, { damping: 12, stiffness: 200, mass: 0.9 });
+    });
+  };
+  /** Thẻ mới bay ra từ nút + */
+  const newTabFrom = (r: Rect | null, url?: string) => {
+    newTab(url ?? null);
+    if (!r || reduceMotion) {
+      if (phase !== 'off') {
+        zoom.value = 0;
+        zoomSettled(false);
+      }
+      return;
+    }
+    setFrame(r, false);
+    zoom.value = 1;
+    setHideId(null);
+    setPhase('fly');
+    dockY.value = phase === 'open' ? 160 : 0;
+    requestAnimationFrame(() => {
+      zoomTo(0, zoomSettled);
+      dockY.value = withSpring(0, { damping: 12, stiffness: 200, mass: 0.9 });
+    });
+  };
+
+  const pageStyle = useAnimatedStyle(() => {
+    const p = zoom.value;
+    const s = Math.max(0.05, fw.value / W);
+    const scale = 1 + (s - 1) * p;
+    return {
+      height: H + (fh.value / s - H) * p,
+      borderRadius: (20 * p) / scale,
+      transform: [{ translateX: fx.value * p }, { translateY: fy.value * p }, { scale }],
+    };
+  });
 
   const [addrFocused, setAddrFocused] = useState(false);
   const [shieldOpen, setShieldOpen] = useState(false);
@@ -354,8 +464,8 @@ export default function BrowserScreen() {
         log.debug('nav', `Bấm tiến (trang có lịch sử tiến: ${active.canGoForward ? 'có' : 'không'})`, active.url ?? '');
         return webRef()?.goForward();
       case 'tabs':
-        // Chụp thẻ đang mở trước để màn quản lý thẻ có ảnh mới nhất
-        return void captureTab(active.id).finally(() => router.push('/tabs'));
+        if (phase === 'open') return pickTab(active.id, null);
+        return openOverview();
       case 'menu':
         return setMenuOpen(true);
       case 'shield':
@@ -418,154 +528,198 @@ export default function BrowserScreen() {
   const canGoBack = active.home ? !!active.sourceUrl : true;
   const canGoForward = !active.home && active.canGoForward;
 
+  const pageOn = phase === 'off';
   return (
     <View style={styles.root}>
-      <View style={[styles.webArea, { top: contentTop, bottom: webContainerBottom }]}>
-        {tabs.map((t) => (
-          <BrowserTab
-            key={t.id}
-            tab={t}
-            visible={t.id === active.id && !t.home}
-            script={script}
-            injectConfig={injectConfig}
-            prefsFor={prefsFor}
-            record={record}
-            onOpenInNewTab={openInNewTab}
-            onPopupBlocked={onPopupBlocked}
-            onMediaLongPress={onMediaLongPress}
-            onLinkLongPress={onLinkLongPress}
-            onPick={onPick}
-            onSlowLoad={onSlowLoad}
-            onChapter={onChapter}
-            onDownload={(url, referer) => download(url, referer)}
-            diag={settings.diagVideo}
-            insetBottom={webBottomInset}
-          />
-        ))}
-        {active.home && (
-          <NewTabPage
-            onSubmit={go}
-            onOpen={(url) => open(active.id, url)}
-            onOpenNewTab={(url) => newTab(url)}
-            paddingTop={0}
-            paddingBottom={chromeBottom}
-          />
-        )}
-      </View>
-
-      {/* Vuốt từ mép trái để lùi: trang đầu của thẻ thì về trang Thẻ mới; đang ở Thẻ mới thì không làm gì */}
-      {!active.home && !picking && (
-        <EdgeSwipeBack
-          top={addrTop ? insets.top + ADDRESS_BAR_HEIGHT + 12 : insets.top}
-          bottom={chromeBottom}
-          onBack={() => {
-            log.debug('nav', `Vuốt lùi (trang có lịch sử lùi: ${active.canGoBack ? 'có' : 'không'})`, active.url ?? '');
-            goBack();
+      {phase !== 'off' && phase !== 'fly' && (
+        <TabOverview
+          phase={phase}
+          zoom={zoom}
+          dockShift={dockX}
+          tabs={tabs}
+          activeId={active.id}
+          hideId={hideId}
+          layout={settings.tabLayout}
+          bottomPad={dock.top + 14}
+          onLayoutChange={(l) => update({ tabLayout: l })}
+          onActiveFrame={(r) => phase === 'drag' && setFrame(r, true)}
+          onPick={pickTab}
+          onClose={closeTab}
+          onDuplicate={(id) => {
+            const t = tabs.find((x) => x.id === id);
+            if (t?.url) newTab(t.url, { background: true });
           }}
+          onCloseAll={() => {
+            closeAll();
+            setHideId(null);
+            zoomTo(0, zoomSettled);
+            setPhase('closing');
+          }}
+          onNewTab={(r) => newTabFrom(r)}
         />
       )}
 
-      {/* Che vùng thanh trạng thái để nội dung trang không chạy dưới đồng hồ/pin */}
-      <View style={[styles.statusCover, { height: insets.top }]} pointerEvents="none" />
-
-      {!(addrFocused && kb > 0) && (
-        <Dock
-          dockStyle={settings.dockStyle}
-          buttons={settings.dockButtons}
-          tabCount={tabs.length}
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          blocked={blocked.total}
-          onPress={onDockPress}
-          onNewTab={() => newTab()}
-          onSwipeUp={() => void captureTab(active.id).finally(() => router.push('/tabs'))}
-          onSwipeSide={(dir) => {
-            const i = tabs.findIndex((t) => t.id === active.id);
-            const next = tabs[dir === 'next' ? i + 1 : i - 1];
-            if (next) {
-              void Haptics.selectionAsync();
-              setActive(next.id);
-            } else void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          }}
-        />
-      )}
-
-      <View
-        pointerEvents="box-none"
-        style={[styles.addrWrap, addrTop ? { top: insets.top + 4 } : { bottom: addrBottom }]}
+      {/* Toàn bộ trang (web + thanh địa chỉ) nằm trong một lớp để thu nhỏ thành thẻ */}
+      <Animated.View
+        pointerEvents={pageOn ? 'box-none' : 'none'}
+        style={[styles.page, { width: W, opacity: phase === 'open' ? 0 : 1 }, pageStyle]}
       >
-        <AddressBar
-          tab={active}
-          blocked={blocked.total}
-          shieldOn={shieldOn}
-          onSubmit={go}
-          onShieldPress={() => setShieldOpen(true)}
-          onReload={reload}
-          onStop={() => webRef()?.stopLoading()}
-          onFocusChange={setAddrFocused}
-          position={addrTop ? 'top' : 'bottom'}
-        />
-      </View>
+        <View style={{ position: 'absolute', left: 0, top: 0, width: W, height: H }}>
+          <View style={[styles.webArea, { top: contentTop, bottom: webContainerBottom }]}>
+            {tabs.map((t) => (
+              <BrowserTab
+                key={t.id}
+                tab={t}
+                visible={t.id === active.id && !t.home}
+                script={script}
+                injectConfig={injectConfig}
+                prefsFor={prefsFor}
+                record={record}
+                onOpenInNewTab={openInNewTab}
+                onPopupBlocked={onPopupBlocked}
+                onMediaLongPress={onMediaLongPress}
+                onLinkLongPress={onLinkLongPress}
+                onSelectStart={closeCtxMenu}
+                onPick={onPick}
+                onSlowLoad={onSlowLoad}
+                onChapter={onChapter}
+                onDownload={(url, referer) => download(url, referer)}
+                diag={settings.diagVideo}
+                insetBottom={webBottomInset}
+              />
+            ))}
+            {active.home && (
+              <NewTabPage
+                onSubmit={go}
+                onOpen={(url) => open(active.id, url)}
+                onOpenNewTab={(url) => newTab(url)}
+                paddingTop={0}
+                paddingBottom={chromeBottom}
+              />
+            )}
+          </View>
 
-      {picking && (
-        <View pointerEvents="box-none" style={[styles.pickWrap, { top: insets.top + 8 }]}>
-          <Glass radius={24} contentStyle={styles.pickRow}>
-            <Ionicons name="hand-left-outline" size={18} color={colors.text} />
-            <Txt weight="medium" size={14} style={{ flex: 1 }} accessibilityRole="alert">
-              Chạm vào quảng cáo cần ẩn
-            </Txt>
-            <Pressable
-              onPress={() => setPick(false)}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.pickDone, pressed && { opacity: 0.7 }]}
-            >
-              <Txt weight="semibold" size={14}>
-                Xong
-              </Txt>
-            </Pressable>
-          </Glass>
-        </View>
-      )}
-
-      {chapter && !addrFocused && !picking && !notice && (
-        <View pointerEvents="box-none" style={[styles.chapWrap, { bottom: chromeBottom + GAP }]}>
-          {chapter.prev ? (
-            <Glass radius={22} contentStyle={styles.chapBtn}>
-              <Pressable
-                onPress={() => chapter.prev && open(active.id, chapter.prev)}
-                accessibilityRole="button"
-                accessibilityLabel="Chương trước"
-                hitSlop={6}
-                style={({ pressed }) => [styles.chapInner, pressed && { opacity: 0.6 }]}
-              >
-                <Ionicons name="chevron-back" size={18} color={colors.text} />
-                <Txt weight="semibold" size={14}>
-                  Chương trước
-                </Txt>
-              </Pressable>
-            </Glass>
-          ) : (
-            <View />
+          {/* Vuốt từ mép trái để lùi: trang đầu của thẻ thì về trang Thẻ mới; đang ở Thẻ mới thì không làm gì */}
+          {!active.home && !picking && pageOn && (
+            <EdgeSwipeBack
+              top={addrTop ? insets.top + ADDRESS_BAR_HEIGHT + 12 : insets.top}
+              bottom={chromeBottom}
+              onBack={() => {
+                log.debug(
+                  'nav',
+                  `Vuốt lùi (trang có lịch sử lùi: ${active.canGoBack ? 'có' : 'không'})`,
+                  active.url ?? '',
+                );
+                goBack();
+              }}
+            />
           )}
-          {chapter.next ? (
-            <Glass radius={22} contentStyle={styles.chapBtn}>
-              <Pressable
-                onPress={() => chapter.next && open(active.id, chapter.next)}
-                accessibilityRole="button"
-                accessibilityLabel="Chương sau"
-                hitSlop={6}
-                style={({ pressed }) => [styles.chapInner, pressed && { opacity: 0.6 }]}
-              >
-                <Txt weight="semibold" size={14}>
-                  Chương sau
-                </Txt>
-                <Ionicons name="chevron-forward" size={18} color={colors.text} />
-              </Pressable>
-            </Glass>
-          ) : null}
-        </View>
-      )}
 
+          {/* Che vùng thanh trạng thái để nội dung trang không chạy dưới đồng hồ/pin */}
+          <View style={[styles.statusCover, { height: insets.top }]} pointerEvents="none" />
+          <View
+            pointerEvents="box-none"
+            style={[styles.addrWrap, addrTop ? { top: insets.top + 4 } : { bottom: addrBottom }]}
+          >
+            <AddressBar
+              tab={active}
+              blocked={blocked.total}
+              shieldOn={shieldOn}
+              onSubmit={go}
+              onShieldPress={() => setShieldOpen(true)}
+              onReload={reload}
+              onStop={() => webRef()?.stopLoading()}
+              onFocusChange={setAddrFocused}
+              position={addrTop ? 'top' : 'bottom'}
+            />
+          </View>
+
+          {picking && (
+            <View pointerEvents="box-none" style={[styles.pickWrap, { top: insets.top + 8 }]}>
+              <Glass radius={24} contentStyle={styles.pickRow}>
+                <Ionicons name="hand-left-outline" size={18} color={colors.text} />
+                <Txt weight="medium" size={14} style={{ flex: 1 }} accessibilityRole="alert">
+                  Chạm vào quảng cáo cần ẩn
+                </Txt>
+                <Pressable
+                  onPress={() => setPick(false)}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [styles.pickDone, pressed && { opacity: 0.7 }]}
+                >
+                  <Txt weight="semibold" size={14}>
+                    Xong
+                  </Txt>
+                </Pressable>
+              </Glass>
+            </View>
+          )}
+
+          {chapter && !addrFocused && !picking && !notice && (
+            <View pointerEvents="box-none" style={[styles.chapWrap, { bottom: chromeBottom + GAP }]}>
+              {chapter.prev ? (
+                <Glass radius={22} contentStyle={styles.chapBtn}>
+                  <Pressable
+                    onPress={() => chapter.prev && open(active.id, chapter.prev)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Chương trước"
+                    hitSlop={6}
+                    style={({ pressed }) => [styles.chapInner, pressed && { opacity: 0.6 }]}
+                  >
+                    <Ionicons name="chevron-back" size={18} color={colors.text} />
+                    <Txt weight="semibold" size={14}>
+                      Chương trước
+                    </Txt>
+                  </Pressable>
+                </Glass>
+              ) : (
+                <View />
+              )}
+              {chapter.next ? (
+                <Glass radius={22} contentStyle={styles.chapBtn}>
+                  <Pressable
+                    onPress={() => chapter.next && open(active.id, chapter.next)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Chương sau"
+                    hitSlop={6}
+                    style={({ pressed }) => [styles.chapInner, pressed && { opacity: 0.6 }]}
+                  >
+                    <Txt weight="semibold" size={14}>
+                      Chương sau
+                    </Txt>
+                    <Ionicons name="chevron-forward" size={18} color={colors.text} />
+                  </Pressable>
+                </Glass>
+              ) : null}
+            </View>
+          )}
+        </View>
+      </Animated.View>
+
+      <Dock
+        dockStyle={settings.dockStyle}
+        buttons={settings.dockButtons}
+        tabCount={tabs.length}
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        blocked={blocked.total}
+        onPress={onDockPress}
+        onNewTab={(r) => newTabFrom(r)}
+        zoom={zoom}
+        zoomEnabled={phase === 'off'}
+        onZoomStart={startZoom}
+        onZoomEnd={zoomSettled}
+        extraX={dockX}
+        extraY={dockY}
+        hidden={addrFocused && kb > 0}
+        onSwipeSide={(dir) => {
+          const i = tabs.findIndex((t) => t.id === active.id);
+          const next = tabs[dir === 'next' ? i + 1 : i - 1];
+          if (next) {
+            void Haptics.selectionAsync();
+            setActive(next.id);
+          } else void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        }}
+      />
       <ContextMenu menu={ctxMenu} onClose={closeCtxMenu} />
 
       <NoticeBanner notice={notice} bottom={chromeBottom + GAP} onClose={closeNotice} />
@@ -612,6 +766,14 @@ export default function BrowserScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   webArea: { position: 'absolute', left: 0, right: 0 },
+  page: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    overflow: 'hidden',
+    transformOrigin: 'left top',
+    backgroundColor: colors.bg,
+  },
   statusCover: {
     position: 'absolute',
     top: 0,

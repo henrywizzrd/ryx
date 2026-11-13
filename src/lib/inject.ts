@@ -210,8 +210,9 @@ document.addEventListener('DOMContentLoaded', function(){
 window.addEventListener('load', scan);
 
 /* Nhấn giữ ảnh/video → app hiện menu (Lưu vào Ảnh, Sao chép link…) */
-styleEl('ryx-lp').textContent = 'img,video,a{-webkit-touch-callout:none!important;}';
-var lp = null, lpX = 0, lpY = 0, lpFired = 0;
+/* Chữ trong link không bị iOS tô chọn khi nhấn giữ (để chỉ hiện menu của Ryx); giữ rồi kéo thì Ryx tự tô */
+styleEl('ryx-lp').textContent = 'img,video,a{-webkit-touch-callout:none!important;}a,a *{-webkit-user-select:none!important;user-select:none!important;}a.ryx-sel,a.ryx-sel *{-webkit-user-select:text!important;user-select:text!important;}';
+var lp = null, lpX = 0, lpY = 0, lpFired = 0, lpArm = null, lpSel = null;
 function mediaAt(t){
   if (!t || !t.closest) return null;
   var v = t.closest('video'); if (v) return v;
@@ -242,6 +243,7 @@ document.addEventListener('touchstart', function(e){
   lp = setTimeout(function(){
     lp = null; lpFired = Date.now();
     if (!m) {
+      lpArm = { link: link, x: lpX, y: lpY };
       send({ type: 'ryx:link', href: link.href, text: String(link.textContent || link.title || '').trim().slice(0, 120), url: location.href, x: lpX, y: lpY });
       return;
     }
@@ -262,6 +264,33 @@ function lpCancel(e){
 document.addEventListener('touchmove', lpCancel, { passive: true, capture: true });
 document.addEventListener('touchend', lpCancel, { passive: true, capture: true });
 document.addEventListener('touchcancel', lpCancel, { passive: true, capture: true });
+/* Giữ link → menu hiện; vẫn giữ tay rồi kéo quá ~20px → đóng menu và tô chữ từ chỗ đặt tay tới ngón tay */
+function caretAt(x, y){ try { return document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null; } catch (e) { return null; } }
+document.addEventListener('touchmove', function(e){
+  if ((!lpArm && !lpSel) || !e.touches || !e.touches[0]) return;
+  var t = e.touches[0];
+  if (lpArm) {
+    if (Math.abs(t.clientX - lpArm.x) + Math.abs(t.clientY - lpArm.y) < 20) { if (e.cancelable) e.preventDefault(); return; }
+    lpSel = lpArm; lpArm = null;
+    lpSel.link.classList.add('ryx-sel');
+    send({ type: 'ryx:select' });
+  }
+  if (e.cancelable) e.preventDefault();
+  var a = caretAt(lpSel.x, lpSel.y), b = caretAt(t.clientX, t.clientY);
+  if (!a || !b) return;
+  var fwd = a.compareBoundaryPoints(Range.START_TO_START, b) <= 0;
+  var st = fwd ? a : b, en = fwd ? b : a, r = document.createRange();
+  r.setStart(st.startContainer, st.startOffset); r.setEnd(en.startContainer, en.startOffset);
+  var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+}, { passive: false, capture: true });
+function lpRelease(){ lpArm = null; if (lpSel) { lastSelLink = lpSel.link; lpSel = null; } }
+var lastSelLink = null;
+document.addEventListener('touchend', lpRelease, { passive: true, capture: true });
+document.addEventListener('touchcancel', lpRelease, { passive: true, capture: true });
+/* Bỏ chọn xong thì link trở lại không tô được */
+document.addEventListener('selectionchange', function(){
+  if (lastSelLink && !lpSel && String(window.getSelection() || '') === '') { lastSelLink.classList.remove('ryx-sel'); lastSelLink = null; }
+});
 /* Sau khi nhấn giữ thì bỏ cú "bấm" đi kèm, để trang không mở link/quảng cáo */
 document.addEventListener('click', function(e){ if (Date.now() - lpFired < 800) { e.preventDefault(); e.stopPropagation(); } }, true);
 
