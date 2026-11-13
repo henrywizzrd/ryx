@@ -28,6 +28,7 @@ import { PopupBanner, type BlockedPopup } from '@/components/popup-banner';
 import { configureContentBlocker, refreshContentBlocker } from '@/lib/content-blocker';
 import { applyBackgroundPlay } from '@/lib/background-play';
 import { log } from '@/lib/logger';
+import { MOTION } from '@/lib/motion';
 import { getRyxNetStatus, setRyxNetEnabled } from '@/lib/ryx-net';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { ContextMenu, type ContextMenuState, type MenuItem } from '@/components/context-menu';
@@ -50,7 +51,7 @@ import { useDownloads } from '@/state/downloads';
 import { useReading } from '@/state/reading';
 import { useStats } from '@/state/stats';
 import { totalBlocked, useTabs } from '@/state/tabs';
-import { colors } from '@/theme';
+import { colors, fg } from '@/theme';
 
 const GAP = 10;
 /** Đợi bảng trước đóng xong rồi mới mở bảng/màn hình khác (iOS không trình bày 2 modal cùng lúc). */
@@ -164,7 +165,7 @@ export default function BrowserScreen() {
     }
     requestAnimationFrame(() => {
       zoomTo(0, zoomSettled);
-      dockY.value = withSpring(0, { damping: 18, stiffness: 220, mass: 0.9 });
+      dockY.value = withSpring(0, MOTION.settle);
     });
   };
   /** Thẻ mới bay ra từ nút + */
@@ -186,7 +187,7 @@ export default function BrowserScreen() {
     dockY.value = phase === 'open' ? 160 : 0;
     requestAnimationFrame(() => {
       zoomTo(0, zoomSettled);
-      dockY.value = withSpring(0, { damping: 18, stiffness: 220, mass: 0.9 });
+      dockY.value = withSpring(0, MOTION.settle);
     });
   };
 
@@ -844,6 +845,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 20,
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: fg(0.12),
   },
 });

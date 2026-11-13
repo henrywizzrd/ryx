@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors } from '@/theme';
+import { colors, fg } from '@/theme';
 import { Glass } from './glass';
 import { Txt } from './txt';
 
@@ -20,7 +20,9 @@ export function Sheet({ visible, onClose, title, children }: Props) {
   const [mounted, setMounted] = useState(visible);
   const [reduceMotion, setReduceMotion] = useState(false);
   useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then(setReduceMotion)
+      .catch(() => {});
     const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
     return () => sub.remove();
   }, []);
@@ -31,7 +33,7 @@ export function Sheet({ visible, onClose, title, children }: Props) {
     if (visible && reduceMotion) {
       anim.setValue(1);
     } else if (visible) {
-      Animated.spring(anim, { toValue: 1, useNativeDriver: true, damping: 22, stiffness: 240, mass: 0.9 }).start();
+      Animated.spring(anim, { toValue: 1, useNativeDriver: true, damping: 32, stiffness: 240, mass: 0.9 }).start();
     } else {
       Animated.timing(anim, {
         toValue: 0,
@@ -79,7 +81,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 5,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: fg(0.25),
     marginBottom: 8,
   },
   title: { textAlign: 'center', marginBottom: 12, color: colors.text },

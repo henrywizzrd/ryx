@@ -35,7 +35,9 @@ export default function HistoryScreen() {
 
   const sections = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = q ? entries.filter((e) => e.title.toLowerCase().includes(q) || e.url.toLowerCase().includes(q)) : entries;
+    const list = q
+      ? entries.filter((e) => e.title.toLowerCase().includes(q) || e.url.toLowerCase().includes(q))
+      : entries;
     const map = new Map<string, HistoryEntry[]>();
     for (const e of list) {
       const k = dayLabel(e.t);
@@ -114,7 +116,14 @@ export default function HistoryScreen() {
                 </Txt>
               </View>
             </Pressable>
-            <IconButton icon="close" label="Xoá khỏi lịch sử" size={40} iconSize={16} color={colors.textFaint} onPress={() => remove(item.id)} />
+            <IconButton
+              icon="close"
+              label="Xoá khỏi lịch sử"
+              size={40}
+              iconSize={16}
+              color={colors.textFaint}
+              onPress={() => remove(item.id)}
+            />
           </View>
         )}
         ListEmptyComponent={
@@ -131,7 +140,11 @@ export default function HistoryScreen() {
       />
 
       {entries.length > 0 && (
-        <Pressable onPress={confirmClear} accessibilityRole="button" style={({ pressed }) => [styles.clear, pressed && { opacity: 0.7 }]}>
+        <Pressable
+          onPress={confirmClear}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.clear, pressed && { opacity: 0.7 }]}
+        >
           <Ionicons name="trash-outline" size={18} color={colors.danger} />
           <Txt weight="medium" size={14} color={colors.danger}>
             Xoá toàn bộ lịch sử

@@ -5,7 +5,7 @@ import {
   BeVietnamPro_700Bold,
   useFonts,
 } from '@expo-google-fonts/be-vietnam-pro';
-import { DarkTheme, Stack, ThemeProvider, type ErrorBoundaryProps } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -36,10 +36,11 @@ initRyxNet();
 
 SplashScreen.preventAutoHideAsync();
 
+const baseNav = colors.scheme === 'light' ? DefaultTheme : DarkTheme;
 const navTheme = {
-  ...DarkTheme,
+  ...baseNav,
   colors: {
-    ...DarkTheme.colors,
+    ...baseNav.colors,
     background: colors.bg,
     card: colors.surface,
     text: colors.text,
@@ -52,7 +53,7 @@ function RootStack() {
   const theme = { ...navTheme, colors: { ...navTheme.colors, primary: settings.accent } };
   return (
     <ThemeProvider value={theme}>
-      <StatusBar style="light" />
+      <StatusBar style={colors.scheme === 'light' ? 'dark' : 'light'} />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="customize" options={{ presentation: 'modal' }} />

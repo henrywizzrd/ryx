@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, Switch, View } from 'react-native';
 
-import { colors, useTheme } from '@/theme';
+import { colors, useTheme, fg } from '@/theme';
 import type { IconName } from './icon-button';
 import { Txt } from './txt';
 
@@ -19,7 +19,7 @@ export function ToggleRow({ icon, iconColor, title, subtitle, value, onChange, l
   const { accent } = useTheme();
   return (
     <View style={[styles.row, !last && styles.divider]}>
-      <View style={[styles.icon, { backgroundColor: 'rgba(255,255,255,0.07)' }]}>
+      <View style={[styles.icon, { backgroundColor: fg(0.07) }]}>
         <Ionicons name={icon} size={18} color={iconColor ?? accent} />
       </View>
       <View style={{ flex: 1 }}>
@@ -35,8 +35,8 @@ export function ToggleRow({ icon, iconColor, title, subtitle, value, onChange, l
       <Switch
         value={value}
         onValueChange={onChange}
-        trackColor={{ true: accent, false: 'rgba(255,255,255,0.18)' }}
-        ios_backgroundColor="rgba(255,255,255,0.18)"
+        trackColor={{ true: accent, false: fg(0.18) }}
+        ios_backgroundColor={fg(0.18)}
         accessibilityLabel={title}
       />
     </View>

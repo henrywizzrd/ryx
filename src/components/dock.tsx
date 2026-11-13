@@ -15,9 +15,10 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { DockButtonId, DockStyle } from '@/state/settings';
-import { colors, useTheme } from '@/theme';
+import { colors, useTheme, fg } from '@/theme';
 import { Glass } from './glass';
 import { IconButton, type IconName } from './icon-button';
+import { MOTION } from '@/lib/motion';
 import type { Rect } from './tab-overview';
 import { Txt } from './txt';
 
@@ -78,11 +79,11 @@ interface Props {
 const GROUP_GAP = 6;
 const SWIPE_SIDE = 56;
 /** Lò xo kiểu iOS: dứt khoát, nảy rất nhẹ. */
-const SPRING = { damping: 20, stiffness: 260, mass: 0.9 };
+const SPRING = MOTION.snappy;
 /** Dock nảy về chỗ cũ khi thả tay */
-const BOUNCE = { damping: 17, stiffness: 240, mass: 0.8 };
+const BOUNCE = MOTION.settle;
 /** Trang thu nhỏ / phóng to */
-export const ZOOM_SPRING = { damping: 30, stiffness: 240, mass: 1 };
+export const ZOOM_SPRING = MOTION.smooth;
 
 function TabCountIcon({ count, size }: { count: number; size: number }) {
   const box = Math.round(size * 0.92);
@@ -190,9 +191,13 @@ export function Dock({
             ? withTiming(open ? 1 : 0, { duration: 200 }, (f) => {
                 if (f) runOnJS(onZoomEnd)(open);
               })
-            : withSpring(open ? 1 : 0, { ...ZOOM_SPRING, velocity: Math.max(-2, Math.min(2, -e.velocityY / dist)) }, (f) => {
-                if (f) runOnJS(onZoomEnd)(open);
-              }),
+            : withSpring(
+                open ? 1 : 0,
+                { ...ZOOM_SPRING, velocity: Math.max(-1.2, Math.min(1.2, -e.velocityY / dist)) },
+                (f) => {
+                  if (f) runOnJS(onZoomEnd)(open);
+                },
+              ),
         );
         // Thả tay: dock nảy về chỗ cũ
         ty.value = withSpring(0, BOUNCE);
@@ -345,7 +350,7 @@ const styles = StyleSheet.create({
   row: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   group: { flexDirection: 'row', alignItems: 'center' },
   btn: { alignItems: 'center', justifyContent: 'center' },
-  pressed: { backgroundColor: 'rgba(255,255,255,0.10)', transform: [{ scale: 0.94 }] },
+  pressed: { backgroundColor: fg(0.1), transform: [{ scale: 0.94 }] },
   tabCount: { borderWidth: 2, borderColor: colors.text, alignItems: 'center', justifyContent: 'center' },
   plus: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

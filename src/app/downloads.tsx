@@ -9,7 +9,7 @@ import { Txt } from '@/components/txt';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { displayHost } from '@/lib/url';
 import { useDownloads, type DownloadItem } from '@/state/downloads';
-import { colors, useTheme } from '@/theme';
+import { colors, useTheme, fg } from '@/theme';
 
 const VIDEO = /\.(mp4|m4v|mov)$/i;
 const IMAGE = /\.(jpe?g|png|gif|webp|heic)$/i;
@@ -47,7 +47,9 @@ export default function DownloadsScreen() {
           run: () =>
             void saveMediaToPhotos(d.uri, VIDEO.test(d.name) ? 'video' : 'image', null)
               .then(() => Alert.alert('Đã lưu vào Ảnh'))
-              .catch((e: unknown) => Alert.alert('Không lưu được', e instanceof SaveMediaError ? e.message : String(e))),
+              .catch((e: unknown) =>
+                Alert.alert('Không lưu được', e instanceof SaveMediaError ? e.message : String(e)),
+              ),
         });
       }
     }
@@ -155,7 +157,13 @@ export default function DownloadsScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 20 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
   headerBtn: { minHeight: 44, justifyContent: 'center' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
   row: {
@@ -174,9 +182,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: fg(0.06),
   },
-  track: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' },
+  track: { height: 4, borderRadius: 2, backgroundColor: fg(0.1), overflow: 'hidden' },
   bar: { height: 4, borderRadius: 2 },
   clear: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 16 },
 });

@@ -632,7 +632,7 @@ function BrowserTabImpl({
         // Mặc định (true) có thể làm video trên iOS quay vòng mãi không phát (theo tài liệu react-native-webview)
         mediaPlaybackRequiresUserAction={false}
         pullToRefreshEnabled
-        refreshControlLightMode
+        refreshControlLightMode={colors.scheme === 'dark'}
         sharedCookiesEnabled
         setSupportMultipleWindows
         decelerationRate="normal"

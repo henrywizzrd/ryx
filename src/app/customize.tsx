@@ -18,7 +18,22 @@ import {
   type DockStyle,
   type Settings,
 } from '@/state/settings';
-import { ACCENT_PRESETS, GLASS_LABELS, THEME_ID, THEMES, colors, saveThemeId, useTheme, withAlpha } from '@/theme';
+import {
+  ACCENT_PRESETS,
+  GLASS_LABELS,
+  MODES,
+  THEME_ID,
+  THEME_MODE,
+  THEMES,
+  colors,
+  saveAppearance,
+  themeAccent,
+  useTheme,
+  withAlpha,
+  type ThemeId,
+  type ThemeMode,
+  fg,
+} from '@/theme';
 import * as Updates from 'expo-updates';
 
 const DOCK_STYLES: { id: DockStyle; label: string; hint: string }[] = [
@@ -111,6 +126,33 @@ export default function CustomizeScreen() {
   const insets = useSafeAreaInsets();
   const { settings, update, reset } = useSettings();
   const { accent, accentSoft } = useTheme();
+
+  /** Lưu giao diện + chế độ rồi mở lại app (bảng màu được đọc lúc khởi động) */
+  const applyAppearance = (theme: ThemeId, mode: ThemeMode) => {
+    if (theme === THEME_ID && mode === THEME_MODE) return;
+    const t = THEMES.find((x) => x.id === theme)!;
+    const m = MODES.find((x) => x.id === mode)!;
+    Alert.alert(`Đổi sang ${t.label} · ${m.label}?`, 'Ryx sẽ mở lại để áp dụng. Các thẻ đang mở sẽ đóng.', [
+      { text: 'Huỷ', style: 'cancel' },
+      {
+        text: 'Đổi',
+        onPress: () => {
+          try {
+            saveAppearance(theme, mode);
+          } catch (e) {
+            log.error('ui', 'Không lưu được giao diện', e);
+            return;
+          }
+          update({ accent: themeAccent(theme, mode) });
+          log.info('ui', 'Đổi giao diện', `${THEME_ID}:${THEME_MODE} → ${theme}:${mode}`);
+          // Đợi cài đặt (màu nhấn) lưu xong rồi mở lại app
+          setTimeout(() => {
+            Updates.reloadAsync().catch(() => Alert.alert('Đã lưu giao diện', 'Tắt hẳn rồi mở lại Ryx để áp dụng.'));
+          }, 500);
+        },
+      },
+    ]);
+  };
 
   const toggleButton = (id: DockButtonId) => {
     const has = settings.dockButtons.includes(id);
@@ -217,36 +259,20 @@ export default function CustomizeScreen() {
           />
         </Section>
 
-        <Section title="Giao diện" hint="Đổi giao diện thì Ryx tự mở lại (các thẻ đang mở sẽ đóng).">
+        <Section
+          title="Giao diện"
+          hint="Đổi giao diện hoặc chế độ sáng/tối thì Ryx tự mở lại (các thẻ đang mở sẽ đóng)."
+        >
           <Segmented
             options={THEMES.map((t) => ({ value: t.id, label: t.label }))}
             value={THEME_ID}
-            onChange={(id) => {
-              if (id === THEME_ID) return;
-              const t = THEMES.find((x) => x.id === id)!;
-              Alert.alert(`Đổi sang giao diện ${t.label}?`, 'Ryx sẽ mở lại để áp dụng. Các thẻ đang mở sẽ đóng.', [
-                { text: 'Huỷ', style: 'cancel' },
-                {
-                  text: 'Đổi',
-                  onPress: () => {
-                    try {
-                      saveThemeId(id);
-                    } catch (e) {
-                      log.error('ui', 'Không lưu được giao diện', e);
-                      return;
-                    }
-                    update({ accent: t.accent });
-                    log.info('ui', 'Đổi giao diện', `${THEME_ID} → ${id}`);
-                    // Đợi cài đặt (màu nhấn) lưu xong rồi mở lại app
-                    setTimeout(() => {
-                      Updates.reloadAsync().catch(() =>
-                        Alert.alert('Đã lưu giao diện', 'Tắt hẳn rồi mở lại Ryx để áp dụng.'),
-                      );
-                    }, 500);
-                  },
-                },
-              ]);
-            }}
+            onChange={(id) => applyAppearance(id, THEME_MODE)}
+          />
+          <View style={{ height: 10 }} />
+          <Segmented
+            options={MODES.map((m) => ({ value: m.id, label: m.label }))}
+            value={THEME_MODE}
+            onChange={(m) => applyAppearance(THEME_ID, m)}
           />
         </Section>
 
@@ -437,7 +463,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   preview: { height: 64, borderRadius: 10, backgroundColor: colors.surfaceRaised, overflow: 'hidden' },
-  previewBar: { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.35)' },
+  previewBar: { position: 'absolute', backgroundColor: fg(0.35) },
   segment: { flexDirection: 'row', padding: 4, borderRadius: 16, backgroundColor: colors.surface, gap: 4 },
   segItem: { flex: 1, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   swatches: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
@@ -449,7 +475,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: fg(0.07),
     alignItems: 'center',
     justifyContent: 'center',
   },

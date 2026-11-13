@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { interpolate, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { colors } from '@/theme';
+import { colors, fg } from '@/theme';
 
 interface Props {
   /** Vùng trên/dưới mà dải vuốt được phép chiếm (tránh thanh địa chỉ, dock) */
@@ -76,6 +76,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(40,40,46,0.92)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: fg(0.18),
   },
 });

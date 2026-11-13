@@ -27,7 +27,7 @@ interface Props {
 function tintFor(host: string): string {
   let h = 0;
   for (let i = 0; i < host.length; i++) h = (h * 31 + host.charCodeAt(i)) % 360;
-  return `hsl(${h}, 32%, 20%)`;
+  return colors.scheme === 'light' ? `hsl(${h}, 40%, 88%)` : `hsl(${h}, 32%, 20%)`;
 }
 
 export function tabInfo(tab: Tab) {
@@ -150,7 +150,13 @@ export function TabCard({ tab, active, variant, onOpen, onClose, onDuplicate, he
           <Ionicons name="add" size={big ? 48 : 34} color={colors.textFaint} />
         )}
         {showPage && tab.thumb ? null : (
-          <Txt weight={big ? 'semibold' : 'regular'} size={big ? 16 : 12} color={colors.textMuted} numberOfLines={1} style={styles.host}>
+          <Txt
+            weight={big ? 'semibold' : 'regular'}
+            size={big ? 16 : 12}
+            color={colors.textMuted}
+            numberOfLines={1}
+            style={styles.host}
+          >
             {host || 'Trang chủ Ryx'}
           </Txt>
         )}

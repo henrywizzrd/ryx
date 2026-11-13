@@ -107,9 +107,9 @@ export default function DnsScreen() {
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24, gap: 20 }}>
         <Txt size={14} color={colors.textMuted}>
-          Nhà mạng thường chặn trang web bằng DNS. Cài hồ sơ DNS mã hoá để iPhone hỏi địa chỉ trang qua máy chủ
-          khác, nhờ vậy thường vào lại được trang bị chặn. Áp dụng cho cả máy (Ryx, Safari và các app khác), miễn
-          phí, gỡ lúc nào cũng được.
+          Nhà mạng thường chặn trang web bằng DNS. Cài hồ sơ DNS mã hoá để iPhone hỏi địa chỉ trang qua máy chủ khác,
+          nhờ vậy thường vào lại được trang bị chặn. Áp dụng cho cả máy (Ryx, Safari và các app khác), miễn phí, gỡ lúc
+          nào cũng được.
         </Txt>
 
         <View style={[styles.inApp, net.enabled && net.running && { borderColor: accent }]}>
@@ -155,7 +155,11 @@ export default function DnsScreen() {
                 accessibilityState={{ checked: on }}
                 style={[styles.option, on && { borderColor: accent, backgroundColor: accentSoft }]}
               >
-                <Ionicons name={on ? 'radio-button-on' : 'radio-button-off'} size={22} color={on ? accent : colors.textFaint} />
+                <Ionicons
+                  name={on ? 'radio-button-on' : 'radio-button-off'}
+                  size={22}
+                  color={on ? accent : colors.textFaint}
+                />
                 <View style={{ flex: 1 }}>
                   <Txt weight="semibold" size={15}>
                     {p.name}

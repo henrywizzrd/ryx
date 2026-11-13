@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors } from '@/theme';
+import { colors, fg } from '@/theme';
 import { Txt } from './txt';
 
 export type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -64,7 +64,7 @@ export function IconButton({
 
 const styles = StyleSheet.create({
   base: { alignItems: 'center', justifyContent: 'center' },
-  pressed: { backgroundColor: 'rgba(255,255,255,0.10)', transform: [{ scale: 0.94 }] },
+  pressed: { backgroundColor: fg(0.1), transform: [{ scale: 0.94 }] },
   badge: {
     position: 'absolute',
     top: 4,

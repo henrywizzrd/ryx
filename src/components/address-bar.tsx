@@ -16,11 +16,12 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { MOTION } from '@/lib/motion';
 import { displayHost, isSecure } from '@/lib/url';
 import { sameUrl, useBookmarks } from '@/state/bookmarks';
 import { useHistory } from '@/state/history';
 import type { Tab } from '@/state/tabs';
-import { colors, fonts, useTheme } from '@/theme';
+import { colors, fonts, useTheme, fg } from '@/theme';
 import { Glass } from './glass';
 import { IconButton } from './icon-button';
 import { Txt } from './txt';
@@ -152,7 +153,7 @@ export function AddressBar({
   // Chạm vào thanh: phồng nhẹ ra
   const grow = useSharedValue(0);
   useEffect(() => {
-    grow.value = withSpring(focused ? 1 : 0, { damping: 16, stiffness: 260 });
+    grow.value = withSpring(focused ? 1 : 0, MOTION.snappy);
   }, [focused, grow]);
   const growStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + grow.value * 0.025 }] }));
 
@@ -163,7 +164,7 @@ export function AddressBar({
     const now = Date.now();
     if (blocked > lastPulse.current.n && now - lastPulse.current.t > 500) {
       lastPulse.current.t = now;
-      pulse.value = withSequence(withTiming(1.3, { duration: 110 }), withSpring(1, { damping: 7, stiffness: 320 }));
+      pulse.value = withSequence(withTiming(1.2, { duration: 120 }), withSpring(1, MOTION.snappy));
     }
     lastPulse.current.n = blocked;
   }, [blocked, pulse]);
@@ -230,7 +231,7 @@ export function AddressBar({
             hitSlop={6}
             style={({ pressed }) => [
               styles.shield,
-              { backgroundColor: shieldOn ? accentSoft : 'rgba(255,255,255,0.08)' },
+              { backgroundColor: shieldOn ? accentSoft : fg(0.08) },
               pressed && { opacity: 0.7 },
             ]}
           >
@@ -269,7 +270,7 @@ export function AddressBar({
               autoCorrect={false}
               keyboardType="web-search"
               returnKeyType="go"
-              keyboardAppearance="dark"
+              keyboardAppearance={colors.scheme}
               selectionColor={accent}
               clearButtonMode="while-editing"
               accessibilityLabel="Thanh địa chỉ"
@@ -357,7 +358,7 @@ const styles = StyleSheet.create({
   },
   suggest: { position: 'absolute', left: 0, right: 0 },
   suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 52 },
-  suggestDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.1)' },
+  suggestDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: fg(0.1) },
   cancel: { paddingHorizontal: 12, height: 40, justifyContent: 'center' },
   progressTrack: {
     position: 'absolute',

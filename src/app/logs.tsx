@@ -11,7 +11,7 @@ import { Txt } from '@/components/txt';
 import { runningVersionLabel } from '@/lib/app-updates';
 import { clearLogs, SESSION_ID, type LogEntry, type LogLevel } from '@/lib/logger';
 import { useLogs, usePerfSnapshot } from '@/lib/use-logs';
-import { colors, fonts, useTheme, withAlpha } from '@/theme';
+import { colors, fonts, useTheme, withAlpha, fg } from '@/theme';
 
 type Filter = 'all' | 'error' | 'warn' | 'perf' | 'crash' | 'ui';
 
@@ -119,7 +119,7 @@ export default function LogsScreen() {
           onPress={() => setExpanded(open ? null : item.id)}
           accessibilityRole="button"
           accessibilityHint={item.detail ? 'Chạm để xem chi tiết' : undefined}
-          style={({ pressed }) => [styles.row, pressed && { backgroundColor: 'rgba(255,255,255,0.04)' }]}
+          style={({ pressed }) => [styles.row, pressed && { backgroundColor: fg(0.04) }]}
         >
           <View style={styles.rowHead}>
             <Ionicons name={s.icon} size={15} color={s.color} />

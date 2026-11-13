@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { ShieldPrefs } from '@/state/settings';
 import type { Counts } from '@/state/stats';
-import { colors, useTheme } from '@/theme';
+import { colors, useTheme, fg } from '@/theme';
 import { Sheet } from './sheet';
 import { ToggleRow } from './toggle-row';
 import { Txt } from './txt';
@@ -46,8 +46,12 @@ export function ShieldSheet({
   return (
     <Sheet visible={visible} onClose={onClose}>
       <View style={styles.header}>
-        <View style={[styles.badge, { backgroundColor: anyOn ? accentSoft : 'rgba(255,255,255,0.08)' }]}>
-          <Ionicons name={anyOn ? 'shield-checkmark' : 'shield-outline'} size={28} color={anyOn ? accent : colors.textMuted} />
+        <View style={[styles.badge, { backgroundColor: anyOn ? accentSoft : fg(0.08) }]}>
+          <Ionicons
+            name={anyOn ? 'shield-checkmark' : 'shield-outline'}
+            size={28}
+            color={anyOn ? accent : colors.textMuted}
+          />
         </View>
         <View style={{ flex: 1 }}>
           <Txt weight="bold" size={20} accessibilityRole="header">
@@ -172,16 +176,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: fg(0.06),
   },
   group: {
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: fg(0.05),
     paddingHorizontal: 14,
     marginBottom: 12,
   },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingVertical: 8 },
-  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.12)' },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: fg(0.12) },
   reload: {
     height: 50,
     borderRadius: 25,

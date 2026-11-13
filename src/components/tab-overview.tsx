@@ -26,11 +26,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { LAYOUT_MS } from '@/lib/motion';
 import { faviconFor } from '@/lib/url';
 import { NewTabPage } from './new-tab-page';
 import type { TabLayout } from '@/state/settings';
 import type { Tab } from '@/state/tabs';
-import { colors, useTheme } from '@/theme';
+import { colors, useTheme, fg } from '@/theme';
 import { IconButton, type IconName } from './icon-button';
 import { SwipeToClose } from './swipe-to-close';
 import { showTabMenu, tabInfo } from './tab-card';
@@ -77,8 +78,8 @@ interface Props {
   onNewTab: (r: Rect | null) => void;
 }
 
-const LAYOUT_ANIM = LinearTransition.springify().damping(24).stiffness(200);
-const ENTER = ZoomIn.springify().damping(22).stiffness(200);
+const LAYOUT_ANIM = LinearTransition.springify(LAYOUT_MS).dampingRatio(1);
+const ENTER = ZoomIn.springify(LAYOUT_MS).dampingRatio(1);
 const EXIT = ZoomOut.duration(170);
 const TITLE_H = 28;
 
@@ -726,7 +727,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: fg(0.14),
   },
   listRow: {
     flexDirection: 'row',

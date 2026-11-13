@@ -1,71 +1,156 @@
 import { File, Paths } from 'expo-file-system';
+import { Appearance } from 'react-native';
 
 import { useSettings } from '@/state/settings';
 
 export type ThemeId = 'default' | 'matcha';
+export type ThemeMode = 'dark' | 'light' | 'system';
 
-const PALETTES = {
+type Palette = {
+  scheme: 'dark' | 'light';
+  bg: string;
+  bgDeep: string;
+  surface: string;
+  surfaceRaised: string;
+  text: string;
+  textMuted: string;
+  textFaint: string;
+  border: string;
+  glassBorder: string;
+  glassHighlight: string;
+  /** r,g,b của lớp phủ trên kính */
+  glassTint: string;
+  /** r,g,b của lớp "chạm/viền mờ" (trắng trên nền tối, mực tối trên nền sáng) */
+  fgRgb: string;
+  danger: string;
+  gambling: string;
+  popups: string;
+};
+
+const PALETTES: Record<ThemeId, Record<'dark' | 'light', Palette>> = {
   default: {
-    bg: '#0A0D12',
-    bgDeep: '#07090D',
-    surface: '#121821',
-    surfaceRaised: '#1A222D',
-    text: '#F2F5F8',
-    textMuted: '#9AA6B6',
-    textFaint: '#7F8A9A',
-    border: 'rgba(255,255,255,0.10)',
-    glassBorder: 'rgba(255,255,255,0.16)',
-    glassHighlight: 'rgba(255,255,255,0.07)',
-    /** r,g,b của lớp phủ tối trên kính */
-    glassTint: '14,18,24',
-    danger: '#F87171',
-    gambling: '#F59E0B',
-    popups: '#A78BFA',
+    dark: {
+      scheme: 'dark',
+      bg: '#0A0D12',
+      bgDeep: '#07090D',
+      surface: '#121821',
+      surfaceRaised: '#1A222D',
+      text: '#F2F5F8',
+      textMuted: '#9AA6B6',
+      textFaint: '#7F8A9A',
+      border: 'rgba(255,255,255,0.10)',
+      glassBorder: 'rgba(255,255,255,0.16)',
+      glassHighlight: 'rgba(255,255,255,0.07)',
+      glassTint: '14,18,24',
+      fgRgb: '255,255,255',
+      danger: '#F87171',
+      gambling: '#F59E0B',
+      popups: '#A78BFA',
+    },
+    light: {
+      scheme: 'light',
+      bg: '#F4F6F9',
+      bgDeep: '#E4E8EE',
+      surface: '#FFFFFF',
+      surfaceRaised: '#EBEEF3',
+      text: '#0E141B',
+      textMuted: '#556070',
+      textFaint: '#687383',
+      border: 'rgba(14,20,27,0.10)',
+      glassBorder: 'rgba(14,20,27,0.10)',
+      glassHighlight: 'rgba(255,255,255,0.65)',
+      glassTint: '250,251,253',
+      fgRgb: '14,20,27',
+      danger: '#DC2626',
+      gambling: '#B45309',
+      popups: '#7C3AED',
+    },
   },
-  /** Matcha: nền xanh trà đậm, chữ kem, viền ánh lá non */
+  /** Matcha: xanh trà — bản tối nền trà đậm chữ kem, bản sáng nền kem sữa chữ trà */
   matcha: {
-    bg: '#0C110A',
-    bgDeep: '#080B06',
-    surface: '#151C11',
-    surfaceRaised: '#1E2718',
-    text: '#F2F4E9',
-    textMuted: '#A9B49A',
-    textFaint: '#8B967D',
-    border: 'rgba(214,236,190,0.11)',
-    glassBorder: 'rgba(214,236,190,0.18)',
-    glassHighlight: 'rgba(226,242,204,0.08)',
-    glassTint: '17,24,13',
-    danger: '#F87171',
-    gambling: '#F59E0B',
-    popups: '#A78BFA',
+    dark: {
+      scheme: 'dark',
+      bg: '#0C110A',
+      bgDeep: '#080B06',
+      surface: '#151C11',
+      surfaceRaised: '#1E2718',
+      text: '#F2F4E9',
+      textMuted: '#A9B49A',
+      textFaint: '#8B967D',
+      border: 'rgba(214,236,190,0.11)',
+      glassBorder: 'rgba(214,236,190,0.18)',
+      glassHighlight: 'rgba(226,242,204,0.08)',
+      glassTint: '17,24,13',
+      fgRgb: '226,242,204',
+      danger: '#F87171',
+      gambling: '#F59E0B',
+      popups: '#A78BFA',
+    },
+    light: {
+      scheme: 'light',
+      bg: '#F3F5EA',
+      bgDeep: '#E3E9D3',
+      surface: '#FCFDF7',
+      surfaceRaised: '#E8EDDA',
+      text: '#1A2214',
+      textMuted: '#56644A',
+      textFaint: '#67745A',
+      border: 'rgba(40,60,20,0.12)',
+      glassBorder: 'rgba(40,60,20,0.12)',
+      glassHighlight: 'rgba(255,255,255,0.65)',
+      glassTint: '247,249,239',
+      fgRgb: '26,34,20',
+      danger: '#DC2626',
+      gambling: '#B45309',
+      popups: '#7C3AED',
+    },
   },
-} as const;
+};
 
-export const THEMES: { id: ThemeId; label: string; accent: string; swatch: string }[] = [
-  { id: 'default', label: 'Mặc định', accent: '#34D399', swatch: '#0A0D12' },
-  { id: 'matcha', label: 'Matcha', accent: '#9DC46B', swatch: '#1E2718' },
+export const THEMES: { id: ThemeId; label: string; accent: { dark: string; light: string } }[] = [
+  { id: 'default', label: 'Mặc định', accent: { dark: '#34D399', light: '#059669' } },
+  { id: 'matcha', label: 'Matcha', accent: { dark: '#9DC46B', light: '#5E8A2E' } },
+];
+export const MODES: { id: ThemeMode; label: string }[] = [
+  { id: 'dark', label: 'Tối' },
+  { id: 'light', label: 'Sáng' },
+  { id: 'system', label: 'Theo máy' },
 ];
 
 // Giao diện được đọc ĐỒNG BỘ lúc mở app (trước khi các StyleSheet được tạo), nên đổi giao diện cần mở lại app.
 const themeFile = () => new File(Paths.document, 'ryx-theme.txt');
-function loadThemeId(): ThemeId {
+function loadAppearance(): { theme: ThemeId; mode: ThemeMode } {
+  const out: { theme: ThemeId; mode: ThemeMode } = { theme: 'default', mode: 'dark' };
   try {
     const f = themeFile();
     if (f.exists) {
-      const t = f.textSync().trim();
-      if (t === 'matcha' || t === 'default') return t;
+      const [t, m] = f.textSync().trim().split(':');
+      if (t === 'matcha' || t === 'default') out.theme = t;
+      if (m === 'light' || m === 'system' || m === 'dark') out.mode = m;
     }
   } catch {}
-  return 'default';
+  return out;
 }
-export const THEME_ID: ThemeId = loadThemeId();
-export function saveThemeId(id: ThemeId) {
+const loaded = loadAppearance();
+export const THEME_ID: ThemeId = loaded.theme;
+export const THEME_MODE: ThemeMode = loaded.mode;
+/** Sáng hay tối thực tế (chế độ "Theo máy" lấy theo máy lúc mở app) */
+export const SCHEME: 'dark' | 'light' =
+  THEME_MODE === 'system' ? (Appearance.getColorScheme() === 'light' ? 'light' : 'dark') : THEME_MODE;
+export function saveAppearance(theme: ThemeId, mode: ThemeMode) {
   const f = themeFile();
   if (!f.exists) f.create();
-  f.writeSync(id);
+  f.writeSync(`${theme}:${mode}`);
+}
+/** Màu nhấn gợi ý cho giao diện + chế độ */
+export function themeAccent(theme: ThemeId, mode: ThemeMode): string {
+  const scheme = mode === 'system' ? (Appearance.getColorScheme() === 'light' ? 'light' : 'dark') : mode;
+  return THEMES.find((t) => t.id === theme)!.accent[scheme];
 }
 
-export const colors: { [K in keyof (typeof PALETTES)['default']]: string } = { ...PALETTES[THEME_ID] };
+export const colors: Palette = { ...PALETTES[THEME_ID][SCHEME] };
+/** Lớp mờ theo màu chữ của giao diện (thay cho rgba trắng cố định) */
+export const fg = (alpha: number) => `rgba(${colors.fgRgb},${alpha})`;
 
 /** Be Vietnam Pro: hỗ trợ đầy đủ dấu tiếng Việt. */
 export const fonts = {

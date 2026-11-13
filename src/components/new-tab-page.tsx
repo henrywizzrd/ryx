@@ -11,7 +11,6 @@ import { useStats } from '@/state/stats';
 import { colors, fonts, useTheme } from '@/theme';
 import { Txt } from './txt';
 
-
 interface Props {
   onSubmit: (text: string) => void;
   onOpen: (url: string) => void;
@@ -93,7 +92,7 @@ export function NewTabPage({ onSubmit, onOpen, onOpenNewTab, paddingTop, padding
           autoCorrect={false}
           keyboardType="web-search"
           returnKeyType="search"
-          keyboardAppearance="dark"
+          keyboardAppearance={colors.scheme}
           selectionColor={accent}
           accessibilityLabel="Tìm kiếm"
           style={styles.searchInput}
@@ -132,14 +131,24 @@ export function NewTabPage({ onSubmit, onOpen, onOpenNewTab, paddingTop, padding
           <Txt weight="semibold" size={15} color={colors.textMuted} style={styles.sectionTitle}>
             Đọc tiếp
           </Txt>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.readRow} style={styles.readScroll}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.readRow}
+            style={styles.readScroll}
+          >
             {reading.slice(0, 12).map((r) => (
               <Pressable
                 key={r.series}
                 onPress={() => onOpen(r.url)}
                 onLongPress={() =>
                   ActionSheetIOS.showActionSheetWithOptions(
-                    { title: r.title, options: ['Bỏ khỏi Đọc tiếp', 'Huỷ'], destructiveButtonIndex: 0, cancelButtonIndex: 1 },
+                    {
+                      title: r.title,
+                      options: ['Bỏ khỏi Đọc tiếp', 'Huỷ'],
+                      destructiveButtonIndex: 0,
+                      cancelButtonIndex: 1,
+                    },
                     (i) => i === 0 && forget(r.series),
                   )
                 }

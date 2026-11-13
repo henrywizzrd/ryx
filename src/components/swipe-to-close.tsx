@@ -1,5 +1,6 @@
 import { type StyleProp, useWindowDimensions, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { MOTION } from '@/lib/motion';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 interface Props {
@@ -38,7 +39,7 @@ export function SwipeToClose({ direction, onClose, style, children }: Props) {
           if (done) runOnJS(onClose)();
         });
       } else {
-        offset.value = withSpring(0, { damping: 18, stiffness: 220 });
+        offset.value = withSpring(0, MOTION.snappy);
       }
     });
 

@@ -11,7 +11,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { colors } from '@/theme';
+import { MOTION } from '@/lib/motion';
+import { colors, fg } from '@/theme';
 import { Glass } from './glass';
 import type { IconName } from './icon-button';
 import { Txt } from './txt';
@@ -51,9 +52,7 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; 
   useEffect(() => {
     if (!menu) return;
     t.value = 0;
-    t.value = reduceMotion
-      ? withTiming(1, { duration: 150 })
-      : withSpring(1, { damping: 18, stiffness: 320, mass: 0.8 });
+    t.value = reduceMotion ? withTiming(1, { duration: 150 }) : withSpring(1, MOTION.snappy);
   }, [menu, reduceMotion, t]);
 
   const backdrop = useAnimatedStyle(() => ({ opacity: Math.min(1, t.value) }));
@@ -109,7 +108,7 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; 
                 style={({ pressed }) => [
                   styles.row,
                   (i > 0 || menu.title) && styles.divider,
-                  pressed && { backgroundColor: 'rgba(255,255,255,0.10)' },
+                  pressed && { backgroundColor: fg(0.1) },
                 ]}
               >
                 <Ionicons name={item.icon} size={20} color={item.destructive ? colors.danger : colors.text} />
@@ -135,5 +134,5 @@ const styles = StyleSheet.create({
   card: { position: 'absolute' },
   head: { height: HEAD, justifyContent: 'center', paddingHorizontal: 16, gap: 2 },
   row: { height: ROW, flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16 },
-  divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.12)' },
+  divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: fg(0.12) },
 });

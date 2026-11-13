@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors } from '@/theme';
+import { colors, fg } from '@/theme';
 import type { IconName } from './icon-button';
 import { Sheet } from './sheet';
 import { ToggleRow } from './toggle-row';
@@ -82,7 +82,14 @@ export function MenuSheet({ visible, onClose, hasPage, dark, bookmarked, onToggl
       </View>
       {hasPage && (
         <View style={styles.group}>
-          <ToggleRow icon="moon-outline" iconColor="#93C5FD" title="Chế độ tối cho trang này" value={dark} onChange={onToggleDark} last />
+          <ToggleRow
+            icon="moon-outline"
+            iconColor="#93C5FD"
+            title="Chế độ tối cho trang này"
+            value={dark}
+            onChange={onToggleDark}
+            last
+          />
         </View>
       )}
     </Sheet>
@@ -92,6 +99,6 @@ export function MenuSheet({ visible, onClose, hasPage, dark, bookmarked, onToggl
 const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8, marginTop: 4 },
   cell: { width: '25%', alignItems: 'center', paddingVertical: 14, borderRadius: 18 },
-  pressed: { backgroundColor: 'rgba(255,255,255,0.08)' },
-  group: { borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 14 },
+  pressed: { backgroundColor: fg(0.08) },
+  group: { borderRadius: 20, backgroundColor: fg(0.05), paddingHorizontal: 14 },
 });
