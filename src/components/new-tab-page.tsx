@@ -1,9 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import { ActionSheetIOS, Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
+import { applyEdgeEffects } from '@/lib/edge';
 import { displayHost, faviconFor } from '@/lib/url';
 import { useBookmarks, type Bookmark } from '@/state/bookmarks';
 import { useReading } from '@/state/reading';
@@ -22,6 +23,9 @@ interface Props {
 const nf = new Intl.NumberFormat('vi-VN');
 
 export function NewTabPage({ onSubmit, onOpen, onOpenNewTab, paddingTop, paddingBottom }: Props) {
+  useEffect(() => {
+    applyEdgeEffects();
+  }, []);
   const { accent, accentSoft } = useTheme();
   const { week } = useStats();
   const [query, setQuery] = useState('');
@@ -60,6 +64,8 @@ export function NewTabPage({ onSubmit, onOpen, onOpenNewTab, paddingTop, padding
 
   return (
     <ScrollView
+      // Đánh dấu cho hiệu ứng mờ mép trên (iOS 26+)
+      testID="ryx-edge"
       style={StyleSheet.absoluteFill}
       contentContainerStyle={[styles.container, { paddingTop: paddingTop + 28, paddingBottom: paddingBottom + 24 }]}
       keyboardShouldPersistTaps="handled"

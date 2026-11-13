@@ -369,6 +369,13 @@ export default function CustomizeScreen() {
               onChange={(v) => setShield('popups', v)}
             />
             <ToggleRow
+              icon="hand-left-outline"
+              title="Tự từ chối bảng hỏi cookie"
+              subtitle="Áp dụng từ trang tải sau"
+              value={settings.shield.cookies}
+              onChange={(v) => setShield('cookies', v)}
+            />
+            <ToggleRow
               icon="moon-outline"
               iconColor="#93C5FD"
               title="Chế độ tối cho mọi trang"

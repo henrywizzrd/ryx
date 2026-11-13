@@ -48,6 +48,16 @@ const SOURCES: { name: string; url: string; required?: boolean }[] = [
   { name: 'EasyList 18+: pop-up bên thứ ba', url: `${EL}/easylist_adult/adult_thirdparty_popup.txt` },
   { name: 'EasyList 18+: ẩn theo trang', url: `${EL}/easylist_adult/adult_specific_hide.txt` },
   { name: 'EasyList 18+: ngoại lệ', url: `${EL}/easylist_adult/adult_allowlist.txt` },
+  // Bảng hỏi cookie (EasyList Cookie List, CC BY 3.0): che/chặn những bảng mà autoconsent chưa tự từ chối được
+  { name: 'Cookie: chặn chung', url: `${EL}/easylist_cookie/easylist_cookie_general_block.txt` },
+  { name: 'Cookie: ẩn chung', url: `${EL}/easylist_cookie/easylist_cookie_general_hide.txt` },
+  { name: 'Cookie: chặn theo trang', url: `${EL}/easylist_cookie/easylist_cookie_specific_block.txt` },
+  { name: 'Cookie: ẩn theo trang', url: `${EL}/easylist_cookie/easylist_cookie_specific_hide.txt` },
+  { name: 'Cookie: quốc tế (chặn)', url: `${EL}/easylist_cookie/easylist_cookie_international_specific_block.txt` },
+  { name: 'Cookie: quốc tế (ẩn)', url: `${EL}/easylist_cookie/easylist_cookie_international_specific_hide.txt` },
+  { name: 'Cookie: bên thứ ba', url: `${EL}/easylist_cookie/easylist_cookie_thirdparty.txt` },
+  { name: 'Cookie: ngoại lệ', url: `${EL}/easylist_cookie/easylist_cookie_allowlist.txt` },
+  { name: 'Cookie: ngoại lệ ẩn', url: `${EL}/easylist_cookie/easylist_cookie_allowlist_general_hide.txt` },
   { name: 'ABPVN (trang Việt)', url: `${RAW}/abpvn/abpvn/master/filter/abpvn.txt` },
 ];
 

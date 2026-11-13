@@ -23,7 +23,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
 
 import { ADDRESS_BAR_HEIGHT, AddressBar } from '@/components/address-bar';
 import {
@@ -37,6 +36,7 @@ import { NoticeBanner, type Notice } from '@/components/notice-banner';
 import { PopupBanner, type BlockedPopup } from '@/components/popup-banner';
 import { configureContentBlocker, refreshContentBlocker } from '@/lib/content-blocker';
 import { applyBackgroundPlay } from '@/lib/background-play';
+import { buildCookieScript } from '@/lib/cookie-consent';
 import { log } from '@/lib/logger';
 import { MOTION } from '@/lib/motion';
 import { getRyxNetStatus, setRyxNetEnabled } from '@/lib/ryx-net';
@@ -474,7 +474,20 @@ export default function BrowserScreen() {
     [settings.shield, settings.siteOverrides, settings.customHides, settings.backgroundPlay],
   );
   const siteThemes = useSiteThemes();
-  const script = useMemo(() => buildInjectedScript(injectConfig, siteThemes), [injectConfig, siteThemes]);
+  // Tự từ chối bảng hỏi cookie: gắn thêm autoconsent (~790 KB) vào script trang chính nếu đang bật
+  const cookieOn = settings.shield.cookies;
+  const cookieOff = Object.entries(settings.siteOverrides)
+    .filter(([, o]) => o.cookies === false)
+    .map(([site]) => site)
+    .join(',');
+  const cookieScript = useMemo(
+    () => (cookieOn ? buildCookieScript(cookieOff ? cookieOff.split(',') : []) : ''),
+    [cookieOn, cookieOff],
+  );
+  const script = useMemo(
+    () => buildInjectedScript(injectConfig, siteThemes) + cookieScript,
+    [injectConfig, siteThemes, cookieScript],
+  );
 
   // ---- Bố cục ----
   const dock = dockMetrics(settings.dockStyle, insets.bottom);
@@ -515,8 +528,8 @@ export default function BrowserScreen() {
   const showMenu = (x: number, y: number, title: string, subtitle: string, items: MenuItem[]) => {
     if (!items.length) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Toạ độ trong trang → toạ độ trên màn hình (trang web bắt đầu từ contentTop)
-    setCtxMenu({ key: Date.now(), x, y: y + contentTop, title, subtitle, items });
+    // Trang web giờ bắt đầu từ mép trên màn hình → toạ độ trong trang cũng là toạ độ màn hình
+    setCtxMenu({ key: Date.now(), x, y, title, subtitle, items });
   };
 
   // Nhấn giữ ảnh/video
@@ -734,6 +747,7 @@ export default function BrowserScreen() {
           collapsable={false}
           style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, backgroundColor: colors.bg }}
         >
+          {/* Trang chạy tràn lên tận mép trên; iOS làm mờ dần phần dưới giờ/pin (xem lib/edge) */}
           <View style={[styles.webArea, { top: 0, bottom: webContainerBottom }]}>
             {tabs.map((t) => (
               <BrowserTab
@@ -786,16 +800,6 @@ export default function BrowserScreen() {
             />
           )}
 
-          {/* Vùng thanh trạng thái: trang web cuộn lên bên dưới, phủ một lớp mờ hơi tối (kiểu Safari / app Claude)
-              để giờ/pin vẫn đọc rõ mà vẫn thấy màu trang chạy phía sau */}
-          <View style={[styles.statusCover, { height: insets.top }]} pointerEvents="none">
-            <BlurView
-              tint={colors.scheme === 'light' ? 'systemChromeMaterialLight' : 'systemChromeMaterialDark'}
-              intensity={60}
-              style={StyleSheet.absoluteFill}
-            />
-            <View style={[StyleSheet.absoluteFill, styles.statusDim]} />
-          </View>
           <View
             pointerEvents="box-none"
             style={[styles.addrWrap, addrTop ? { top: insets.top + 4 } : { bottom: addrBottom }]}
@@ -959,15 +963,6 @@ const styles = StyleSheet.create({
     transformOrigin: 'left top',
     backgroundColor: colors.bg,
   },
-  statusCover: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    overflow: 'hidden',
-  },
-  // lớp tối mỏng trên lớp mờ: chế độ tối tối hơn hẳn, chế độ sáng chỉ hơi xám để chữ giờ/pin màu tối vẫn rõ
-  statusDim: { backgroundColor: colors.scheme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.28)' },
   addrWrap: { position: 'absolute', left: 16, right: 16 },
   pickWrap: { position: 'absolute', left: 16, right: 16 },
   chapWrap: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },

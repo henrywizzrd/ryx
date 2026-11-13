@@ -5,7 +5,7 @@ public class RyxNetModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RyxNet")
 
-    Events("onLog", "onDownload")
+    Events("onLog", "onDownload", "onBackground")
 
     OnCreate {
       RyxProxy.shared.onLog = { [weak self] level, message in
@@ -17,6 +17,9 @@ public class RyxNetModule: Module {
       RyxDownloader.shared.onEvent = { [weak self] payload in
         self?.sendEvent("onDownload", payload)
       }
+      RyxBackground.shared.onEvent = { [weak self] payload in
+        self?.sendEvent("onBackground", payload)
+      }
       // Bật càng sớm càng tốt: WebKit chỉ áp proxy cho các kết nối mở SAU khi cấu hình.
       RyxProxy.shared.startIfEnabled()
     }
@@ -25,6 +28,7 @@ public class RyxNetModule: Module {
       RyxProxy.shared.onLog = nil
       RyxBlocker.shared.onLog = nil
       RyxDownloader.shared.onEvent = nil
+      RyxBackground.shared.onEvent = nil
     }
 
     /// iOS 17+ mới có ProxyConfiguration cho WKWebView.
@@ -62,6 +66,28 @@ public class RyxNetModule: Module {
       RyxDownloader.shared.cancel(id: id)
     }
 
+    // MARK: Tải tiếp khi rời app (iOS 26+) + thông báo
+
+    Function("bgBegin") { (title: String, subtitle: String) -> String? in
+      RyxBackground.shared.begin(title: title, subtitle: subtitle)
+    }
+
+    Function("bgProgress") { (done: Double, total: Double, title: String, subtitle: String) in
+      RyxBackground.shared.progress(done: Int64(done), total: Int64(total), title: title, subtitle: subtitle)
+    }
+
+    Function("bgEnd") { (success: Bool) in
+      RyxBackground.shared.end(success: success)
+    }
+
+    AsyncFunction("requestNotify") { (promise: Promise) in
+      RyxBackground.shared.requestNotify { promise.resolve($0) }
+    }
+
+    Function("notify") { (title: String, body: String) in
+      RyxBackground.shared.notify(title: title, body: body)
+    }
+
     // MARK: Video HLS
 
     AsyncFunction("decryptAes128") { (inPath: String, outPath: String, keyPath: String, ivHex: String) in
@@ -87,6 +113,10 @@ public class RyxNetModule: Module {
     }.runOnQueue(.main)
 
     /// Gắn bộ lọc vào các WebView mới tạo. Trả số WebView vừa gắn.
+    AsyncFunction("applyEdgeEffects") { () -> Int in
+      RyxEdge.applyAll()
+    }.runOnQueue(.main)
+
     AsyncFunction("attachRules") { () -> Int in
       RyxBlocker.shared.attachAll()
     }.runOnQueue(.main)

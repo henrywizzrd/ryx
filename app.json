@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ryx",
     "slug": "ryx",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -30,7 +30,14 @@
           "NSAllowsLocalNetworking": true
         },
         "CADisableMinimumFrameDurationOnPhone": true,
-        "UIViewControllerBasedStatusBarAppearance": true
+        "UIViewControllerBasedStatusBarAppearance": true,
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.henrywizzrd.ryx.download.*"
+        ],
+        "UIBackgroundModes": [
+          "audio",
+          "processing"
+        ]
       }
     },
     "android": {

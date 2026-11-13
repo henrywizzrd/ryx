@@ -103,6 +103,13 @@ export function ShieldSheet({
           onChange={(v) => onToggle('popups', v)}
         />
         <ToggleRow
+          icon="hand-left-outline"
+          title="Tự từ chối bảng hỏi cookie"
+          subtitle={site ? 'Tắt nếu trang này bị lỗi khi đăng nhập/xem' : 'Bấm "Từ chối" giúp cậu'}
+          value={prefs.cookies}
+          onChange={(v) => onToggle('cookies', v)}
+        />
+        <ToggleRow
           icon="moon-outline"
           iconColor="#93C5FD"
           title={site ? 'Chế độ tối cho trang này' : 'Chế độ tối cho trang web'}

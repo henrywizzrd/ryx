@@ -683,41 +683,48 @@ function TabOverviewImpl(props: Props) {
         </Pressable>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.chips}
-        contentContainerStyle={styles.chipsRow}
-      >
-        {TAB_LAYOUTS.map((l) => {
-          const on = l.id === layout;
-          return (
-            <Pressable
-              key={l.id}
-              onPress={() => {
-                void Haptics.selectionAsync();
-                props.onLayoutChange(l.id);
-              }}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-              style={({ pressed }) => [styles.chip, on && { backgroundColor: accentSoft }, pressed && { opacity: 0.7 }]}
-            >
-              <Ionicons name={l.icon} size={15} color={on ? accent : colors.textMuted} />
-              <Txt weight={on ? 'semibold' : 'medium'} size={13} color={on ? accent : colors.textMuted}>
-                {l.label}
-              </Txt>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      <View style={{ flex: 1, marginBottom: bottomPad }}>
+      <View style={{ flex: 1 }}>
         {/* Không chạy hiệu ứng "thêm thẻ" cho các thẻ có sẵn lúc mở màn này */}
         <LayoutAnimationConfig skipEntering>
           <View key={layout} style={{ flex: 1 }}>
             {body}
           </View>
         </LayoutAnimationConfig>
+      </View>
+
+      {/* Hàng chọn kiểu sắp xếp: ngay trên dock, trong tầm ngón cái */}
+      <View style={{ marginBottom: bottomPad }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chips}
+          contentContainerStyle={styles.chipsRow}
+        >
+          {TAB_LAYOUTS.map((l) => {
+            const on = l.id === layout;
+            return (
+              <Pressable
+                key={l.id}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  props.onLayoutChange(l.id);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                style={({ pressed }) => [
+                  styles.chip,
+                  on && { backgroundColor: accentSoft },
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                <Ionicons name={l.icon} size={15} color={on ? accent : colors.textMuted} />
+                <Txt weight={on ? 'semibold' : 'medium'} size={13} color={on ? accent : colors.textMuted}>
+                  {l.label}
+                </Txt>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
     </Animated.View>
   );
@@ -735,7 +742,7 @@ const styles = StyleSheet.create({
   headBtn: { minHeight: 44, justifyContent: 'center', minWidth: 90 },
   plus: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   count: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  chips: { flexGrow: 0, marginTop: 6 },
+  chips: { flexGrow: 0, marginBottom: 6 },
   chipsRow: { paddingHorizontal: 12, gap: 6, height: 40, alignItems: 'center' },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 17 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap' },

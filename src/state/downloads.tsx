@@ -3,6 +3,7 @@ import { Directory, File, Paths, type DownloadTask } from 'expo-file-system';
 import { requireOptionalNativeModule, type EventSubscription } from 'expo';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
+import { backgroundDownloads } from '@/lib/background';
 import { downloadHls, HlsError } from '@/lib/hls';
 import { log } from '@/lib/logger';
 
@@ -157,7 +158,9 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
         // File đã mất (vd bản tải HLS lỗi trước đây) → hiện lỗi để tải lại, thay vì bấm vào báo "không có quyền"
         const saved = all
           .filter((d) => now - d.t <= KEEP_MS)
-          .map((d) => (fileGone(d) ? { ...d, status: 'error' as const, error: 'File không còn trên máy, chạm để tải lại' } : d));
+          .map((d) =>
+            fileGone(d) ? { ...d, status: 'error' as const, error: 'File không còn trên máy, chạm để tải lại' } : d,
+          );
         setItems((cur) => [...cur, ...saved.filter((s) => !cur.some((c) => c.id === s.id))]);
       })
       .catch(() => {})
@@ -171,8 +174,20 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(0, MAX_ITEMS))).catch(() => {});
   }, [items]);
 
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
   const patch = useCallback((id: string, p: Partial<DownloadItem>) => {
     setItems((list) => list.map((d) => (d.id === id ? { ...d, ...p } : d)));
+    // Báo tiến độ cho tác vụ tải nền của iOS (để rời app vẫn tải tiếp) + thông báo khi xong
+    const it = itemsRef.current.find((x) => x.id === id);
+    if (!it) return;
+    if (p.status === 'done') backgroundDownloads.finish(id, true, it.name);
+    else if (p.status === 'error' || p.status === 'canceled') backgroundDownloads.finish(id, false, it.name);
+    else if (p.segTotal) backgroundDownloads.progress(id, (p.segDone ?? 0) / p.segTotal);
+    else if (p.total) backgroundDownloads.progress(id, (p.received ?? 0) / p.total);
   }, []);
 
   // Sự kiện từ trình tải native
@@ -210,14 +225,10 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [patch]);
 
-  const itemsRef = useRef(items);
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
-
   const hlsCancel = useRef(new Set<string>());
   const run = useCallback(
     (item: DownloadItem) => {
+      backgroundDownloads.start(item.id, item.name);
       if (item.hls) {
         const started = Date.now();
         hlsCancel.current.delete(item.id);
@@ -359,6 +370,7 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
 
   const remove = useCallback((id: string) => {
     hlsCancel.current.add(id);
+    backgroundDownloads.finish(id, false, '');
     if (nativeMeta.current.delete(id)) nativeDl?.cancelDownload(id);
     tasks.current.get(id)?.cancel();
     tasks.current.delete(id);

@@ -5,21 +5,15 @@ export type DockStyle = 'floating' | 'compact' | 'attached';
 export type AddressBarPosition = 'top' | 'bottom';
 export type TabLayout = 'grid' | 'list' | 'split' | 'carousel' | 'coverflow' | 'cascade';
 const TAB_LAYOUT_IDS: TabLayout[] = ['grid', 'list', 'split', 'carousel', 'coverflow', 'cascade'];
-export type DockButtonId =
-  | 'back'
-  | 'forward'
-  | 'tabs'
-  | 'menu'
-  | 'shield'
-  | 'reload'
-  | 'home'
-  | 'share';
+export type DockButtonId = 'back' | 'forward' | 'tabs' | 'menu' | 'shield' | 'reload' | 'home' | 'share';
 
 export interface ShieldPrefs {
   gambling: boolean;
   ads: boolean;
   popups: boolean;
   dark: boolean;
+  /** Tự từ chối bảng hỏi cookie */
+  cookies: boolean;
 }
 
 export interface Settings {
@@ -50,7 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
   accent: '#34D399',
   glass: 1,
   dockButtons: ['back', 'forward', 'tabs', 'menu'],
-  shield: { gambling: true, ads: true, popups: true, dark: true },
+  shield: { gambling: true, ads: true, popups: true, dark: true, cookies: true },
   siteOverrides: {},
   diagVideo: false,
   backgroundPlay: true,

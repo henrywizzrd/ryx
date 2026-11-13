@@ -14,6 +14,7 @@ import { shouldBlock, type BlockCategory } from '@/lib/blocker';
 import { buildUpdateCall, FRAME_MEDIA_SCRIPT, type InjectConfig } from '@/lib/inject';
 import { PageError } from '@/components/page-error';
 import { attachContentBlocker } from '@/lib/content-blocker';
+import { applyEdgeEffects } from '@/lib/edge';
 import { describeDiag, FRAME_DIAG_SCRIPT } from '@/lib/frame-diag';
 import { log } from '@/lib/logger';
 import { registerShotTarget } from '@/lib/tab-shots';
@@ -208,7 +209,11 @@ function BrowserTabImpl({
   // Gắn bộ lọc tầng mạng vào WebView của thẻ này (WebView có thể vào màn hình trễ một chút)
   useEffect(() => {
     attachContentBlocker();
-    const t = setTimeout(attachContentBlocker, 600);
+    applyEdgeEffects();
+    const t = setTimeout(() => {
+      attachContentBlocker();
+      applyEdgeEffects(0);
+    }, 600);
     return () => clearTimeout(t);
   }, [tab.sourceUrl]);
 
@@ -549,6 +554,15 @@ function BrowserTabImpl({
             x: l.x ?? 0,
             y: l.y ?? 0,
           });
+        return;
+      }
+      if (msg.type === 'ryx:cookie') {
+        const c = msg as unknown as { cmp?: string; clicks?: number };
+        log.info(
+          'block',
+          `Đã tự từ chối bảng hỏi cookie trên ${siteKey(urlRef.current) ?? 'trang'}`,
+          `Nền tảng: ${c.cmp || 'không rõ'} · ${c.clicks ?? 0} lần bấm`,
+        );
         return;
       }
       if (msg.type === 'ryx:hls') {
