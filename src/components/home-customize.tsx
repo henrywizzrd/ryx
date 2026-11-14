@@ -3,7 +3,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NewTabPage } from '@/components/new-tab-page';
 import { ToggleRow } from '@/components/toggle-row';
-import { Txt } from '@/components/txt';
 import { useSettings, type HomePrefs } from '@/state/settings';
 import { colors, fg } from '@/theme';
 
@@ -11,6 +10,7 @@ const ITEMS: { key: keyof HomePrefs; icon: React.ComponentProps<typeof ToggleRow
   { key: 'logo', icon: 'shield-checkmark-outline', title: 'Logo Shield' },
   { key: 'title', icon: 'text-outline', title: 'Chữ "Ryx"' },
   { key: 'subtitle', icon: 'reorder-two-outline', title: 'Dòng chữ phụ' },
+  { key: 'search', icon: 'search-outline', title: 'Ô tìm kiếm' },
   { key: 'stats', icon: 'stats-chart-outline', title: 'Hộp "Đã chặn tuần này"' },
   { key: 'reading', icon: 'book-outline', title: 'Đọc tiếp' },
   { key: 'quick', icon: 'apps-outline', title: 'Truy cập nhanh' },
@@ -49,9 +49,6 @@ export function HomeCustomize() {
           <View style={styles.island} />
         </View>
       </View>
-      <Txt size={13} color={colors.textMuted} style={styles.note}>
-        Ô tìm kiếm luôn hiện.
-      </Txt>
       <View style={styles.card}>
         {ITEMS.map((it, i) => (
           <ToggleRow
@@ -85,6 +82,5 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: '#000',
   },
-  note: { textAlign: 'center', marginBottom: 12 },
   card: { borderRadius: 20, backgroundColor: colors.surface, overflow: 'hidden', paddingHorizontal: 14 },
 });

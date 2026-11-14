@@ -12,11 +12,11 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withSpring,
+  withTiming,
+  Easing,
 } from 'react-native-reanimated';
 
 import { applyEdgeEffects } from '@/lib/edge';
-import { MOTION } from '@/lib/motion';
 import { displayHost, faviconFor } from '@/lib/url';
 import { useBookmarks, type Bookmark } from '@/state/bookmarks';
 import { useReading } from '@/state/reading';
@@ -38,11 +38,15 @@ interface Props {
 
 const nf = new Intl.NumberFormat('vi-VN');
 const PAD = 20;
+/** Bề ngang ô tìm kiếm khi chưa bấm, so với cả hàng (4/5 × 3/5) */
+const SEARCH_W = 0.48;
 /** Bật/tắt một phần trong Tuỳ chỉnh: mờ ra/vào, các phần còn lại dồn chỗ mượt */
 const OUT = FadeOut.duration(160);
 /** Một phần nhỏ trong cụm logo/chữ hiện lại khi bật */
 const SHOW = FadeIn.duration(200);
-const MOVE = LinearTransition.springify().damping(26).stiffness(260);
+/** Đường cong chậm dần, không nảy (nhẹ nhàng kiểu iOS) */
+const EASE = Easing.out(Easing.cubic);
+const MOVE = LinearTransition.duration(280).easing(EASE);
 
 export function NewTabPage({ onSubmit, onOpen, onOpenNewTab, paddingTop, paddingBottom, preview }: Props) {
   useEffect(() => {
@@ -60,17 +64,23 @@ export function NewTabPage({ onSubmit, onOpen, onOpenNewTab, paddingTop, padding
   const enter = (i: number) =>
     preview || reduce
       ? FadeIn.duration(200)
-      : FadeInDown.duration(380)
+      : FadeInDown.duration(420)
           .delay(i * 40)
-          .springify()
-          .damping(24);
+          .easing(EASE)
+          .withInitialValues({ transform: [{ translateY: 14 }] });
 
-  // Ô tìm kiếm: bình thường 4/5 bề ngang, bấm vào thì dãn ra hết, bỏ ra thì thu lại
+  // Ô tìm kiếm: bình thường hẹp (~1/2 bề ngang), bấm vào thì dãn ra hết và cả trang trượt lên cùng lúc bàn phím
+  // hiện (ô tìm kiếm lên sát chỗ logo, logo/chữ mờ đi); bỏ ra thì trả về như cũ
   const { width: W } = useWindowDimensions();
   const full = W - PAD * 2;
   const focus = useSharedValue(0);
-  const searchAnim = useAnimatedStyle(() => ({ width: full * (0.8 + 0.2 * focus.get()) }));
-  const setFocus = (on: boolean) => focus.set(reduce ? (on ? 1 : 0) : withSpring(on ? 1 : 0, MOTION.snappy));
+  const searchY = useSharedValue(0);
+  const searchAnim = useAnimatedStyle(() => ({ width: full * (SEARCH_W + (1 - SEARCH_W) * focus.get()) }));
+  const liftAnim = useAnimatedStyle(() => ({ transform: [{ translateY: -searchY.get() * focus.get() }] }));
+  const brandAnim = useAnimatedStyle(() => ({ opacity: 1 - focus.get() }));
+  // ~ cùng nhịp với bàn phím iOS (khoảng 0.3 s, chậm dần)
+  const setFocus = (on: boolean) =>
+    focus.set(reduce ? (on ? 1 : 0) : withTiming(on ? 1 : 0, { duration: 320, easing: EASE }));
 
   // Nhấn giữ một ô truy cập nhanh
   const bookmarkMenu = (b: Bookmark) => {
@@ -113,177 +123,187 @@ export function NewTabPage({ onSubmit, onOpen, onOpenNewTab, paddingTop, padding
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        {(home.logo || home.title || home.subtitle) && (
-          <Animated.View entering={enter(0)} exiting={OUT} layout={MOVE} style={styles.brand}>
-            {home.logo && (
-              <Animated.View
-                entering={SHOW}
-                exiting={OUT}
-                layout={MOVE}
-                style={[styles.logo, { backgroundColor: accentSoft }]}
-              >
-                <Ionicons name="shield-checkmark" size={30} color={accent} />
-              </Animated.View>
-            )}
-            {home.title && (
-              <Animated.View entering={SHOW} exiting={OUT} layout={MOVE}>
-                <Txt weight="bold" size={34} style={{ lineHeight: 42 }} accessibilityRole="header">
-                  Ryx
-                </Txt>
-              </Animated.View>
-            )}
-            {home.subtitle && (
-              <Animated.View entering={SHOW} exiting={OUT} layout={MOVE}>
-                <Txt size={15} color={colors.textMuted}>
-                  Duyệt web sạch quảng cáo, an toàn hơn
-                </Txt>
-              </Animated.View>
-            )}
-          </Animated.View>
-        )}
-
-        <Animated.View entering={enter(1)} layout={MOVE} style={[styles.search, searchAnim]}>
-          <Ionicons name="search" size={18} color={colors.textMuted} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={() => {
-              if (query.trim()) onSubmit(query);
-              setQuery('');
-            }}
-            placeholder="Tìm trên Google hoặc nhập địa chỉ"
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="web-search"
-            returnKeyType="search"
-            keyboardAppearance={colors.scheme}
-            selectionColor={accent}
-            accessibilityLabel="Tìm kiếm"
-            onFocus={() => setFocus(true)}
-            onBlur={() => setFocus(false)}
-            editable={!preview}
-            style={styles.searchInput}
-          />
-        </Animated.View>
-
-        {home.stats && (
-          <Animated.View
-            entering={enter(2)}
-            exiting={OUT}
-            layout={MOVE}
-            style={styles.card}
-            accessible
-            accessibilityLabel={`Đã chặn tuần này: ${week.total} mục`}
-          >
-            <View style={styles.cardHead}>
-              <Txt weight="semibold" size={15} color={colors.textMuted}>
-                Đã chặn tuần này
-              </Txt>
-              <Ionicons name="shield-half" size={18} color={accent} />
-            </View>
-            <Txt weight="bold" size={44} color={accent} style={{ lineHeight: 54, fontVariant: ['tabular-nums'] }}>
-              {nf.format(week.total)}
-            </Txt>
-            <View style={styles.breakdown}>
-              {breakdown.map((b) => (
-                <View key={b.label} style={styles.breakItem}>
-                  <View style={styles.breakLabel}>
-                    <View style={[styles.dot, { backgroundColor: b.color }]} />
-                    <Txt size={13} color={colors.textMuted}>
-                      {b.label}
-                    </Txt>
-                  </View>
-                  <Txt weight="semibold" size={18} style={{ fontVariant: ['tabular-nums'] }}>
-                    {nf.format(b.value)}
+        <Animated.View style={liftAnim}>
+          {(home.logo || home.title || home.subtitle) && (
+            <Animated.View entering={enter(0)} exiting={OUT} layout={MOVE} style={[styles.brand, brandAnim]}>
+              {home.logo && (
+                <Animated.View
+                  entering={SHOW}
+                  exiting={OUT}
+                  layout={MOVE}
+                  style={[styles.logo, { backgroundColor: accentSoft }]}
+                >
+                  <Ionicons name="shield-checkmark" size={30} color={accent} />
+                </Animated.View>
+              )}
+              {home.title && (
+                <Animated.View entering={SHOW} exiting={OUT} layout={MOVE}>
+                  <Txt weight="bold" size={34} style={{ lineHeight: 42 }} accessibilityRole="header">
+                    Ryx
                   </Txt>
-                </View>
-              ))}
-            </View>
-          </Animated.View>
-        )}
+                </Animated.View>
+              )}
+              {home.subtitle && (
+                <Animated.View entering={SHOW} exiting={OUT} layout={MOVE}>
+                  <Txt size={15} color={colors.textMuted}>
+                    Duyệt web sạch quảng cáo, an toàn hơn
+                  </Txt>
+                </Animated.View>
+              )}
+            </Animated.View>
+          )}
 
-        {home.reading && reading.length > 0 && (
-          <Animated.View entering={enter(3)} exiting={OUT} layout={MOVE}>
-            <Txt weight="semibold" size={15} color={colors.textMuted} style={styles.sectionTitle}>
-              Đọc tiếp
-            </Txt>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.readRow}
-              style={styles.readScroll}
+          {home.search && (
+            <Animated.View
+              entering={enter(1)}
+              exiting={OUT}
+              layout={MOVE}
+              onLayout={(e) => searchY.set(e.nativeEvent.layout.y)}
+              style={[styles.search, searchAnim]}
             >
-              {reading.slice(0, 12).map((r) => (
-                <PressScale
-                  key={r.series}
-                  onPress={() => onOpen(r.url)}
-                  onLongPress={() =>
-                    ActionSheetIOS.showActionSheetWithOptions(
-                      {
-                        title: r.title,
-                        options: ['Bỏ khỏi Đọc tiếp', 'Huỷ'],
-                        destructiveButtonIndex: 0,
-                        cancelButtonIndex: 1,
-                      },
-                      (i) => i === 0 && forget(r.series),
-                    )
-                  }
-                  accessibilityRole="link"
-                  accessibilityLabel={`Đọc tiếp ${r.title}, ${r.chapter}`}
-                  style={styles.readCard}
-                >
-                  <View style={styles.readHead}>
-                    <Image source={faviconFor(r.url)} style={styles.readIcon} contentFit="contain" />
-                    <Txt size={11} color={colors.textMuted} numberOfLines={1} style={{ flex: 1 }}>
-                      {displayHost(r.url)}
+              <Ionicons name="search" size={18} color={colors.textMuted} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                onSubmitEditing={() => {
+                  if (query.trim()) onSubmit(query);
+                  setQuery('');
+                }}
+                placeholder="Tìm hoặc nhập địa chỉ"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="web-search"
+                returnKeyType="search"
+                keyboardAppearance={colors.scheme}
+                selectionColor={accent}
+                accessibilityLabel="Tìm kiếm"
+                onFocus={() => setFocus(true)}
+                onBlur={() => setFocus(false)}
+                editable={!preview}
+                style={styles.searchInput}
+              />
+            </Animated.View>
+          )}
+
+          {home.stats && (
+            <Animated.View
+              entering={enter(2)}
+              exiting={OUT}
+              layout={MOVE}
+              style={styles.card}
+              accessible
+              accessibilityLabel={`Đã chặn tuần này: ${week.total} mục`}
+            >
+              <View style={styles.cardHead}>
+                <Txt weight="semibold" size={15} color={colors.textMuted}>
+                  Đã chặn tuần này
+                </Txt>
+                <Ionicons name="shield-half" size={18} color={accent} />
+              </View>
+              <Txt weight="bold" size={44} color={accent} style={{ lineHeight: 54, fontVariant: ['tabular-nums'] }}>
+                {nf.format(week.total)}
+              </Txt>
+              <View style={styles.breakdown}>
+                {breakdown.map((b) => (
+                  <View key={b.label} style={styles.breakItem}>
+                    <View style={styles.breakLabel}>
+                      <View style={[styles.dot, { backgroundColor: b.color }]} />
+                      <Txt size={13} color={colors.textMuted}>
+                        {b.label}
+                      </Txt>
+                    </View>
+                    <Txt weight="semibold" size={18} style={{ fontVariant: ['tabular-nums'] }}>
+                      {nf.format(b.value)}
                     </Txt>
                   </View>
-                  <Txt weight="semibold" size={14} numberOfLines={2}>
-                    {r.title}
-                  </Txt>
-                  <Txt weight="medium" size={13} color={accent} numberOfLines={1}>
-                    {r.chapter}
-                  </Txt>
-                </PressScale>
-              ))}
-            </ScrollView>
-          </Animated.View>
-        )}
+                ))}
+              </View>
+            </Animated.View>
+          )}
 
-        {home.quick && (
-          <Animated.View entering={enter(4)} exiting={OUT} layout={MOVE}>
-            <Txt weight="semibold" size={15} color={colors.textMuted} style={styles.sectionTitle}>
-              Truy cập nhanh
-            </Txt>
-            <View style={styles.grid}>
-              {bookmarks.map((b) => (
-                <PressScale
-                  scaleTo={0.94}
-                  key={b.id}
-                  onPress={() => onOpen(b.url)}
-                  onLongPress={() => bookmarkMenu(b)}
-                  accessibilityRole="link"
-                  accessibilityLabel={b.title}
-                  accessibilityHint="Nhấn giữ để sửa hoặc xoá"
-                  style={styles.tile}
-                >
-                  <View style={styles.tileIcon}>
-                    <Image source={faviconFor(b.url)} style={styles.favicon} contentFit="contain" transition={150} />
-                  </View>
-                  <Txt size={12} numberOfLines={1} color={colors.text} style={{ marginTop: 6, maxWidth: '90%' }}>
-                    {b.title}
-                  </Txt>
-                </PressScale>
-              ))}
-            </View>
-            {bookmarks.length === 0 && (
-              <Txt size={13} color={colors.textMuted} style={{ marginLeft: 4 }}>
-                Mở một trang rồi chọn Menu → Thêm dấu trang để ghim vào đây.
+          {home.reading && reading.length > 0 && (
+            <Animated.View entering={enter(3)} exiting={OUT} layout={MOVE}>
+              <Txt weight="semibold" size={15} color={colors.textMuted} style={styles.sectionTitle}>
+                Đọc tiếp
               </Txt>
-            )}
-          </Animated.View>
-        )}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.readRow}
+                style={styles.readScroll}
+              >
+                {reading.slice(0, 12).map((r) => (
+                  <PressScale
+                    key={r.series}
+                    onPress={() => onOpen(r.url)}
+                    onLongPress={() =>
+                      ActionSheetIOS.showActionSheetWithOptions(
+                        {
+                          title: r.title,
+                          options: ['Bỏ khỏi Đọc tiếp', 'Huỷ'],
+                          destructiveButtonIndex: 0,
+                          cancelButtonIndex: 1,
+                        },
+                        (i) => i === 0 && forget(r.series),
+                      )
+                    }
+                    accessibilityRole="link"
+                    accessibilityLabel={`Đọc tiếp ${r.title}, ${r.chapter}`}
+                    style={styles.readCard}
+                  >
+                    <View style={styles.readHead}>
+                      <Image source={faviconFor(r.url)} style={styles.readIcon} contentFit="contain" />
+                      <Txt size={11} color={colors.textMuted} numberOfLines={1} style={{ flex: 1 }}>
+                        {displayHost(r.url)}
+                      </Txt>
+                    </View>
+                    <Txt weight="semibold" size={14} numberOfLines={2}>
+                      {r.title}
+                    </Txt>
+                    <Txt weight="medium" size={13} color={accent} numberOfLines={1}>
+                      {r.chapter}
+                    </Txt>
+                  </PressScale>
+                ))}
+              </ScrollView>
+            </Animated.View>
+          )}
+
+          {home.quick && (
+            <Animated.View entering={enter(4)} exiting={OUT} layout={MOVE}>
+              <Txt weight="semibold" size={15} color={colors.textMuted} style={styles.sectionTitle}>
+                Truy cập nhanh
+              </Txt>
+              <View style={styles.grid}>
+                {bookmarks.map((b) => (
+                  <PressScale
+                    scaleTo={0.94}
+                    key={b.id}
+                    onPress={() => onOpen(b.url)}
+                    onLongPress={() => bookmarkMenu(b)}
+                    accessibilityRole="link"
+                    accessibilityLabel={b.title}
+                    accessibilityHint="Nhấn giữ để sửa hoặc xoá"
+                    style={styles.tile}
+                  >
+                    <View style={styles.tileIcon}>
+                      <Image source={faviconFor(b.url)} style={styles.favicon} contentFit="contain" transition={150} />
+                    </View>
+                    <Txt size={12} numberOfLines={1} color={colors.text} style={{ marginTop: 6, maxWidth: '90%' }}>
+                      {b.title}
+                    </Txt>
+                  </PressScale>
+                ))}
+              </View>
+              {bookmarks.length === 0 && (
+                <Txt size={13} color={colors.textMuted} style={{ marginLeft: 4 }}>
+                  Mở một trang rồi chọn Menu → Thêm dấu trang để ghim vào đây.
+                </Txt>
+              )}
+            </Animated.View>
+          )}
+        </Animated.View>
       </ScrollView>
     </LayoutAnimationConfig>
   );

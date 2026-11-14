@@ -16,10 +16,12 @@ export interface ShieldPrefs {
   cookies: boolean;
 }
 
-/** Phần nào hiện trên trang chủ (Tuỳ chỉnh → Trang chủ). Ô tìm kiếm luôn hiện. */
+/** Phần nào hiện trên trang chủ (Tuỳ chỉnh → Trang chủ) */
 export interface HomePrefs {
   logo: boolean;
   title: boolean;
+  /** Ô tìm kiếm trên trang chủ */
+  search: boolean;
   subtitle: boolean;
   stats: boolean;
   reading: boolean;
@@ -60,7 +62,7 @@ export const DEFAULT_SETTINGS: Settings = {
   diagVideo: false,
   backgroundPlay: true,
   customHides: {},
-  home: { logo: true, title: true, subtitle: true, stats: true, reading: true, quick: true },
+  home: { logo: true, title: true, search: true, subtitle: true, stats: true, reading: true, quick: true },
 };
 
 const STORAGE_KEY = 'ryx.settings.v1';
