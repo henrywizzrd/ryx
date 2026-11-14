@@ -28,7 +28,11 @@ import { Txt } from './txt';
 
 export const ADDRESS_BAR_HEIGHT = 48;
 /** Bề ngang thanh địa chỉ khi không gõ, so với cả hàng */
-const BAR_W = 0.6;
+export const BAR_W = 0.6;
+/** Khoảng cách thanh địa chỉ tới đáy trang khi trang thu nhỏ thành thẻ (dock ẩn, thanh nằm sát đáy thẻ) */
+export const CARD_ADDR_BOTTOM = 28;
+/** Bề ngang thanh địa chỉ (khi không gõ) theo bề ngang màn hình */
+export const addrBarWidth = (screenW: number) => (screenW - 32) * BAR_W;
 
 interface Props {
   tab: Tab;
@@ -160,7 +164,7 @@ export function AddressBar({
 
   // Bình thường thanh chỉ rộng 3/5 (nằm giữa), chạm vào để gõ thì dãn ra hết bề ngang, xong thì thu lại
   const { width: W } = useWindowDimensions();
-  const full = W - 32; // khung bọc ở app/index.tsx cách mép 16 mỗi bên
+  const full = W - 32; // khung bọc ở app/index.tsx cách mép 16 mỗi bên (addrBarWidth)
   const grow = useSharedValue(0);
   useEffect(() => {
     grow.value = withTiming(focused ? 1 : 0, { duration: 300, easing: Easing.out(Easing.cubic) });
@@ -385,3 +389,51 @@ const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
     rollBox: { marginLeft: 4, height: 16, overflow: 'hidden', justifyContent: 'center' },
     rollAbs: { position: 'absolute', left: 0, right: 0, top: 0 },
   });
+
+/**
+ * Thanh địa chỉ tĩnh, y hệt thanh thật lúc không gõ: vẽ trong thẻ ở màn các thẻ (thu nhỏ theo thẻ), để thẻ trông
+ * đúng như trang thật vừa thu nhỏ (trang + thanh địa chỉ, không có dock).
+ */
+export function StaticAddressBar({ tab, blocked, width }: { tab: Tab; blocked: number; width: number }) {
+  const styles = useStyles(makeStyles);
+  const { colors, accent, accentSoft } = useTheme();
+  const showPage = !tab.home && !!tab.url;
+  return (
+    <Glass radius={ADDRESS_BAR_HEIGHT / 2} style={{ height: ADDRESS_BAR_HEIGHT, width }} contentStyle={styles.row}>
+      <View style={[styles.shield, { backgroundColor: accentSoft }]}>
+        <Ionicons name="shield-checkmark" size={16} color={accent} />
+        {blocked > 0 && (
+          <Txt weight="semibold" size={13} color={accent} style={{ marginLeft: 4, fontVariant: ['tabular-nums'] }}>
+            {blocked}
+          </Txt>
+        )}
+      </View>
+      <View style={styles.inputWrap}>
+        {showPage && (
+          <Ionicons
+            name={isSecure(tab.url) ? 'lock-closed' : 'warning-outline'}
+            size={12}
+            color={isSecure(tab.url) ? colors.textMuted : colors.gambling}
+            style={{ marginRight: 6 }}
+          />
+        )}
+        <Txt
+          weight="medium"
+          size={16}
+          numberOfLines={1}
+          color={showPage ? colors.text : colors.textMuted}
+          style={{ flexShrink: 1 }}
+        >
+          {showPage ? displayHost(tab.url) : 'Search'}
+        </Txt>
+      </View>
+      {showPage ? (
+        <View style={{ width: 40, alignItems: 'center' }}>
+          <Ionicons name="refresh" size={18} color={colors.textMuted} />
+        </View>
+      ) : (
+        <View style={{ width: 40 }} />
+      )}
+    </Glass>
+  );
+}

@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import Animated, {
   runOnJS,
+  useAnimatedKeyboard,
+  useAnimatedReaction,
   useAnimatedStyle,
   useReducedMotion,
   useFrameCallback,
@@ -25,7 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ADDRESS_BAR_HEIGHT, AddressBar } from '@/components/address-bar';
+import { ADDRESS_BAR_HEIGHT, AddressBar, CARD_ADDR_BOTTOM } from '@/components/address-bar';
 import {
   BrowserTab,
   type ChapterInfo,
@@ -499,7 +501,29 @@ export default function BrowserScreen() {
   // ---- Bố cục ----
   const dock = dockMetrics(settings.dockStyle, insets.bottom);
   const addrTop = settings.addressBarPosition === 'top';
-  const addrBottom = addrFocused && kb > 0 ? kb + GAP : dock.top + GAP;
+  // Thanh địa chỉ: chạm để gõ thì đi lên cùng bàn phím theo từng khung hình (không nhảy cái rụp);
+  // thu nhỏ thành thẻ thì trôi xuống sát đáy thẻ (dock đã ẩn)
+  const kbAnim = useAnimatedKeyboard();
+  const dockTop = dock.top;
+  // Bàn phím đang mở là do thanh địa chỉ (không phải ô nhập trong trang web): giữ tới khi bàn phím đóng hẳn,
+  // để lúc bỏ gõ thanh trôi xuống cùng bàn phím thay vì nhảy xuống trước
+  const addrKb = useSharedValue(0);
+  useEffect(() => {
+    if (addrFocused) addrKb.set(1);
+  }, [addrFocused, addrKb]);
+  useAnimatedReaction(
+    () => kbAnim.height.value,
+    (h) => {
+      if (h <= 0 && !addrFocused) addrKb.set(0);
+    },
+    [addrFocused],
+  );
+  const addrAnim = useAnimatedStyle(() => {
+    if (addrTop) return { top: insets.top + 4 };
+    const base = addrKb.get() ? Math.max(dockTop, kbAnim.height.value) + GAP : dockTop + GAP;
+    const p = zoom.value;
+    return { bottom: base * (1 - p) + CARD_ADDR_BOTTOM * p };
+  });
   const chromeBottom = addrTop ? dock.top : dock.top + GAP + ADDRESS_BAR_HEIGHT;
   const contentTop = insets.top + (addrTop ? ADDRESS_BAR_HEIGHT + GAP * 1.2 : 0);
   const webBottomInset = settings.dockStyle === 'attached' && addrTop ? 0 : chromeBottom + GAP;
@@ -824,23 +848,6 @@ export default function BrowserScreen() {
             />
           )}
 
-          <View
-            pointerEvents="box-none"
-            style={[styles.addrWrap, addrTop ? { top: insets.top + 4 } : { bottom: addrBottom }]}
-          >
-            <AddressBar
-              tab={active}
-              blocked={blocked.total}
-              shieldOn={shieldOn}
-              onSubmit={go}
-              onShieldPress={() => setShieldOpen(true)}
-              onReload={reload}
-              onStop={() => webRef()?.stopLoading()}
-              onFocusChange={setAddrFocused}
-              position={addrTop ? 'top' : 'bottom'}
-            />
-          </View>
-
           {picking && (
             <View pointerEvents="box-none" style={[styles.pickWrap, { top: insets.top + 8 }]}>
               <Glass radius={24} contentStyle={styles.pickRow}>
@@ -902,6 +909,21 @@ export default function BrowserScreen() {
             </View>
           )}
         </View>
+        {/* Thanh địa chỉ nằm ngoài vùng chụp ảnh thẻ (ảnh thẻ tự vẽ thanh tĩnh ở đúng chỗ, xem tab-overview), nhưng vẫn
+          trong lớp thu nhỏ: zoom out thì thanh co lại cùng trang và trôi xuống sát đáy thẻ, dock ẩn đi */}
+        <Animated.View pointerEvents="box-none" style={[styles.addrWrap, addrAnim]}>
+          <AddressBar
+            tab={active}
+            blocked={blocked.total}
+            shieldOn={shieldOn}
+            onSubmit={go}
+            onShieldPress={() => setShieldOpen(true)}
+            onReload={reload}
+            onStop={() => webRef()?.stopLoading()}
+            onFocusChange={setAddrFocused}
+            position={addrTop ? 'top' : 'bottom'}
+          />
+        </Animated.View>
         <Animated.View
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, { borderColor: settings.accent }, pageBorder]}
