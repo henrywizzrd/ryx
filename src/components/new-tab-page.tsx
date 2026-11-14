@@ -227,6 +227,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     marginBottom: 16,
+    // Ngắn lại còn 4/5 bề ngang, nằm giữa
+    width: '80%',
+    alignSelf: 'center',
   },
   searchInput: { flex: 1, height: 52, color: colors.text, fontFamily: fonts.regular, fontSize: 16 },
   card: {
