@@ -244,7 +244,7 @@ function HomeMini({ width }: { width: number }) {
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg }]}>
       <View style={{ width: W, height: H, transformOrigin: 'left top', transform: [{ scale: s }] }}>
-        <NewTabPage onSubmit={noop} onOpen={noop} onOpenNewTab={noop} paddingTop={insets.top} paddingBottom={0} />
+        <NewTabPage onSubmit={noop} onOpen={noop} onOpenNewTab={noop} paddingTop={insets.top} paddingBottom={0} preview />
       </View>
     </View>
   );

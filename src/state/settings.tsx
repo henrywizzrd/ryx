@@ -16,6 +16,16 @@ export interface ShieldPrefs {
   cookies: boolean;
 }
 
+/** Phần nào hiện trên trang chủ (Tuỳ chỉnh → Trang chủ). Ô tìm kiếm luôn hiện. */
+export interface HomePrefs {
+  logo: boolean;
+  title: boolean;
+  subtitle: boolean;
+  stats: boolean;
+  reading: boolean;
+  quick: boolean;
+}
+
 export interface Settings {
   dockStyle: DockStyle;
   addressBarPosition: AddressBarPosition;
@@ -33,6 +43,7 @@ export interface Settings {
   backgroundPlay: boolean;
   /** Ghi chi tiết trình phát video vào Nhật ký (chỉ bật khi cần dò lỗi) */
   diagVideo: boolean;
+  home: HomePrefs;
 }
 
 export const MAX_DOCK_BUTTONS = 5;
@@ -49,6 +60,7 @@ export const DEFAULT_SETTINGS: Settings = {
   diagVideo: false,
   backgroundPlay: true,
   customHides: {},
+  home: { logo: true, title: true, subtitle: true, stats: true, reading: true, quick: true },
 };
 
 const STORAGE_KEY = 'ryx.settings.v1';
@@ -78,6 +90,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
             ...DEFAULT_SETTINGS,
             ...saved,
             shield: { ...DEFAULT_SETTINGS.shield, ...saved.shield },
+            home: { ...DEFAULT_SETTINGS.home, ...saved.home },
             // Kiểu thẻ đã bỏ (Lưới 3 cột, Xếp chồng) → về Lưới
             tabLayout: TAB_LAYOUT_IDS.includes(saved.tabLayout as TabLayout)
               ? (saved.tabLayout as TabLayout)

@@ -1,10 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DOCK_BUTTONS } from '@/components/dock';
+import { HomeCustomize } from '@/components/home-customize';
 import { TAB_LAYOUTS } from '@/components/tab-overview';
 import { getContentBlockerStatus, refreshContentBlocker, subscribeContentBlocker } from '@/lib/content-blocker';
 import { log } from '@/lib/logger';
@@ -176,6 +177,8 @@ export default function CustomizeScreen() {
     ]);
 
   const full = settings.dockButtons.length >= MAX_DOCK_BUTTONS;
+  // Hai mục: Giao diện (như trước) và Trang chủ (bật/tắt từng phần, có xem trước)
+  const [pane, setPane] = useState<'look' | 'home'>('look');
 
   return (
     <View style={styles.root}>
@@ -191,259 +194,279 @@ export default function CustomizeScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
-        <Section title="Kiểu thanh dock">
-          <View style={styles.row3}>
-            {DOCK_STYLES.map((d) => {
-              const on = settings.dockStyle === d.id;
-              return (
-                <Pressable
-                  key={d.id}
-                  onPress={() => update({ dockStyle: d.id })}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={`${d.label}, ${d.hint}`}
-                  style={[styles.option, on && { borderColor: accent, backgroundColor: accentSoft }]}
-                >
-                  <DockPreview style={d.id} accent={accent} />
-                  <Txt weight="semibold" size={14} style={{ marginTop: 8 }}>
-                    {d.label}
-                  </Txt>
-                  <Txt size={11} color={colors.textMuted} numberOfLines={1}>
-                    {d.hint}
-                  </Txt>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Section>
-
-        <Section title="Kiểu hiển thị thẻ" hint="Cũng đổi được ngay trên màn các thẻ (giữ dock kéo lên).">
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {TAB_LAYOUTS.map((l) => {
-              const on = settings.tabLayout === l.id;
-              return (
-                <Pressable
-                  key={l.id}
-                  onPress={() => update({ tabLayout: l.id })}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: on }}
-                  style={({ pressed }) => [
-                    {
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 6,
-                      height: 36,
-                      paddingHorizontal: 12,
-                      borderRadius: 18,
-                      backgroundColor: on ? accentSoft : colors.surface,
-                    },
-                    pressed && { opacity: 0.7 },
-                  ]}
-                >
-                  <Ionicons name={l.icon} size={15} color={on ? accent : colors.textMuted} />
-                  <Txt weight={on ? 'semibold' : 'medium'} size={13} color={on ? accent : colors.textMuted}>
-                    {l.label}
-                  </Txt>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Section>
-
-        <Section title="Vị trí thanh địa chỉ">
+        <View style={{ marginBottom: 20 }}>
           <Segmented
             options={[
-              { value: 'top', label: 'Trên cùng' },
-              { value: 'bottom', label: 'Dưới cùng' },
+              { value: 'look', label: 'Giao diện' },
+              { value: 'home', label: 'Trang chủ' },
             ]}
-            value={settings.addressBarPosition}
-            onChange={(v) => update({ addressBarPosition: v })}
+            value={pane}
+            onChange={setPane}
           />
-        </Section>
+        </View>
+        {pane === 'home' ? (
+          <HomeCustomize />
+        ) : (
+          <>
+            <Section title="Kiểu thanh dock">
+              <View style={styles.row3}>
+                {DOCK_STYLES.map((d) => {
+                  const on = settings.dockStyle === d.id;
+                  return (
+                    <Pressable
+                      key={d.id}
+                      onPress={() => update({ dockStyle: d.id })}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`${d.label}, ${d.hint}`}
+                      style={[styles.option, on && { borderColor: accent, backgroundColor: accentSoft }]}
+                    >
+                      <DockPreview style={d.id} accent={accent} />
+                      <Txt weight="semibold" size={14} style={{ marginTop: 8 }}>
+                        {d.label}
+                      </Txt>
+                      <Txt size={11} color={colors.textMuted} numberOfLines={1}>
+                        {d.hint}
+                      </Txt>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </Section>
 
-        <Section
-          title="Giao diện"
-          hint="Đổi giao diện hoặc chế độ sáng/tối thì Ryx tự mở lại (các thẻ đang mở sẽ đóng)."
-        >
-          <Segmented
-            options={THEMES.map((t) => ({ value: t.id, label: t.label }))}
-            value={THEME_ID}
-            onChange={(id) => applyAppearance(id, THEME_MODE)}
-          />
-          <View style={{ height: 10 }} />
-          <Segmented
-            options={MODES.map((m) => ({ value: m.id, label: m.label }))}
-            value={THEME_MODE}
-            onChange={(m) => applyAppearance(THEME_ID, m)}
-          />
-        </Section>
+            <Section title="Kiểu hiển thị thẻ" hint="Cũng đổi được ngay trên màn các thẻ (giữ dock kéo lên).">
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {TAB_LAYOUTS.map((l) => {
+                  const on = settings.tabLayout === l.id;
+                  return (
+                    <Pressable
+                      key={l.id}
+                      onPress={() => update({ tabLayout: l.id })}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      style={({ pressed }) => [
+                        {
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                          height: 36,
+                          paddingHorizontal: 12,
+                          borderRadius: 18,
+                          backgroundColor: on ? accentSoft : colors.surface,
+                        },
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <Ionicons name={l.icon} size={15} color={on ? accent : colors.textMuted} />
+                      <Txt weight={on ? 'semibold' : 'medium'} size={13} color={on ? accent : colors.textMuted}>
+                        {l.label}
+                      </Txt>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </Section>
 
-        <Section title="Màu nhấn">
-          <View style={styles.swatches} accessibilityRole="radiogroup">
-            {ACCENT_PRESETS.map((c) => {
-              const on = c.toLowerCase() === settings.accent.toLowerCase();
-              return (
+            <Section title="Vị trí thanh địa chỉ">
+              <Segmented
+                options={[
+                  { value: 'top', label: 'Trên cùng' },
+                  { value: 'bottom', label: 'Dưới cùng' },
+                ]}
+                value={settings.addressBarPosition}
+                onChange={(v) => update({ addressBarPosition: v })}
+              />
+            </Section>
+
+            <Section
+              title="Giao diện"
+              hint="Đổi giao diện hoặc chế độ sáng/tối thì Ryx tự mở lại (các thẻ đang mở sẽ đóng)."
+            >
+              <Segmented
+                options={THEMES.map((t) => ({ value: t.id, label: t.label }))}
+                value={THEME_ID}
+                onChange={(id) => applyAppearance(id, THEME_MODE)}
+              />
+              <View style={{ height: 10 }} />
+              <Segmented
+                options={MODES.map((m) => ({ value: m.id, label: m.label }))}
+                value={THEME_MODE}
+                onChange={(m) => applyAppearance(THEME_ID, m)}
+              />
+            </Section>
+
+            <Section title="Màu nhấn">
+              <View style={styles.swatches} accessibilityRole="radiogroup">
+                {ACCENT_PRESETS.map((c) => {
+                  const on = c.toLowerCase() === settings.accent.toLowerCase();
+                  return (
+                    <Pressable
+                      key={c}
+                      onPress={() => update({ accent: c })}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`Màu ${c}`}
+                      style={[styles.swatchRing, on && { borderColor: c }]}
+                    >
+                      <View style={[styles.swatch, { backgroundColor: c }]}>
+                        {on && <Ionicons name="checkmark" size={20} color="#05140E" />}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </Section>
+
+            <Section title="Độ trong suốt của kính">
+              <Segmented
+                options={GLASS_LABELS.map((label, i) => ({ value: i as Settings['glass'], label }))}
+                value={settings.glass}
+                onChange={(v) => update({ glass: v })}
+              />
+            </Section>
+
+            <Section
+              title={`Nút trên thanh dock (${settings.dockButtons.length}/${MAX_DOCK_BUTTONS})`}
+              hint="Nút “+” (thẻ mới) luôn nằm riêng bên phải. Quay lại và Tiến tới được nhóm cạnh nhau."
+            >
+              <View style={styles.card}>
+                {ALL_BUTTONS.map((id, i) => {
+                  const on = settings.dockButtons.includes(id);
+                  const disabled = !on && full;
+                  const def = DOCK_BUTTONS[id];
+                  return (
+                    <Pressable
+                      key={id}
+                      onPress={() => toggleButton(id)}
+                      disabled={disabled}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on, disabled }}
+                      style={({ pressed }) => [
+                        styles.btnRow,
+                        i < ALL_BUTTONS.length - 1 && styles.divider,
+                        pressed && { opacity: 0.6 },
+                        disabled && { opacity: 0.4 },
+                      ]}
+                    >
+                      <View style={styles.btnIcon}>
+                        <Ionicons name={def.icon} size={19} color={colors.text} />
+                      </View>
+                      <Txt weight="medium" size={15} style={{ flex: 1 }}>
+                        {def.label}
+                      </Txt>
+                      <Ionicons
+                        name={on ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={24}
+                        color={on ? accent : colors.textFaint}
+                      />
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </Section>
+
+            <Section title="Bảo vệ mặc định" hint="Có thể thay đổi riêng cho từng trang trong bảng Shield.">
+              <View style={[styles.card, { paddingHorizontal: 14 }]}>
+                <ToggleRow
+                  icon="dice-outline"
+                  iconColor={colors.gambling}
+                  title="Chặn quảng cáo cờ bạc"
+                  value={settings.shield.gambling}
+                  onChange={(v) => setShield('gambling', v)}
+                />
+                <ToggleRow
+                  icon="megaphone-outline"
+                  title="Chặn quảng cáo thường"
+                  value={settings.shield.ads}
+                  onChange={(v) => setShield('ads', v)}
+                />
+                <ToggleRow
+                  icon="albums-outline"
+                  iconColor={colors.popups}
+                  title="Chặn pop-up & chuyển hướng"
+                  value={settings.shield.popups}
+                  onChange={(v) => setShield('popups', v)}
+                />
+                <ToggleRow
+                  icon="hand-left-outline"
+                  title="Tự từ chối bảng hỏi cookie"
+                  subtitle="Áp dụng từ trang tải sau"
+                  value={settings.shield.cookies}
+                  onChange={(v) => setShield('cookies', v)}
+                />
+                <ToggleRow
+                  icon={pageModeIcon}
+                  iconColor="#93C5FD"
+                  title={`${pageModeLabel} cho mọi trang`}
+                  value={settings.shield.dark}
+                  onChange={(v) => setShield('dark', v)}
+                  last
+                />
+              </View>
+              {Object.keys(settings.siteOverrides).length > 0 && (
                 <Pressable
-                  key={c}
-                  onPress={() => update({ accent: c })}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={`Màu ${c}`}
-                  style={[styles.swatchRing, on && { borderColor: c }]}
+                  onPress={() => update({ siteOverrides: {} })}
+                  accessibilityRole="button"
+                  style={styles.linkBtn}
                 >
-                  <View style={[styles.swatch, { backgroundColor: c }]}>
-                    {on && <Ionicons name="checkmark" size={20} color="#05140E" />}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Section>
-
-        <Section title="Độ trong suốt của kính">
-          <Segmented
-            options={GLASS_LABELS.map((label, i) => ({ value: i as Settings['glass'], label }))}
-            value={settings.glass}
-            onChange={(v) => update({ glass: v })}
-          />
-        </Section>
-
-        <Section
-          title={`Nút trên thanh dock (${settings.dockButtons.length}/${MAX_DOCK_BUTTONS})`}
-          hint="Nút “+” (thẻ mới) luôn nằm riêng bên phải. Quay lại và Tiến tới được nhóm cạnh nhau."
-        >
-          <View style={styles.card}>
-            {ALL_BUTTONS.map((id, i) => {
-              const on = settings.dockButtons.includes(id);
-              const disabled = !on && full;
-              const def = DOCK_BUTTONS[id];
-              return (
-                <Pressable
-                  key={id}
-                  onPress={() => toggleButton(id)}
-                  disabled={disabled}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: on, disabled }}
-                  style={({ pressed }) => [
-                    styles.btnRow,
-                    i < ALL_BUTTONS.length - 1 && styles.divider,
-                    pressed && { opacity: 0.6 },
-                    disabled && { opacity: 0.4 },
-                  ]}
-                >
-                  <View style={styles.btnIcon}>
-                    <Ionicons name={def.icon} size={19} color={colors.text} />
-                  </View>
-                  <Txt weight="medium" size={15} style={{ flex: 1 }}>
-                    {def.label}
+                  <Txt weight="medium" size={14} color={accent}>
+                    Xoá tuỳ chọn riêng của {Object.keys(settings.siteOverrides).length} trang
                   </Txt>
-                  <Ionicons
-                    name={on ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={24}
-                    color={on ? accent : colors.textFaint}
-                  />
                 </Pressable>
-              );
-            })}
-          </View>
-        </Section>
+              )}
+            </Section>
 
-        <Section title="Bảo vệ mặc định" hint="Có thể thay đổi riêng cho từng trang trong bảng Shield.">
-          <View style={[styles.card, { paddingHorizontal: 14 }]}>
-            <ToggleRow
-              icon="dice-outline"
-              iconColor={colors.gambling}
-              title="Chặn quảng cáo cờ bạc"
-              value={settings.shield.gambling}
-              onChange={(v) => setShield('gambling', v)}
-            />
-            <ToggleRow
-              icon="megaphone-outline"
-              title="Chặn quảng cáo thường"
-              value={settings.shield.ads}
-              onChange={(v) => setShield('ads', v)}
-            />
-            <ToggleRow
-              icon="albums-outline"
-              iconColor={colors.popups}
-              title="Chặn pop-up & chuyển hướng"
-              value={settings.shield.popups}
-              onChange={(v) => setShield('popups', v)}
-            />
-            <ToggleRow
-              icon="hand-left-outline"
-              title="Tự từ chối bảng hỏi cookie"
-              subtitle="Áp dụng từ trang tải sau"
-              value={settings.shield.cookies}
-              onChange={(v) => setShield('cookies', v)}
-            />
-            <ToggleRow
-              icon={pageModeIcon}
-              iconColor="#93C5FD"
-              title={`${pageModeLabel} cho mọi trang`}
-              value={settings.shield.dark}
-              onChange={(v) => setShield('dark', v)}
-              last
-            />
-          </View>
-          {Object.keys(settings.siteOverrides).length > 0 && (
-            <Pressable onPress={() => update({ siteOverrides: {} })} accessibilityRole="button" style={styles.linkBtn}>
-              <Txt weight="medium" size={14} color={accent}>
-                Xoá tuỳ chọn riêng của {Object.keys(settings.siteOverrides).length} trang
+            <FilterStatus />
+
+            <Section title="Mạng" hint="Dùng khi nhà mạng chặn trang web.">
+              <Pressable
+                onPress={() => router.push('/dns')}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.card, styles.linkRow, pressed && { opacity: 0.7 }]}
+              >
+                <Ionicons name="lock-closed-outline" size={20} color={colors.text} />
+                <Txt weight="medium" size={15} style={{ flex: 1 }}>
+                  DNS bảo mật
+                </Txt>
+                <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+              </Pressable>
+            </Section>
+
+            <Section
+              title="Nâng cao"
+              hint="Chẩn đoán video: chỉ bật khi cần gửi Nhật ký để dò lỗi. Bật/tắt xong tải lại trang."
+            >
+              <View style={[styles.card, { paddingHorizontal: 14 }]}>
+                <ToggleRow
+                  icon="musical-notes-outline"
+                  title="Phát nền"
+                  subtitle="Âm thanh tiếp tục khi tắt màn hình. Video: bấm nút PiP trên video để xem trong khung nổi"
+                  value={settings.backgroundPlay}
+                  onChange={(v) => update({ backgroundPlay: v })}
+                />
+                <ToggleRow
+                  icon="pulse-outline"
+                  title="Chẩn đoán video"
+                  subtitle="Ghi trạng thái trình phát vào Nhật ký"
+                  value={settings.diagVideo}
+                  onChange={(v) => update({ diagVideo: v })}
+                  last
+                />
+              </View>
+            </Section>
+
+            <Pressable
+              onPress={confirmReset}
+              disabled={JSON.stringify(settings) === JSON.stringify(DEFAULT_SETTINGS)}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.resetBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Txt weight="semibold" size={15} color={colors.danger}>
+                Khôi phục mặc định
               </Txt>
             </Pressable>
-          )}
-        </Section>
-
-        <FilterStatus />
-
-        <Section title="Mạng" hint="Dùng khi nhà mạng chặn trang web.">
-          <Pressable
-            onPress={() => router.push('/dns')}
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.card, styles.linkRow, pressed && { opacity: 0.7 }]}
-          >
-            <Ionicons name="lock-closed-outline" size={20} color={colors.text} />
-            <Txt weight="medium" size={15} style={{ flex: 1 }}>
-              DNS bảo mật
-            </Txt>
-            <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
-          </Pressable>
-        </Section>
-
-        <Section
-          title="Nâng cao"
-          hint="Chẩn đoán video: chỉ bật khi cần gửi Nhật ký để dò lỗi. Bật/tắt xong tải lại trang."
-        >
-          <View style={[styles.card, { paddingHorizontal: 14 }]}>
-            <ToggleRow
-              icon="musical-notes-outline"
-              title="Phát nền"
-              subtitle="Âm thanh tiếp tục khi tắt màn hình. Video: bấm nút PiP trên video để xem trong khung nổi"
-              value={settings.backgroundPlay}
-              onChange={(v) => update({ backgroundPlay: v })}
-            />
-            <ToggleRow
-              icon="pulse-outline"
-              title="Chẩn đoán video"
-              subtitle="Ghi trạng thái trình phát vào Nhật ký"
-              value={settings.diagVideo}
-              onChange={(v) => update({ diagVideo: v })}
-              last
-            />
-          </View>
-        </Section>
-
-        <Pressable
-          onPress={confirmReset}
-          disabled={JSON.stringify(settings) === JSON.stringify(DEFAULT_SETTINGS)}
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.resetBtn, pressed && { opacity: 0.7 }]}
-        >
-          <Txt weight="semibold" size={15} color={colors.danger}>
-            Khôi phục mặc định
-          </Txt>
-        </Pressable>
+          </>
+        )}
       </ScrollView>
     </View>
   );

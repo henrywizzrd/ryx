@@ -1,10 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { colors, fg, pageModeIcon, pageModeLabel } from '@/theme';
 import type { IconName } from './icon-button';
 import { Sheet } from './sheet';
 import { ToggleRow } from './toggle-row';
+import { PressScale } from './press-scale';
 import { Txt } from './txt';
 
 export type MenuAction =
@@ -57,7 +58,7 @@ export function MenuSheet({ visible, onClose, hasPage, dark, bookmarked, onToggl
         {ACTIONS.map((a) => {
           const disabled = a.needsPage && !hasPage;
           return (
-            <Pressable
+            <PressScale
               key={a.id}
               disabled={disabled}
               onPress={() => {
@@ -66,7 +67,8 @@ export function MenuSheet({ visible, onClose, hasPage, dark, bookmarked, onToggl
               }}
               accessibilityRole="button"
               accessibilityState={{ disabled }}
-              style={({ pressed }) => [styles.cell, pressed && styles.pressed, disabled && { opacity: 0.35 }]}
+              scaleTo={0.94}
+              style={[styles.cell, disabled && { opacity: 0.35 }]}
             >
               <Ionicons
                 name={a.id === 'bookmark' && bookmarked ? 'star' : a.icon}
@@ -76,7 +78,7 @@ export function MenuSheet({ visible, onClose, hasPage, dark, bookmarked, onToggl
               <Txt size={12} numberOfLines={1} style={{ marginTop: 6 }}>
                 {a.id === 'bookmark' && bookmarked ? 'Bỏ dấu trang' : a.label}
               </Txt>
-            </Pressable>
+            </PressScale>
           );
         })}
       </View>
