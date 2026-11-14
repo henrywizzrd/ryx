@@ -10,7 +10,7 @@ import { Txt } from '@/components/txt';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { displayHost } from '@/lib/url';
 import { KEEP_DAYS, useDownloads, type DownloadItem } from '@/state/downloads';
-import { colors, useTheme, fg } from '@/theme';
+import { useTheme, useStyles, type Palette } from '@/theme';
 
 const VIDEO = /\.(mp4|m4v|mov)$/i;
 const IMAGE = /\.(jpe?g|png|gif|webp|heic)$/i;
@@ -30,10 +30,12 @@ function mb(n: number) {
 }
 
 export default function DownloadsScreen() {
+  const styles = useStyles(makeStyles);
+
   // Mốc thời gian để tính "tự xoá sau N ngày" (lấy 1 lần khi mở màn này)
   const [now] = useState(() => Date.now());
   const insets = useSafeAreaInsets();
-  const { accent } = useTheme();
+  const { accent, colors } = useTheme();
   const { items, cancel, remove, retry, clearFinished } = useDownloads();
 
   const share = (d: DownloadItem) =>
@@ -163,36 +165,37 @@ export default function DownloadsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  headerBtn: { minHeight: 44, justifyContent: 'center' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  icon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: fg(0.06),
-  },
-  track: { height: 4, borderRadius: 2, backgroundColor: fg(0.1), overflow: 'hidden' },
-  bar: { height: 4, borderRadius: 2 },
-  clear: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 16 },
-});
+const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: colors.bg },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingTop: 20,
+    },
+    headerBtn: { minHeight: 44, justifyContent: 'center' },
+    empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      padding: 12,
+      borderRadius: 18,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    icon: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: fg(0.06),
+    },
+    track: { height: 4, borderRadius: 2, backgroundColor: fg(0.1), overflow: 'hidden' },
+    bar: { height: 4, borderRadius: 2 },
+    clear: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 16 },
+  });

@@ -32,7 +32,7 @@ import { faviconFor } from '@/lib/url';
 import { NewTabPage } from './new-tab-page';
 import type { TabLayout } from '@/state/settings';
 import type { Tab } from '@/state/tabs';
-import { colors, useTheme, fg } from '@/theme';
+import { useTheme, useStyles, type Palette } from '@/theme';
 import { IconButton, type IconName } from './icon-button';
 import { SwipeToClose } from './swipe-to-close';
 import { showTabMenu, tabInfo } from './tab-card';
@@ -131,9 +131,11 @@ interface Ctx {
 }
 
 function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noTitle, previewStyle, ctx }: CardProps) {
-  const { accent } = useTheme();
+  const styles = useStyles(makeStyles);
+
+  const { accent, colors, fg } = useTheme();
   const ref = useRef<HostInstance>(null);
-  const { showPage, title, host, tint } = tabInfo(tab);
+  const { showPage, title, host, tint } = tabInfo(tab, colors);
   const { token, onActiveMeasurer, onActiveFrame } = ctx;
   useEffect(() => {
     if (!active) return;
@@ -238,13 +240,22 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
 
 /** Trang chủ Ryx thu nhỏ đúng tỉ lệ để làm ảnh xem trước của thẻ đang ở trang chủ */
 function HomeMini({ width }: { width: number }) {
+  const { colors } = useTheme();
+
   const { width: W, height: H } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const s = width / W;
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg }]}>
       <View style={{ width: W, height: H, transformOrigin: 'left top', transform: [{ scale: s }] }}>
-        <NewTabPage onSubmit={noop} onOpen={noop} onOpenNewTab={noop} paddingTop={insets.top} paddingBottom={0} preview />
+        <NewTabPage
+          onSubmit={noop}
+          onOpen={noop}
+          onOpenNewTab={noop}
+          paddingTop={insets.top}
+          paddingBottom={0}
+          preview
+        />
       </View>
     </View>
   );
@@ -297,6 +308,8 @@ interface LayoutProps {
 }
 
 function Grid({ tabs, activeId, hideId, ctx, W, H, token, cols }: LayoutProps & { cols: number }) {
+  const styles = useStyles(makeStyles);
+
   const pad = 16;
   const gap = cols === 2 ? 14 : 10;
   const w = Math.floor((W - pad * 2 - gap * (cols - 1)) / cols);
@@ -328,7 +341,9 @@ function Grid({ tabs, activeId, hideId, ctx, W, H, token, cols }: LayoutProps & 
 }
 
 function List({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
-  const { accentSoft } = useTheme();
+  const styles = useStyles(makeStyles);
+
+  const { accentSoft, colors } = useTheme();
   const ai = Math.max(
     0,
     tabs.findIndex((t) => t.id === activeId),
@@ -341,7 +356,7 @@ function List({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
       contentContainerStyle={{ padding: 16, gap: 10 }}
     >
       {tabs.map((t) => {
-        const { title, host } = tabInfo(t);
+        const { title, host } = tabInfo(t, colors);
         const active = t.id === activeId;
         return (
           <Item key={t.id} tab={t} dir="horizontal" ctx={ctx}>
@@ -383,6 +398,8 @@ function List({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
 
 /** Xếp tầng: thẻ to chồng thẳng lên nhau, thẻ sau thu nhỏ dần (không nghiêng) */
 function Cascade({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
+  const styles = useStyles(makeStyles);
+
   const h = Math.round(H * 0.46);
   const step = 128;
   const ai = Math.max(
@@ -606,10 +623,12 @@ function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
 // ---------- Màn các thẻ ----------
 
 function TabOverviewImpl(props: Props) {
+  const styles = useStyles(makeStyles);
+
   const { phase, zoom, dockShift, tabs, activeId, hideId, layout, bottomPad } = props;
   const insets = useSafeAreaInsets();
   const { width: W, height: H } = useWindowDimensions();
-  const { accent, accentSoft, onAccent } = useTheme();
+  const { accent, accentSoft, onAccent, colors } = useTheme();
   const plusRef = useRef<HostInstance>(null);
 
   const ctx: Ctx = {
@@ -731,45 +750,54 @@ function TabOverviewImpl(props: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { backgroundColor: colors.bgDeep },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    height: 52,
-  },
-  headBtn: { minHeight: 44, justifyContent: 'center', minWidth: 90 },
-  plus: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  count: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  chips: { flexGrow: 0, marginBottom: 6 },
-  chipsRow: { paddingHorizontal: 12, gap: 6, height: 40, alignItems: 'center' },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 17 },
-  wrap: { flexDirection: 'row', flexWrap: 'wrap' },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, height: TITLE_H, paddingLeft: 4 },
-  fav: { width: 14, height: 14, borderRadius: 3 },
-  bigFav: { width: 40, height: 40, borderRadius: 10, marginBottom: 8 },
-  preview: {
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  listRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 8,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-  },
-  cascadeShadow: {
-    shadowColor: '#000',
-    shadowOpacity: 0.5,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: -6 },
-  },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    root: { backgroundColor: colors.bgDeep },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      height: 52,
+    },
+    headBtn: { minHeight: 44, justifyContent: 'center', minWidth: 90 },
+    plus: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+    count: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    chips: { flexGrow: 0, marginBottom: 6 },
+    chipsRow: { paddingHorizontal: 12, gap: 6, height: 40, alignItems: 'center' },
+    chip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 17 },
+    wrap: { flexDirection: 'row', flexWrap: 'wrap' },
+    titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, height: TITLE_H, paddingLeft: 4 },
+    fav: { width: 14, height: 14, borderRadius: 3 },
+    bigFav: { width: 40, height: 40, borderRadius: 10, marginBottom: 8 },
+    preview: {
+      overflow: 'hidden',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    listRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      padding: 8,
+      borderRadius: 18,
+      backgroundColor: colors.surface,
+    },
+    cascadeShadow: {
+      shadowColor: '#000',
+      shadowOpacity: 0.5,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: -6 },
+    },
+  });
 
 /** Khoá nội dung của thẻ ảnh hưởng tới màn các thẻ (bỏ qua tiến trình tải… để không vẽ lại liên tục) */
 const tabsKey = (tabs: Tab[]) =>

@@ -26,7 +26,7 @@ import { ReadingProvider } from '@/state/reading';
 import { SettingsProvider, useSettings } from '@/state/settings';
 import { StatsProvider } from '@/state/stats';
 import { TabsProvider } from '@/state/tabs';
-import { colors } from '@/theme';
+import { useTheme } from '@/theme';
 
 // Bật nhật ký + theo dõi hiệu năng sớm nhất có thể để bắt được cả lỗi lúc khởi động
 initLogging();
@@ -36,21 +36,23 @@ initRyxNet();
 
 SplashScreen.preventAutoHideAsync();
 
-const baseNav = colors.scheme === 'light' ? DefaultTheme : DarkTheme;
-const navTheme = {
-  ...baseNav,
-  colors: {
-    ...baseNav.colors,
-    background: colors.bg,
-    card: colors.surface,
-    text: colors.text,
-    border: colors.border,
-  },
-};
-
 function RootStack() {
+  const { colors } = useTheme();
+
   const { settings } = useSettings();
-  const theme = { ...navTheme, colors: { ...navTheme.colors, primary: settings.accent } };
+  // Màu điều hướng theo giao diện hiện tại (đổi giao diện là đổi theo ngay)
+  const baseNav = colors.scheme === 'light' ? DefaultTheme : DarkTheme;
+  const theme = {
+    ...baseNav,
+    colors: {
+      ...baseNav.colors,
+      background: colors.bg,
+      card: colors.surface,
+      text: colors.text,
+      border: colors.border,
+      primary: settings.accent,
+    },
+  };
   return (
     <ThemeProvider value={theme}>
       <StatusBar style={colors.scheme === 'light' ? 'dark' : 'light'} />
@@ -77,6 +79,8 @@ function RootStack() {
 
 /** Màn hình thay thế khi giao diện bị lỗi lúc render: ghi log và cho thử lại thay vì app trắng màn hình. */
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  const { colors } = useTheme();
+
   useEffect(() => {
     log.crash('react', `Giao diện bị lỗi: ${error.message}`, error.stack);
     SplashScreen.hideAsync().catch(() => {});

@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { interpolate, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { colors, fg } from '@/theme';
+import { useStyles, useTheme, type Palette } from '@/theme';
 
 interface Props {
   /** Vùng trên/dưới mà dải vuốt được phép chiếm (tránh thanh địa chỉ, dock) */
@@ -23,6 +23,9 @@ const TRIGGER = 80;
  * Ryx tự làm thay cho cử chỉ có sẵn của WKWebView vì cử chỉ đó không chạy được bên trong app.
  */
 export function EdgeSwipeBack({ top, bottom, onBack }: Props) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+
   const dx = useSharedValue(0);
 
   const pan = Gesture.Pan()
@@ -65,17 +68,18 @@ export function EdgeSwipeBack({ top, bottom, onBack }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  strip: { position: 'absolute', left: 0, width: EDGE },
-  arrowWrap: { position: 'absolute', left: 0, width: 80, justifyContent: 'center' },
-  arrow: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(40,40,46,0.92)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: fg(0.18),
-  },
-});
+const makeStyles = (_colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    strip: { position: 'absolute', left: 0, width: EDGE },
+    arrowWrap: { position: 'absolute', left: 0, width: 80, justifyContent: 'center' },
+    arrow: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(40,40,46,0.92)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: fg(0.18),
+    },
+  });

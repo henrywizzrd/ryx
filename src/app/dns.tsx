@@ -8,7 +8,7 @@ import { Txt } from '@/components/txt';
 import { log } from '@/lib/logger';
 import { getRyxNetStatus, hasRyxNet, setRyxNetEnabled, type RyxNetStatus } from '@/lib/ryx-net';
 import { useTabs } from '@/state/tabs';
-import { colors, useTheme } from '@/theme';
+import { useTheme, useStyles, type Palette } from '@/theme';
 
 /**
  * DNS bảo mật bằng hồ sơ cấu hình iOS (.mobileconfig, DNS over HTTPS).
@@ -42,8 +42,10 @@ const STEPS = [
 ];
 
 export default function DnsScreen() {
+  const styles = useStyles(makeStyles);
+
   const insets = useSafeAreaInsets();
-  const { accent, accentSoft, onAccent } = useTheme();
+  const { accent, accentSoft, onAccent, colors } = useTheme();
   const { newTab } = useTabs();
   const [net, setNet] = useState<RyxNetStatus>(getRyxNetStatus);
   // Chưa bật lần nào → gợi ý Google (Cloudflare hay bị chặn ở VN)
@@ -227,52 +229,53 @@ export default function DnsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  headerBtn: { minHeight: 44, justifyContent: 'center' },
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    minHeight: 64,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  inApp: {
-    gap: 10,
-    padding: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  step: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-  stepNum: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  primary: {
-    minHeight: 52,
-    borderRadius: 26,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  secondary: {
-    minHeight: 50,
-    borderRadius: 25,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: colors.surfaceRaised,
-  },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: colors.bg },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingTop: 20,
+    },
+    headerBtn: { minHeight: 44, justifyContent: 'center' },
+    option: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      padding: 14,
+      minHeight: 64,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    inApp: {
+      gap: 10,
+      padding: 16,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    step: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+    stepNum: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+    primary: {
+      minHeight: 52,
+      borderRadius: 26,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    secondary: {
+      minHeight: 50,
+      borderRadius: 25,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: colors.surfaceRaised,
+    },
+  });

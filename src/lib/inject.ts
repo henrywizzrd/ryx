@@ -9,7 +9,7 @@ import {
 } from '@/filters';
 import type { ShieldPrefs } from '@/state/settings';
 import type { SiteThemes } from '@/state/site-themes';
-import { colors } from '@/theme';
+import { getTheme } from '@/theme';
 
 export interface InjectConfig {
   defaults: ShieldPrefs;
@@ -32,7 +32,7 @@ export function buildInjectedScript(cfg: InjectConfig, themes: SiteThemes = {}):
     cfg,
     themes,
     // Giao diện app (sáng/tối): nút "chế độ tối/sáng cho trang" đưa trang về cùng kiểu với app
-    scheme: colors.scheme,
+    scheme: getTheme().scheme,
     sel: { ads: AD_SELECTORS, gambling: GAMBLING_SELECTORS, popups: POPUP_SELECTORS },
     site: SITE_AD_SELECTORS,
     hosts: { ads: AD_DOMAINS, gambling: GAMBLING_DOMAINS, gkw: GAMBLING_HOST_KEYWORDS },

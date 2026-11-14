@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useTheme } from '@/theme';
+import { useTheme, useStyles } from '@/theme';
 import { Glass } from './glass';
 import type { IconName } from './icon-button';
 import { IconButton } from './icon-button';
@@ -27,6 +27,8 @@ interface Props {
 
 /** Thông báo nổi phía trên thanh dock, có thể kèm một nút hành động. */
 export function NoticeBanner({ notice, bottom, onClose }: Props) {
+  const styles = useStyles(makeStyles);
+
   const { accent, onAccent } = useTheme();
 
   useEffect(() => {
@@ -70,8 +72,9 @@ export function NoticeBanner({ notice, bottom, onClose }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { position: 'absolute', left: 16, right: 16 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 4, minHeight: 56 },
-  btn: { minHeight: 36, paddingHorizontal: 12, borderRadius: 18, justifyContent: 'center' },
-});
+const makeStyles = () =>
+  StyleSheet.create({
+    wrap: { position: 'absolute', left: 16, right: 16 },
+    row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 4, minHeight: 56 },
+    btn: { minHeight: 36, paddingHorizontal: 12, borderRadius: 18, justifyContent: 'center' },
+  });

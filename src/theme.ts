@@ -1,4 +1,5 @@
 import { File, Paths } from 'expo-file-system';
+import { useSyncExternalStore } from 'react';
 import { Appearance } from 'react-native';
 
 import { useSettings } from '@/state/settings';
@@ -6,7 +7,7 @@ import { useSettings } from '@/state/settings';
 export type ThemeId = 'default' | 'matcha';
 export type ThemeMode = 'dark' | 'light' | 'system';
 
-type Palette = {
+export type Palette = {
   scheme: 'dark' | 'light';
   bg: string;
   bgDeep: string;
@@ -117,7 +118,8 @@ export const MODES: { id: ThemeMode; label: string }[] = [
   { id: 'system', label: 'Theo máy' },
 ];
 
-// Giao diện được đọc ĐỒNG BỘ lúc mở app (trước khi các StyleSheet được tạo), nên đổi giao diện cần mở lại app.
+// Giao diện đọc ĐỒNG BỘ lúc mở app (để khung hình đầu đã đúng màu), sau đó đổi được ngay không cần mở lại app:
+// setAppearance() tạo bảng màu mới, mọi màn đọc màu qua useTheme()/useStyles() nên tự vẽ lại.
 const themeFile = () => new File(Paths.document, 'ryx-theme.txt');
 function loadAppearance(): { theme: ThemeId; mode: ThemeMode } {
   const out: { theme: ThemeId; mode: ThemeMode } = { theme: 'default', mode: 'dark' };
@@ -131,31 +133,81 @@ function loadAppearance(): { theme: ThemeId; mode: ThemeMode } {
   } catch {}
   return out;
 }
-const loaded = loadAppearance();
-export const THEME_ID: ThemeId = loaded.theme;
-export const THEME_MODE: ThemeMode = loaded.mode;
-/** Sáng hay tối thực tế (chế độ "Theo máy" lấy theo máy lúc mở app) */
-export const SCHEME: 'dark' | 'light' =
-  THEME_MODE === 'system' ? (Appearance.getColorScheme() === 'light' ? 'light' : 'dark') : THEME_MODE;
-// Ép giao diện hệ thống của app theo chế độ đang dùng: thanh trạng thái (giờ, pin) đổi sang chữ tối ở chế độ sáng,
-// bảng chọn/thông báo của iOS cũng sáng/tối theo. ("Theo máy" thì để iOS tự quyết.)
-try {
-  Appearance.setColorScheme(THEME_MODE === 'system' ? 'auto' : SCHEME);
-} catch {}
-export function saveAppearance(theme: ThemeId, mode: ThemeMode) {
+function saveAppearance(theme: ThemeId, mode: ThemeMode) {
   const f = themeFile();
   if (!f.exists) f.create();
   f.writeSync(`${theme}:${mode}`);
 }
-/** Màu nhấn gợi ý cho giao diện + chế độ */
-export function themeAccent(theme: ThemeId, mode: ThemeMode): string {
-  const scheme = mode === 'system' ? (Appearance.getColorScheme() === 'light' ? 'light' : 'dark') : mode;
-  return THEMES.find((t) => t.id === theme)!.accent[scheme];
+const schemeOf = (mode: ThemeMode): 'dark' | 'light' =>
+  mode === 'system' ? (Appearance.getColorScheme() === 'light' ? 'light' : 'dark') : mode;
+
+export interface ThemeState {
+  theme: ThemeId;
+  mode: ThemeMode;
+  /** Sáng hay tối thực tế ("Theo máy" lấy theo máy lúc chọn) */
+  scheme: 'dark' | 'light';
+  colors: Palette;
+  /** Lớp mờ theo màu chữ của giao diện (thay cho rgba trắng cố định) */
+  fg: (alpha: number) => string;
+  /** Nhãn nút đưa trang về cùng kiểu với app (lib/inject: DARK_CSS/LIGHT_CSS) */
+  pageModeLabel: string;
+  pageModeIcon: 'sunny-outline' | 'moon-outline';
+}
+function build(theme: ThemeId, mode: ThemeMode): ThemeState {
+  const scheme = schemeOf(mode);
+  const colors: Palette = { ...PALETTES[theme][scheme] };
+  return {
+    theme,
+    mode,
+    scheme,
+    colors,
+    fg: (alpha: number) => `rgba(${colors.fgRgb},${alpha})`,
+    pageModeLabel: scheme === 'light' ? 'Chế độ sáng' : 'Chế độ tối',
+    pageModeIcon: scheme === 'light' ? 'sunny-outline' : 'moon-outline',
+  };
+}
+// Ép giao diện hệ thống của app theo chế độ đang dùng: thanh trạng thái (giờ, pin) đổi sang chữ tối ở chế độ sáng,
+// bảng chọn/thông báo của iOS cũng sáng/tối theo. ("Theo máy" thì để iOS tự quyết.)
+function applySystem(t: ThemeState) {
+  try {
+    Appearance.setColorScheme(t.mode === 'system' ? 'auto' : t.scheme);
+  } catch {}
 }
 
-export const colors: Palette = { ...PALETTES[THEME_ID][SCHEME] };
-/** Lớp mờ theo màu chữ của giao diện (thay cho rgba trắng cố định) */
-export const fg = (alpha: number) => `rgba(${colors.fgRgb},${alpha})`;
+const initial = loadAppearance();
+let current = build(initial.theme, initial.mode);
+applySystem(current);
+const listeners = new Set<() => void>();
+
+/** Giao diện hiện tại (dùng ngoài React; trong component dùng useTheme) */
+export function getTheme(): ThemeState {
+  return current;
+}
+export function subscribeTheme(l: () => void): () => void {
+  listeners.add(l);
+  return () => listeners.delete(l);
+}
+/** Gọi ngay trước khi đổi màu (chụp màn hình làm hiệu ứng chuyển, xem components/theme-fade) */
+let beforeChange: (() => Promise<void>) | null = null;
+export function setBeforeThemeChange(fn: (() => Promise<void>) | null) {
+  beforeChange = fn;
+}
+/** Đổi giao diện ngay, không mở lại app */
+export async function setAppearance(theme: ThemeId, mode: ThemeMode): Promise<void> {
+  if (theme === current.theme && mode === current.mode) return;
+  saveAppearance(theme, mode);
+  try {
+    await beforeChange?.();
+  } catch {}
+  current = build(theme, mode);
+  applySystem(current);
+  listeners.forEach((l) => l());
+}
+
+/** Màu nhấn gợi ý cho giao diện + chế độ */
+export function themeAccent(theme: ThemeId, mode: ThemeMode): string {
+  return THEMES.find((t) => t.id === theme)!.accent[schemeOf(mode)];
+}
 
 /** Be Vietnam Pro: hỗ trợ đầy đủ dấu tiếng Việt. */
 export const fonts = {
@@ -193,11 +245,16 @@ export function withAlpha(hex: string, alpha: number): string {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
+export function useThemeState(): ThemeState {
+  return useSyncExternalStore(subscribeTheme, getTheme);
+}
+
 export function useTheme() {
+  const t = useThemeState();
   const { settings } = useSettings();
   const glass = GLASS_LEVELS[settings.glass];
   return {
-    colors,
+    ...t,
     fonts,
     accent: settings.accent,
     onAccent: onAccent(settings.accent),
@@ -206,6 +263,15 @@ export function useTheme() {
   };
 }
 
-/** Nhãn nút đưa trang về cùng kiểu với app: app tối → "Chế độ tối", app sáng → "Chế độ sáng" (lib/inject: DARK_CSS/LIGHT_CSS) */
-export const pageModeLabel = colors.scheme === 'light' ? 'Chế độ sáng' : 'Chế độ tối';
-export const pageModeIcon = colors.scheme === 'light' ? 'sunny-outline' : 'moon-outline';
+/**
+ * StyleSheet theo giao diện: khai báo `const makeStyles = (colors, fg) => StyleSheet.create({...})` ở ngoài,
+ * trong component gọi `const styles = useStyles(makeStyles)`. Mỗi giao diện chỉ tạo 1 lần (có bộ nhớ đệm).
+ */
+const styleCache = new WeakMap<ThemeState, Map<unknown, unknown>>();
+export function useStyles<T>(make: (colors: Palette, fg: (alpha: number) => string) => T): T {
+  const t = useThemeState();
+  let m = styleCache.get(t);
+  if (!m) styleCache.set(t, (m = new Map()));
+  if (!m.has(make)) m.set(make, make(t.colors, t.fg));
+  return m.get(make) as T;
+}

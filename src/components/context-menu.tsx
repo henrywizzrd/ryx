@@ -12,7 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { MOTION } from '@/lib/motion';
-import { colors, fg } from '@/theme';
+import { useStyles, useTheme, type Palette } from '@/theme';
 import { Glass } from './glass';
 import type { IconName } from './icon-button';
 import { Txt } from './txt';
@@ -45,6 +45,9 @@ const MARGIN = 12;
  * Chạm ra ngoài để đóng. Bật "Giảm chuyển động" thì chỉ mờ dần, không phóng to.
  */
 export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; onClose: () => void }) {
+  const styles = useStyles(makeStyles);
+  const { colors, fg } = useTheme();
+
   const { width: W, height: H } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const t = useSharedValue(0);
@@ -129,10 +132,11 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState | null; 
   );
 }
 
-const styles = StyleSheet.create({
-  dim: { backgroundColor: 'rgba(0,0,0,0.28)' },
-  card: { position: 'absolute' },
-  head: { height: HEAD, justifyContent: 'center', paddingHorizontal: 16, gap: 2 },
-  row: { height: ROW, flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16 },
-  divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: fg(0.12) },
-});
+const makeStyles = (_colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    dim: { backgroundColor: 'rgba(0,0,0,0.28)' },
+    card: { position: 'absolute' },
+    head: { height: HEAD, justifyContent: 'center', paddingHorizontal: 16, gap: 2 },
+    row: { height: ROW, flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16 },
+    divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: fg(0.12) },
+  });

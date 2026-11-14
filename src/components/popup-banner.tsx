@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useTheme } from '@/theme';
+import { useTheme, useStyles } from '@/theme';
 import { Glass } from './glass';
 import { ShieldAnim } from './shield-anim';
 import { IconButton } from './icon-button';
@@ -25,6 +25,8 @@ const AUTO_HIDE_MS = 6000;
 
 /** Báo "đã chặn cửa sổ bật lên" kèm nút Mở nếu cậu thực sự muốn xem trang đó. */
 export function PopupBanner({ popup, bottom, onOpen, onClose }: Props) {
+  const styles = useStyles(makeStyles);
+
   const { accent, onAccent } = useTheme();
 
   useEffect(() => {
@@ -63,9 +65,10 @@ export function PopupBanner({ popup, bottom, onOpen, onClose }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { position: 'absolute', left: 16, right: 16 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 6, paddingRight: 4, minHeight: 56 },
-  anim: { width: 44, height: 44 },
-  btn: { minHeight: 36, paddingHorizontal: 12, borderRadius: 18, justifyContent: 'center' },
-});
+const makeStyles = () =>
+  StyleSheet.create({
+    wrap: { position: 'absolute', left: 16, right: 16 },
+    row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 6, paddingRight: 4, minHeight: 56 },
+    anim: { width: 44, height: 44 },
+    btn: { minHeight: 36, paddingHorizontal: 12, borderRadius: 18, justifyContent: 'center' },
+  });

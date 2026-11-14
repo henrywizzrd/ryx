@@ -62,13 +62,16 @@ import { useDownloads } from '@/state/downloads';
 import { useReading } from '@/state/reading';
 import { useStats } from '@/state/stats';
 import { totalBlocked, useTabs } from '@/state/tabs';
-import { colors, fg } from '@/theme';
+import { useStyles, useTheme, type Palette } from '@/theme';
 
 const GAP = 10;
 /** Đợi bảng trước đóng xong rồi mới mở bảng/màn hình khác (iOS không trình bày 2 modal cùng lúc). */
 const SHEET_HANDOFF_MS = 280;
 
 export default function BrowserScreen() {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+
   const insets = useSafeAreaInsets();
   const kb = useKeyboardHeight();
   const { settings, prefsFor, setSitePref, update } = useSettings();
@@ -485,9 +488,12 @@ export default function BrowserScreen() {
     () => (cookieOn ? buildCookieScript(cookieOff ? cookieOff.split(',') : []) : ''),
     [cookieOn, cookieOff],
   );
+  const pageScheme = useTheme().scheme;
   const script = useMemo(
     () => buildInjectedScript(injectConfig, siteThemes) + cookieScript,
-    [injectConfig, siteThemes, cookieScript],
+    // pageScheme: đổi giao diện sáng/tối thì trang tải sau dùng đúng chế độ tối/sáng cho trang
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [injectConfig, siteThemes, cookieScript, pageScheme],
   );
 
   // ---- Bố cục ----
@@ -970,35 +976,36 @@ export default function BrowserScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  webArea: { position: 'absolute', left: 0, right: 0 },
-  page: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    overflow: 'hidden',
-    transformOrigin: 'left top',
-    backgroundColor: colors.bg,
-  },
-  addrWrap: { position: 'absolute', left: 16, right: 16 },
-  pickWrap: { position: 'absolute', left: 16, right: 16 },
-  chapWrap: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
-  chapBtn: { minHeight: 44, justifyContent: 'center' },
-  chapInner: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, minHeight: 44 },
-  pickRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingLeft: 16,
-    paddingRight: 6,
-    minHeight: 52,
-  },
-  pickDone: {
-    minHeight: 40,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    justifyContent: 'center',
-    backgroundColor: fg(0.12),
-  },
-});
+const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: colors.bg },
+    webArea: { position: 'absolute', left: 0, right: 0 },
+    page: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      overflow: 'hidden',
+      transformOrigin: 'left top',
+      backgroundColor: colors.bg,
+    },
+    addrWrap: { position: 'absolute', left: 16, right: 16 },
+    pickWrap: { position: 'absolute', left: 16, right: 16 },
+    chapWrap: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
+    chapBtn: { minHeight: 44, justifyContent: 'center' },
+    chapInner: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, minHeight: 44 },
+    pickRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingLeft: 16,
+      paddingRight: 6,
+      minHeight: 52,
+    },
+    pickDone: {
+      minHeight: 40,
+      paddingHorizontal: 16,
+      borderRadius: 20,
+      justifyContent: 'center',
+      backgroundColor: fg(0.12),
+    },
+  });

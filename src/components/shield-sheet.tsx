@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { ShieldPrefs } from '@/state/settings';
 import type { Counts } from '@/state/stats';
-import { colors, useTheme, fg, pageModeIcon, pageModeLabel } from '@/theme';
+import { useTheme, useStyles, type Palette } from '@/theme';
 import { Sheet } from './sheet';
 import { ToggleRow } from './toggle-row';
 import { Txt } from './txt';
@@ -34,7 +34,9 @@ export function ShieldSheet({
   onStartPick,
   onClearCustom,
 }: Props) {
-  const { accent, accentSoft, onAccent } = useTheme();
+  const styles = useStyles(makeStyles);
+
+  const { accent, accentSoft, onAccent, colors, fg, pageModeLabel, pageModeIcon } = useTheme();
   const anyOn = prefs.ads || prefs.gambling || prefs.popups;
 
   const stats = [
@@ -174,31 +176,32 @@ export function ShieldSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16, marginTop: 4 },
-  badge: { width: 52, height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  stats: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  stat: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 18,
-    backgroundColor: fg(0.06),
-  },
-  group: {
-    borderRadius: 20,
-    backgroundColor: fg(0.05),
-    paddingHorizontal: 14,
-    marginBottom: 12,
-  },
-  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingVertical: 8 },
-  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: fg(0.12) },
-  reload: {
-    height: 50,
-    borderRadius: 25,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-});
+const makeStyles = (_colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    header: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16, marginTop: 4 },
+    badge: { width: 52, height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+    stats: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+    stat: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: 12,
+      borderRadius: 18,
+      backgroundColor: fg(0.06),
+    },
+    group: {
+      borderRadius: 20,
+      backgroundColor: fg(0.05),
+      paddingHorizontal: 14,
+      marginBottom: 12,
+    },
+    linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingVertical: 8 },
+    divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: fg(0.12) },
+    reload: {
+      height: 50,
+      borderRadius: 25,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+  });

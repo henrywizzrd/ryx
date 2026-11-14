@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, fg } from '@/theme';
+import { useStyles, useTheme, type Palette } from '@/theme';
 import { Txt } from './txt';
 
 export type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -29,11 +29,15 @@ export function IconButton({
   disabled,
   size = 44,
   iconSize = 22,
-  color = colors.text,
+  color: colorProp,
   badge,
   badgeColor,
   style,
 }: Props) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  const color = colorProp ?? colors.text;
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -62,18 +66,19 @@ export function IconButton({
   );
 }
 
-const styles = StyleSheet.create({
-  base: { alignItems: 'center', justifyContent: 'center' },
-  pressed: { backgroundColor: fg(0.1), transform: [{ scale: 0.94 }] },
-  badge: {
-    position: 'absolute',
-    top: 4,
-    right: 2,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+const makeStyles = (_colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    base: { alignItems: 'center', justifyContent: 'center' },
+    pressed: { backgroundColor: fg(0.1), transform: [{ scale: 0.94 }] },
+    badge: {
+      position: 'absolute',
+      top: 4,
+      right: 2,
+      minWidth: 16,
+      height: 16,
+      borderRadius: 8,
+      paddingHorizontal: 3,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });

@@ -22,7 +22,7 @@ import { useBookmarks, type Bookmark } from '@/state/bookmarks';
 import { useReading } from '@/state/reading';
 import { useSettings } from '@/state/settings';
 import { useStats } from '@/state/stats';
-import { colors, fonts, useTheme } from '@/theme';
+import { fonts, useTheme, useStyles, type Palette } from '@/theme';
 import { PressScale } from './press-scale';
 import { Txt } from './txt';
 
@@ -49,10 +49,12 @@ const EASE = Easing.out(Easing.cubic);
 const MOVE = LinearTransition.duration(280).easing(EASE);
 
 export function NewTabPage({ onSubmit, onOpen, onOpenNewTab, paddingTop, paddingBottom, preview }: Props) {
+  const styles = useStyles(makeStyles);
+
   useEffect(() => {
     applyEdgeEffects();
   }, []);
-  const { accent, accentSoft } = useTheme();
+  const { accent, accentSoft, colors } = useTheme();
   const { week } = useStats();
   const [query, setQuery] = useState('');
   const { bookmarks, remove, moveToFront, rename } = useBookmarks();
@@ -309,69 +311,70 @@ export function NewTabPage({ onSubmit, onOpen, onOpenNewTab, paddingTop, padding
   );
 }
 
-const styles = StyleSheet.create({
-  container: { paddingHorizontal: PAD },
-  brand: { alignItems: 'center', gap: 6, marginBottom: 24 },
-  logo: { width: 60, height: 60, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  search: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    height: 52,
-    borderRadius: 26,
-    paddingHorizontal: 18,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    marginBottom: 16,
-    // Bề ngang do searchAnim đặt (4/5, dãn ra khi bấm vào), nằm giữa
-    alignSelf: 'center',
-  },
-  searchInput: { flex: 1, height: 52, color: colors.text, fontFamily: fonts.regular, fontSize: 16 },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 24,
-    padding: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    marginBottom: 28,
-  },
-  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  breakdown: {
-    flexDirection: 'row',
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  breakItem: { flex: 1, gap: 2 },
-  breakLabel: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  sectionTitle: { marginBottom: 12, marginLeft: 4 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 18 },
-  tile: { width: '25%', alignItems: 'center' },
-  tileIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  favicon: { width: 30, height: 30 },
-  readScroll: { marginHorizontal: -20, marginBottom: 24 },
-  readRow: { paddingHorizontal: 20, gap: 10 },
-  readCard: {
-    width: 170,
-    padding: 12,
-    gap: 4,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  readHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
-  readIcon: { width: 14, height: 14 },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    container: { paddingHorizontal: PAD },
+    brand: { alignItems: 'center', gap: 6, marginBottom: 24 },
+    logo: { width: 60, height: 60, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+    search: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      height: 52,
+      borderRadius: 26,
+      paddingHorizontal: 18,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      marginBottom: 16,
+      // Bề ngang do searchAnim đặt (4/5, dãn ra khi bấm vào), nằm giữa
+      alignSelf: 'center',
+    },
+    searchInput: { flex: 1, height: 52, color: colors.text, fontFamily: fonts.regular, fontSize: 16 },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 24,
+      padding: 18,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      marginBottom: 28,
+    },
+    cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    breakdown: {
+      flexDirection: 'row',
+      marginTop: 12,
+      paddingTop: 12,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    breakItem: { flex: 1, gap: 2 },
+    breakLabel: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    dot: { width: 8, height: 8, borderRadius: 4 },
+    sectionTitle: { marginBottom: 12, marginLeft: 4 },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 18 },
+    tile: { width: '25%', alignItems: 'center' },
+    tileIcon: {
+      width: 60,
+      height: 60,
+      borderRadius: 18,
+      backgroundColor: colors.surfaceRaised,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    favicon: { width: 30, height: 30 },
+    readScroll: { marginHorizontal: -20, marginBottom: 24 },
+    readRow: { paddingHorizontal: 20, gap: 10 },
+    readCard: {
+      width: 170,
+      padding: 12,
+      gap: 4,
+      borderRadius: 18,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    readHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+    readIcon: { width: 14, height: 14 },
+  });

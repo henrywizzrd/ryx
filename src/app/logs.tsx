@@ -11,7 +11,7 @@ import { Txt } from '@/components/txt';
 import { runningVersionLabel } from '@/lib/app-updates';
 import { clearLogs, SESSION_ID, type LogEntry, type LogLevel } from '@/lib/logger';
 import { useLogs, usePerfSnapshot } from '@/lib/use-logs';
-import { colors, fonts, useTheme, withAlpha, fg } from '@/theme';
+import { fonts, useTheme, withAlpha, useStyles, type Palette } from '@/theme';
 
 type Filter = 'all' | 'error' | 'warn' | 'perf' | 'crash' | 'ui';
 
@@ -68,8 +68,10 @@ function exportText(list: LogEntry[]) {
 }
 
 export default function LogsScreen() {
+  const styles = useStyles(makeStyles);
+
   const insets = useSafeAreaInsets();
-  const { accent, accentSoft } = useTheme();
+  const { accent, accentSoft, colors, fg } = useTheme();
   const logs = useLogs();
   const perf = usePerfSnapshot();
   const [filter, setFilter] = useState<Filter>('all');
@@ -229,6 +231,9 @@ export default function LogsScreen() {
 }
 
 function Stat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+
   return (
     <View style={[styles.stat, warn && { backgroundColor: withAlpha('#F87171', 0.12) }]}>
       <Txt weight="bold" size={18} color={warn ? '#FCA5A5' : colors.text} style={{ fontVariant: ['tabular-nums'] }}>
@@ -245,7 +250,7 @@ function FooterBtn({
   icon,
   label,
   onPress,
-  color = colors.text,
+  color,
   disabled,
 }: {
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -254,6 +259,10 @@ function FooterBtn({
   color?: string;
   disabled?: boolean;
 }) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  const c = color ?? colors.text;
+
   return (
     <Pressable
       onPress={onPress}
@@ -262,55 +271,56 @@ function FooterBtn({
       accessibilityState={{ disabled }}
       style={({ pressed }) => [styles.footerBtn, pressed && { opacity: 0.7 }, disabled && { opacity: 0.35 }]}
     >
-      <Ionicons name={icon} size={20} color={color} />
-      <Txt weight="medium" size={13} color={color}>
+      <Ionicons name={icon} size={20} color={c} />
+      <Txt weight="medium" size={13} color={c}>
         {label}
       </Txt>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  headerBtn: { minHeight: 44, justifyContent: 'center' },
-  version: { paddingHorizontal: 20, marginTop: 2 },
-  stats: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginTop: 12 },
-  stat: { flex: 1, borderRadius: 14, backgroundColor: colors.surface, paddingVertical: 10, paddingHorizontal: 10 },
-  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
-  chip: {
-    minHeight: 36,
-    paddingHorizontal: 14,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    justifyContent: 'center',
-  },
-  row: { paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10 },
-  rowHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  levelLabel: { lineHeight: 14 },
-  detail: {
-    marginTop: 8,
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: colors.surface,
-    fontFamily: Platform.select({ ios: 'Menlo', default: fonts.regular }),
-  },
-  sep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
-  sessionSep: { textAlign: 'center', paddingVertical: 10 },
-  empty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 32 },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  footerBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 12 },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: colors.bg },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingTop: 20,
+    },
+    headerBtn: { minHeight: 44, justifyContent: 'center' },
+    version: { paddingHorizontal: 20, marginTop: 2 },
+    stats: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginTop: 12 },
+    stat: { flex: 1, borderRadius: 14, backgroundColor: colors.surface, paddingVertical: 10, paddingHorizontal: 10 },
+    filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
+    chip: {
+      minHeight: 36,
+      paddingHorizontal: 14,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      justifyContent: 'center',
+    },
+    row: { paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10 },
+    rowHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    levelLabel: { lineHeight: 14 },
+    detail: {
+      marginTop: 8,
+      padding: 10,
+      borderRadius: 10,
+      backgroundColor: colors.surface,
+      fontFamily: Platform.select({ ios: 'Menlo', default: fonts.regular }),
+    },
+    sep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+    sessionSep: { textAlign: 'center', paddingVertical: 10 },
+    empty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 32 },
+    footer: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      paddingTop: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    footerBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 12 },
+  });

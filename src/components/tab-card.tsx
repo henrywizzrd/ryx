@@ -7,7 +7,7 @@ import { ActionSheetIOS, Pressable, StyleSheet, View } from 'react-native';
 import { log } from '@/lib/logger';
 import { displayHost, faviconFor } from '@/lib/url';
 import { totalBlocked, type Tab } from '@/state/tabs';
-import { colors, useTheme } from '@/theme';
+import { getTheme, useTheme, useStyles, type Palette } from '@/theme';
 import { IconButton } from './icon-button';
 import { Txt } from './txt';
 
@@ -24,13 +24,13 @@ interface Props {
 }
 
 /** Màu nền riêng cho từng tên miền (ổn định, tối, đủ tương phản với chữ trắng). */
-function tintFor(host: string): string {
+function tintFor(host: string, colors: Palette): string {
   let h = 0;
   for (let i = 0; i < host.length; i++) h = (h * 31 + host.charCodeAt(i)) % 360;
   return colors.scheme === 'light' ? `hsl(${h}, 40%, 88%)` : `hsl(${h}, 32%, 20%)`;
 }
 
-export function tabInfo(tab: Tab) {
+export function tabInfo(tab: Tab, colors: Palette) {
   const showPage = !tab.home && !!tab.url;
   const host = showPage ? displayHost(tab.url) : '';
   return {
@@ -38,14 +38,14 @@ export function tabInfo(tab: Tab) {
     host,
     title: showPage ? tab.title || host : 'Thẻ mới',
     blocked: totalBlocked(tab).total,
-    tint: showPage ? tintFor(host) : colors.surfaceRaised,
+    tint: showPage ? tintFor(host, colors) : colors.surfaceRaised,
   };
 }
 
 /** Menu khi nhấn giữ một thẻ: Nhân đôi / Sao chép link / Đóng. */
 export function showTabMenu(tab: Tab, onDuplicate: () => void, onClose: () => void) {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-  const { showPage, title } = tabInfo(tab);
+  const { showPage, title } = tabInfo(tab, getTheme().colors);
   const options = showPage ? ['Huỷ', 'Nhân đôi thẻ', 'Sao chép link', 'Đóng thẻ'] : ['Huỷ', 'Đóng thẻ'];
   ActionSheetIOS.showActionSheetWithOptions(
     { title, options, cancelButtonIndex: 0, destructiveButtonIndex: options.length - 1 },
@@ -60,8 +60,10 @@ export function showTabMenu(tab: Tab, onDuplicate: () => void, onClose: () => vo
 }
 
 export function TabCard({ tab, active, variant, onOpen, onClose, onDuplicate, height }: Props) {
-  const { accent, accentSoft } = useTheme();
-  const { showPage, host, title, blocked, tint } = tabInfo(tab);
+  const styles = useStyles(makeStyles);
+
+  const { accent, accentSoft, colors } = useTheme();
+  const { showPage, host, title, blocked, tint } = tabInfo(tab, colors);
   const label = `${title}${active ? ', đang mở' : ''}`;
   const onLongPress = () => showTabMenu(tab, onDuplicate, onClose);
 
@@ -166,36 +168,37 @@ export function TabCard({ tab, active, variant, onOpen, onClose, onDuplicate, he
   );
 }
 
-const styles = StyleSheet.create({
-  favicon: { width: 16, height: 16, borderRadius: 4 },
-  card: {
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-  },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 4, height: 44 },
-  preview: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  midIcon: { width: 36, height: 36, borderRadius: 9 },
-  bigIcon: { width: 64, height: 64, borderRadius: 16 },
-  host: { paddingHorizontal: 12 },
-  badgeWrap: { position: 'absolute', bottom: 10, right: 10 },
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, height: 22, borderRadius: 11 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    minHeight: 64,
-    paddingLeft: 10,
-    paddingRight: 2,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    backgroundColor: colors.surface,
-  },
-  rowIcon: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    favicon: { width: 16, height: 16, borderRadius: 4 },
+    card: {
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOpacity: 0.35,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 6 },
+    },
+    cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 4, height: 44 },
+    preview: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+    midIcon: { width: 36, height: 36, borderRadius: 9 },
+    bigIcon: { width: 64, height: 64, borderRadius: 16 },
+    host: { paddingHorizontal: 12 },
+    badgeWrap: { position: 'absolute', bottom: 10, right: 10 },
+    badge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, height: 22, borderRadius: 11 },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      minHeight: 64,
+      paddingLeft: 10,
+      paddingRight: 2,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: 'transparent',
+      backgroundColor: colors.surface,
+    },
+    rowIcon: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  });

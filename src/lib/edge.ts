@@ -1,6 +1,6 @@
 import { requireOptionalNativeModule } from 'expo';
 
-import { colors } from '@/theme';
+import { getTheme, subscribeTheme } from '@/theme';
 
 import { log } from './logger';
 
@@ -30,7 +30,11 @@ export function applyEdgeEffects(delay = 120): void {
   timer = setTimeout(() => {
     timer = null;
     // Màu theme app: WebView hiện màu này trước khi trang có nội dung
-    fn(/^#[0-9a-f]{6}$/i.test(colors.bg) ? colors.bg.toLowerCase() : undefined, webInsets?.top, webInsets?.bottom)
+    fn(
+      /^#[0-9a-f]{6}$/i.test(getTheme().colors.bg) ? getTheme().colors.bg.toLowerCase() : undefined,
+      webInsets?.top,
+      webInsets?.bottom,
+    )
       .then((n) => {
         if (!logged) {
           logged = true;
@@ -40,3 +44,6 @@ export function applyEdgeEffects(delay = 120): void {
       .catch((e: unknown) => log.warn('ui', 'Không bật được hiệu ứng mờ mép trên', e));
   }, delay);
 }
+
+// Đổi giao diện: WebView đổi màu nền chờ (lúc trang chưa có nội dung) theo giao diện mới
+subscribeTheme(() => applyEdgeEffects(0));

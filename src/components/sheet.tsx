@@ -11,7 +11,7 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fg } from '@/theme';
+import { useStyles, type Palette } from '@/theme';
 import { Glass } from './glass';
 import { Txt } from './txt';
 
@@ -30,6 +30,8 @@ const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
  * (mở Modal tốn vài khung hình đầu → trông như hiệu ứng bị khựng). Đặt bảng ở cuối cây giao diện để nó nằm trên cùng.
  */
 export function Sheet({ visible, onClose, title, children }: Props) {
+  const styles = useStyles(makeStyles);
+
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const [mounted, setMounted] = useState(visible);
@@ -79,17 +81,18 @@ export function Sheet({ visible, onClose, title, children }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: { backgroundColor: 'rgba(0,0,0,0.45)' },
-  wrap: { position: 'absolute', left: 8, right: 8 },
-  content: { paddingHorizontal: 16, paddingBottom: 16, paddingTop: 8 },
-  grabber: {
-    alignSelf: 'center',
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: fg(0.25),
-    marginBottom: 8,
-  },
-  title: { textAlign: 'center', marginBottom: 12, color: colors.text },
-});
+const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    backdrop: { backgroundColor: 'rgba(0,0,0,0.45)' },
+    wrap: { position: 'absolute', left: 8, right: 8 },
+    content: { paddingHorizontal: 16, paddingBottom: 16, paddingTop: 8 },
+    grabber: {
+      alignSelf: 'center',
+      width: 36,
+      height: 5,
+      borderRadius: 3,
+      backgroundColor: fg(0.25),
+      marginBottom: 8,
+    },
+    title: { textAlign: 'center', marginBottom: 12, color: colors.text },
+  });

@@ -15,7 +15,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { DockButtonId, DockStyle } from '@/state/settings';
-import { colors, useTheme, fg } from '@/theme';
+import { useTheme, useStyles, type Palette } from '@/theme';
 import { Glass } from './glass';
 import { IconButton, type IconName } from './icon-button';
 import { MOTION } from '@/lib/motion';
@@ -86,6 +86,8 @@ const BOUNCE = MOTION.settle;
 export const ZOOM_SPRING = MOTION.smooth;
 
 function TabCountIcon({ count, size }: { count: number; size: number }) {
+  const styles = useStyles(makeStyles);
+
   const box = Math.round(size * 0.92);
   return (
     <View style={[styles.tabCount, { width: box, height: box, borderRadius: box * 0.28 }]}>
@@ -129,6 +131,8 @@ export function Dock({
   extraY,
   hidden,
 }: Props) {
+  const styles = useStyles(makeStyles);
+
   const { height: H } = useWindowDimensions();
   const plusRef = useRef<HostInstance>(null);
   const pressPlus = () => {
@@ -137,7 +141,7 @@ export function Dock({
     node.measureInWindow((x, y, w, h) => onNewTab(w > 0 ? { x, y, w, h } : null));
   };
   const insets = useSafeAreaInsets();
-  const { accent } = useTheme();
+  const { accent, colors } = useTheme();
   const s = SIZES[dockStyle];
   const m = dockMetrics(dockStyle, insets.bottom);
   const attached = dockStyle === 'attached';
@@ -336,21 +340,22 @@ export function Dock({
   );
 }
 
-const styles = StyleSheet.create({
-  floatRow: { position: 'absolute', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  rowFloat: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, height: '100%' },
-  attached: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.glassBorder,
-  },
-  row: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  group: { flexDirection: 'row', alignItems: 'center' },
-  btn: { alignItems: 'center', justifyContent: 'center' },
-  pressed: { backgroundColor: fg(0.1), transform: [{ scale: 0.94 }] },
-  tabCount: { borderWidth: 2, borderColor: colors.text, alignItems: 'center', justifyContent: 'center' },
-  plus: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-});
+const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    floatRow: { position: 'absolute', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+    rowFloat: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, height: '100%' },
+    attached: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.glassBorder,
+    },
+    row: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    group: { flexDirection: 'row', alignItems: 'center' },
+    btn: { alignItems: 'center', justifyContent: 'center' },
+    pressed: { backgroundColor: fg(0.1), transform: [{ scale: 0.94 }] },
+    tabCount: { borderWidth: 2, borderColor: colors.text, alignItems: 'center', justifyContent: 'center' },
+    plus: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  });

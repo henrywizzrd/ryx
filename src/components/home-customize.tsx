@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NewTabPage } from '@/components/new-tab-page';
 import { ToggleRow } from '@/components/toggle-row';
 import { useSettings, type HomePrefs } from '@/state/settings';
-import { colors, fg } from '@/theme';
+import { useStyles, useTheme, type Palette } from '@/theme';
 
 const ITEMS: { key: keyof HomePrefs; icon: React.ComponentProps<typeof ToggleRow>['icon']; title: string }[] = [
   { key: 'logo', icon: 'shield-checkmark-outline', title: 'Logo Shield' },
@@ -21,6 +21,9 @@ const FRAME_W = 176;
 
 /** Tuỳ chỉnh → Trang chủ: điện thoại thu nhỏ hiện trang chủ thật, bật/tắt từng phần thì thấy đổi ngay */
 export function HomeCustomize() {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+
   const { settings, update } = useSettings();
   const { width: W, height: H } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -65,22 +68,23 @@ export function HomeCustomize() {
   );
 }
 
-const styles = StyleSheet.create({
-  phoneWrap: { alignItems: 'center', marginTop: 4, marginBottom: 12 },
-  phone: {
-    borderRadius: 30,
-    overflow: 'hidden',
-    borderWidth: 5,
-    borderColor: fg(0.16),
-  },
-  island: {
-    position: 'absolute',
-    top: 7,
-    alignSelf: 'center',
-    width: 46,
-    height: 13,
-    borderRadius: 7,
-    backgroundColor: '#000',
-  },
-  card: { borderRadius: 20, backgroundColor: colors.surface, overflow: 'hidden', paddingHorizontal: 14 },
-});
+const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    phoneWrap: { alignItems: 'center', marginTop: 4, marginBottom: 12 },
+    phone: {
+      borderRadius: 30,
+      overflow: 'hidden',
+      borderWidth: 5,
+      borderColor: fg(0.16),
+    },
+    island: {
+      position: 'absolute',
+      top: 7,
+      alignSelf: 'center',
+      width: 46,
+      height: 13,
+      borderRadius: 7,
+      backgroundColor: '#000',
+    },
+    card: { borderRadius: 20, backgroundColor: colors.surface, overflow: 'hidden', paddingHorizontal: 14 },
+  });

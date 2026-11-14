@@ -21,7 +21,7 @@ import { displayHost, isSecure } from '@/lib/url';
 import { sameUrl, useBookmarks } from '@/state/bookmarks';
 import { useHistory } from '@/state/history';
 import type { Tab } from '@/state/tabs';
-import { colors, fonts, useTheme, fg } from '@/theme';
+import { fonts, useTheme, useStyles, type Palette } from '@/theme';
 import { Glass } from './glass';
 import { IconButton } from './icon-button';
 import { Txt } from './txt';
@@ -51,6 +51,8 @@ const MAX_SUGGESTIONS = 6;
 
 /** Thanh tiến trình: chạy theo % tải, có vệt sáng lướt qua; tải xong thì chạy hết rồi mờ đi. */
 function ProgressLine({ loading, progress, color }: { loading: boolean; progress: number; color: string }) {
+  const styles = useStyles(makeStyles);
+
   const w = useSharedValue(0);
   const op = useSharedValue(0);
   const shine = useSharedValue(0);
@@ -86,6 +88,8 @@ function ProgressLine({ loading, progress, color }: { loading: boolean; progress
 
 /** Số đếm lăn như đồng hồ: số cũ trượt lên, số mới trượt từ dưới vào. */
 function RollingCount({ value, color }: { value: number; color: string }) {
+  const styles = useStyles(makeStyles);
+
   const text = value > 999 ? '999+' : String(value);
   return (
     <View style={styles.rollBox}>
@@ -140,7 +144,9 @@ export function AddressBar({
   onFocusChange,
   position,
 }: Props) {
-  const { accent, accentSoft } = useTheme();
+  const styles = useStyles(makeStyles);
+
+  const { accent, accentSoft, colors, fg } = useTheme();
   const [focused, setFocused] = useState(false);
   const [draft, setDraft] = useState('');
   const [typed, setTyped] = useState(false);
@@ -334,43 +340,44 @@ export function AddressBar({
   );
 }
 
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 },
-  shield: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 36,
-    minWidth: 40,
-    paddingHorizontal: 10,
-    borderRadius: 18,
-    justifyContent: 'center',
-  },
-  shieldCount: { lineHeight: 16 },
-  inputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  input: {
-    flexShrink: 1,
-    flexGrow: 1,
-    color: colors.text,
-    fontFamily: fonts.medium,
-    fontSize: 16,
-    height: ADDRESS_BAR_HEIGHT,
-    paddingVertical: 0,
-  },
-  suggest: { position: 'absolute', left: 0, right: 0 },
-  suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 52 },
-  suggestDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: fg(0.1) },
-  cancel: { paddingHorizontal: 12, height: 40, justifyContent: 'center' },
-  progressTrack: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 3,
-    height: 2,
-    borderRadius: 1,
-    overflow: 'hidden',
-  },
-  progress: { height: 2, borderRadius: 1, overflow: 'hidden' },
-  glint: { position: 'absolute', top: 0, bottom: 0, width: '30%', backgroundColor: 'rgba(255,255,255,0.55)' },
-  rollBox: { marginLeft: 4, height: 16, overflow: 'hidden', justifyContent: 'center' },
-  rollAbs: { position: 'absolute', left: 0, right: 0, top: 0 },
-});
+const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 },
+    shield: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      height: 36,
+      minWidth: 40,
+      paddingHorizontal: 10,
+      borderRadius: 18,
+      justifyContent: 'center',
+    },
+    shieldCount: { lineHeight: 16 },
+    inputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+    input: {
+      flexShrink: 1,
+      flexGrow: 1,
+      color: colors.text,
+      fontFamily: fonts.medium,
+      fontSize: 16,
+      height: ADDRESS_BAR_HEIGHT,
+      paddingVertical: 0,
+    },
+    suggest: { position: 'absolute', left: 0, right: 0 },
+    suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 52 },
+    suggestDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: fg(0.1) },
+    cancel: { paddingHorizontal: 12, height: 40, justifyContent: 'center' },
+    progressTrack: {
+      position: 'absolute',
+      left: 20,
+      right: 20,
+      bottom: 3,
+      height: 2,
+      borderRadius: 1,
+      overflow: 'hidden',
+    },
+    progress: { height: 2, borderRadius: 1, overflow: 'hidden' },
+    glint: { position: 'absolute', top: 0, bottom: 0, width: '30%', backgroundColor: 'rgba(255,255,255,0.55)' },
+    rollBox: { marginLeft: 4, height: 16, overflow: 'hidden', justifyContent: 'center' },
+    rollAbs: { position: 'absolute', left: 0, right: 0, top: 0 },
+  });

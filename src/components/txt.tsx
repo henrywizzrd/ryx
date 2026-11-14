@@ -1,6 +1,6 @@
 import { Text, type TextProps } from 'react-native';
 
-import { colors, fonts } from '@/theme';
+import { fonts, useTheme } from '@/theme';
 
 type Weight = keyof typeof fonts;
 
@@ -10,11 +10,15 @@ interface Props extends TextProps {
   color?: string;
 }
 
-export function Txt({ weight = 'regular', size = 16, color = colors.text, style, ...rest }: Props) {
+export function Txt({ weight = 'regular', size = 16, color, style, ...rest }: Props) {
+  const { colors } = useTheme();
   return (
     <Text
       {...rest}
-      style={[{ fontFamily: fonts[weight], fontSize: size, color, lineHeight: Math.round(size * 1.35) }, style]}
+      style={[
+        { fontFamily: fonts[weight], fontSize: size, color: color ?? colors.text, lineHeight: Math.round(size * 1.35) },
+        style,
+      ]}
     />
   );
 }

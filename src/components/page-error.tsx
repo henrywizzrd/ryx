@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { displayHost } from '@/lib/url';
-import { colors, useTheme } from '@/theme';
+import { useTheme, useStyles, type Palette } from '@/theme';
 import { Txt } from './txt';
 
 interface Props {
@@ -18,7 +18,9 @@ const LIKELY_BLOCKED = new Set([-1000, -1003, -1004, -1005, -1200, -1202]);
 
 /** Trang lỗi riêng của Ryx, thay cho trang "Error loading page" mặc định của WebView. */
 export function PageError({ url, code, description, onRetry }: Props) {
-  const { accent, onAccent } = useTheme();
+  const styles = useStyles(makeStyles);
+
+  const { accent, onAccent, colors } = useTheme();
   const host = displayHost(url);
   const blocked = LIKELY_BLOCKED.has(code);
 
@@ -83,36 +85,37 @@ export function PageError({ url, code, description, onRetry }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: colors.bg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 6,
-  },
-  center: { textAlign: 'center' },
-  actions: { alignSelf: 'stretch', gap: 10, marginTop: 20 },
-  primary: {
-    minHeight: 50,
-    borderRadius: 25,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  secondary: {
-    minHeight: 50,
-    borderRadius: 25,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: colors.surfaceRaised,
-  },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    root: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: colors.bg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 32,
+      gap: 6,
+    },
+    center: { textAlign: 'center' },
+    actions: { alignSelf: 'stretch', gap: 10, marginTop: 20 },
+    primary: {
+      minHeight: 50,
+      borderRadius: 25,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    secondary: {
+      minHeight: 50,
+      borderRadius: 25,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: colors.surfaceRaised,
+    },
+  });

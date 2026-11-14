@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, View } from 'react-native';
 
-import { colors, fg, pageModeIcon, pageModeLabel } from '@/theme';
+import { useStyles, useTheme, type Palette } from '@/theme';
 import type { IconName } from './icon-button';
 import { Sheet } from './sheet';
 import { ToggleRow } from './toggle-row';
@@ -52,6 +52,9 @@ const ACTIONS: { id: MenuAction; icon: IconName; label: string; needsPage?: bool
 ];
 
 export function MenuSheet({ visible, onClose, hasPage, dark, bookmarked, onToggleDark, onAction }: Props) {
+  const styles = useStyles(makeStyles);
+  const { colors, pageModeLabel, pageModeIcon } = useTheme();
+
   return (
     <Sheet visible={visible} onClose={onClose}>
       <View style={styles.grid}>
@@ -98,9 +101,10 @@ export function MenuSheet({ visible, onClose, hasPage, dark, bookmarked, onToggl
   );
 }
 
-const styles = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8, marginTop: 4 },
-  cell: { width: '25%', alignItems: 'center', paddingVertical: 14, borderRadius: 18 },
-  pressed: { backgroundColor: fg(0.08) },
-  group: { borderRadius: 20, backgroundColor: fg(0.05), paddingHorizontal: 14 },
-});
+const makeStyles = (_colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    grid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8, marginTop: 4 },
+    cell: { width: '25%', alignItems: 'center', paddingVertical: 14, borderRadius: 18 },
+    pressed: { backgroundColor: fg(0.08) },
+    group: { borderRadius: 20, backgroundColor: fg(0.05), paddingHorizontal: 14 },
+  });

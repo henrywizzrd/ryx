@@ -10,7 +10,7 @@ import { Txt } from '@/components/txt';
 import { displayHost, faviconFor } from '@/lib/url';
 import { RETENTION_DAYS, useHistory, type HistoryEntry } from '@/state/history';
 import { useTabs } from '@/state/tabs';
-import { colors, fonts, useTheme } from '@/theme';
+import { fonts, useTheme, useStyles, type Palette } from '@/theme';
 
 function dayLabel(t: number) {
   const d = new Date(t);
@@ -27,8 +27,10 @@ function clock(t: number) {
 }
 
 export default function HistoryScreen() {
+  const styles = useStyles(makeStyles);
+
   const insets = useSafeAreaInsets();
-  const { accent } = useTheme();
+  const { accent, colors } = useTheme();
   const { entries, remove, clear } = useHistory();
   const { active, open } = useTabs();
   const [query, setQuery] = useState('');
@@ -155,41 +157,42 @@ export default function HistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  headerBtn: { minHeight: 44, justifyContent: 'center' },
-  search: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 4,
-    paddingHorizontal: 14,
-    minHeight: 44,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-  },
-  input: { flex: 1, color: colors.text, fontFamily: fonts.regular, fontSize: 16, paddingVertical: 10 },
-  section: { paddingTop: 18, paddingBottom: 6, paddingHorizontal: 4 },
-  row: { flexDirection: 'row', alignItems: 'center' },
-  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 4 },
-  favicon: { width: 20, height: 20, borderRadius: 5 },
-  empty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 32 },
-  clear: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    minHeight: 48,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: colors.bg },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingTop: 20,
+    },
+    headerBtn: { minHeight: 44, justifyContent: 'center' },
+    search: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginHorizontal: 16,
+      marginTop: 12,
+      marginBottom: 4,
+      paddingHorizontal: 14,
+      minHeight: 44,
+      borderRadius: 14,
+      backgroundColor: colors.surface,
+    },
+    input: { flex: 1, color: colors.text, fontFamily: fonts.regular, fontSize: 16, paddingVertical: 10 },
+    section: { paddingTop: 18, paddingBottom: 6, paddingHorizontal: 4 },
+    row: { flexDirection: 'row', alignItems: 'center' },
+    rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 4 },
+    favicon: { width: 20, height: 20, borderRadius: 5 },
+    empty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 32 },
+    clear: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      minHeight: 48,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+  });

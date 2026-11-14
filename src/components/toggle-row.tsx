@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, Switch, View } from 'react-native';
 
-import { colors, useTheme, fg } from '@/theme';
+import { useTheme, useStyles, type Palette } from '@/theme';
 import type { IconName } from './icon-button';
 import { Txt } from './txt';
 
@@ -16,7 +16,9 @@ interface Props {
 }
 
 export function ToggleRow({ icon, iconColor, title, subtitle, value, onChange, last }: Props) {
-  const { accent } = useTheme();
+  const styles = useStyles(makeStyles);
+
+  const { accent, colors, fg } = useTheme();
   return (
     <View style={[styles.row, !last && styles.divider]}>
       <View style={[styles.icon, { backgroundColor: fg(0.07) }]}>
@@ -43,8 +45,9 @@ export function ToggleRow({ icon, iconColor, title, subtitle, value, onChange, l
   );
 }
 
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingVertical: 8 },
-  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  icon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingVertical: 8 },
+    divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    icon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  });

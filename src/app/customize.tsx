@@ -1,11 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import { useState, useSyncExternalStore } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useRef, useState, useSyncExternalStore } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, View, type HostInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DOCK_BUTTONS } from '@/components/dock';
 import { HomeCustomize } from '@/components/home-customize';
+import { useThemeFade } from '@/components/theme-fade';
 import { TAB_LAYOUTS } from '@/components/tab-overview';
 import { getContentBlockerStatus, refreshContentBlocker, subscribeContentBlocker } from '@/lib/content-blocker';
 import { log } from '@/lib/logger';
@@ -23,21 +24,16 @@ import {
   ACCENT_PRESETS,
   GLASS_LABELS,
   MODES,
-  THEME_ID,
-  THEME_MODE,
   THEMES,
-  colors,
-  saveAppearance,
+  setAppearance,
   themeAccent,
   useTheme,
   withAlpha,
   type ThemeId,
   type ThemeMode,
-  fg,
-  pageModeIcon,
-  pageModeLabel,
+  useStyles,
+  type Palette,
 } from '@/theme';
-import * as Updates from 'expo-updates';
 
 const DOCK_STYLES: { id: DockStyle; label: string; hint: string }[] = [
   { id: 'floating', label: 'Nổi', hint: 'Viên nang kính' },
@@ -48,6 +44,9 @@ const DOCK_STYLES: { id: DockStyle; label: string; hint: string }[] = [
 const ALL_BUTTONS = Object.keys(DOCK_BUTTONS) as DockButtonId[];
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+
   return (
     <View style={styles.section}>
       <Txt weight="semibold" size={13} color={colors.textMuted} style={styles.sectionTitle} accessibilityRole="header">
@@ -72,7 +71,9 @@ function Segmented<T extends string | number>({
   value: T;
   onChange: (v: T) => void;
 }) {
-  const { accent, onAccent } = useTheme();
+  const styles = useStyles(makeStyles);
+
+  const { accent, onAccent, colors } = useTheme();
   return (
     <View style={styles.segment} accessibilityRole="radiogroup">
       {options.map((o) => {
@@ -97,6 +98,8 @@ function Segmented<T extends string | number>({
 
 /** Hình minh hoạ nhỏ cho từng kiểu dock. */
 function DockPreview({ style, accent }: { style: DockStyle; accent: string }) {
+  const styles = useStyles(makeStyles);
+
   const bar =
     style === 'attached'
       ? { left: 0, right: 0, bottom: 0, height: 14, borderRadius: 0 }
@@ -126,35 +129,22 @@ function DockPreview({ style, accent }: { style: DockStyle; accent: string }) {
 }
 
 export default function CustomizeScreen() {
+  const styles = useStyles(makeStyles);
+
   const insets = useSafeAreaInsets();
   const { settings, update, reset } = useSettings();
-  const { accent, accentSoft } = useTheme();
+  const { accent, accentSoft, colors, pageModeLabel, pageModeIcon, theme: themeId, mode } = useTheme();
 
-  /** Lưu giao diện + chế độ rồi mở lại app (bảng màu được đọc lúc khởi động) */
-  const applyAppearance = (theme: ThemeId, mode: ThemeMode) => {
-    if (theme === THEME_ID && mode === THEME_MODE) return;
-    const t = THEMES.find((x) => x.id === theme)!;
-    const m = MODES.find((x) => x.id === mode)!;
-    Alert.alert(`Đổi sang ${t.label} · ${m.label}?`, 'Ryx sẽ mở lại để áp dụng. Các thẻ đang mở sẽ đóng.', [
-      { text: 'Huỷ', style: 'cancel' },
-      {
-        text: 'Đổi',
-        onPress: () => {
-          try {
-            saveAppearance(theme, mode);
-          } catch (e) {
-            log.error('ui', 'Không lưu được giao diện', e);
-            return;
-          }
-          update({ accent: themeAccent(theme, mode) });
-          log.info('ui', 'Đổi giao diện', `${THEME_ID}:${THEME_MODE} → ${theme}:${mode}`);
-          // Đợi cài đặt (màu nhấn) lưu xong rồi mở lại app
-          setTimeout(() => {
-            Updates.reloadAsync().catch(() => Alert.alert('Đã lưu giao diện', 'Tắt hẳn rồi mở lại Ryx để áp dụng.'));
-          }, 500);
-        },
-      },
-    ]);
+  /** Đổi giao diện + chế độ ngay tại chỗ (màn hình chuyển màu dần, xem components/theme-fade), không mở lại app */
+  const applyAppearance = (next: ThemeId, nextMode: ThemeMode) => {
+    if (next === themeId && nextMode === mode) return;
+    const from = `${themeId}:${mode}`;
+    setAppearance(next, nextMode)
+      .then(() => {
+        update({ accent: themeAccent(next, nextMode) });
+        log.info('ui', 'Đổi giao diện', `${from} → ${next}:${nextMode}`);
+      })
+      .catch((e: unknown) => log.error('ui', 'Không đổi được giao diện', e));
   };
 
   const toggleButton = (id: DockButtonId) => {
@@ -179,9 +169,12 @@ export default function CustomizeScreen() {
   const full = settings.dockButtons.length >= MAX_DOCK_BUTTONS;
   // Hai mục: Giao diện (như trước) và Trang chủ (bật/tắt từng phần, có xem trước)
   const [pane, setPane] = useState<'look' | 'home'>('look');
+  // Đổi giao diện: màn này chuyển màu dần (ảnh chụp màu cũ mờ đi)
+  const rootRef = useRef<HostInstance>(null);
+  const fade = useThemeFade(rootRef);
 
   return (
-    <View style={styles.root}>
+    <View ref={rootRef} collapsable={false} style={styles.root}>
       <View style={styles.header}>
         <Txt weight="bold" size={22} accessibilityRole="header">
           Tuỳ chỉnh
@@ -278,20 +271,17 @@ export default function CustomizeScreen() {
               />
             </Section>
 
-            <Section
-              title="Giao diện"
-              hint="Đổi giao diện hoặc chế độ sáng/tối thì Ryx tự mở lại (các thẻ đang mở sẽ đóng)."
-            >
+            <Section title="Giao diện" hint="Trang web đang mở đổi chế độ sáng/tối cho trang ở lần tải lại sau.">
               <Segmented
                 options={THEMES.map((t) => ({ value: t.id, label: t.label }))}
-                value={THEME_ID}
-                onChange={(id) => applyAppearance(id, THEME_MODE)}
+                value={themeId}
+                onChange={(id) => applyAppearance(id, mode)}
               />
               <View style={{ height: 10 }} />
               <Segmented
                 options={MODES.map((m) => ({ value: m.id, label: m.label }))}
-                value={THEME_MODE}
-                onChange={(m) => applyAppearance(THEME_ID, m)}
+                value={mode}
+                onChange={(m) => applyAppearance(themeId, m)}
               />
             </Section>
 
@@ -468,64 +458,68 @@ export default function CustomizeScreen() {
           </>
         )}
       </ScrollView>
+      {fade}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 4,
-  },
-  headerBtn: { minHeight: 44, justifyContent: 'center' },
-  section: { marginBottom: 26 },
-  sectionTitle: { marginBottom: 10, marginLeft: 4, letterSpacing: 0.5 },
-  row3: { flexDirection: 'row', gap: 10 },
-  option: {
-    flex: 1,
-    padding: 10,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-  },
-  preview: { height: 64, borderRadius: 10, backgroundColor: colors.surfaceRaised, overflow: 'hidden' },
-  previewBar: { position: 'absolute', backgroundColor: fg(0.35) },
-  segment: { flexDirection: 'row', padding: 4, borderRadius: 16, backgroundColor: colors.surface, gap: 4 },
-  segItem: { flex: 1, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  swatches: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
-  swatchRing: { padding: 3, borderRadius: 27, borderWidth: 2, borderColor: 'transparent' },
-  swatch: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  card: { borderRadius: 20, backgroundColor: colors.surface, overflow: 'hidden' },
-  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 14 },
-  btnIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 9,
-    backgroundColor: fg(0.07),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  linkBtn: { minHeight: 44, justifyContent: 'center', marginTop: 4, marginLeft: 4 },
-  resetBtn: {
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(248,113,113,0.10)',
-  },
-  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, minHeight: 52 },
-});
+const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: colors.bg },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingTop: 20,
+      paddingBottom: 4,
+    },
+    headerBtn: { minHeight: 44, justifyContent: 'center' },
+    section: { marginBottom: 26 },
+    sectionTitle: { marginBottom: 10, marginLeft: 4, letterSpacing: 0.5 },
+    row3: { flexDirection: 'row', gap: 10 },
+    option: {
+      flex: 1,
+      padding: 10,
+      borderRadius: 18,
+      backgroundColor: colors.surface,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+    },
+    preview: { height: 64, borderRadius: 10, backgroundColor: colors.surfaceRaised, overflow: 'hidden' },
+    previewBar: { position: 'absolute', backgroundColor: fg(0.35) },
+    segment: { flexDirection: 'row', padding: 4, borderRadius: 16, backgroundColor: colors.surface, gap: 4 },
+    segItem: { flex: 1, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    swatches: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
+    swatchRing: { padding: 3, borderRadius: 27, borderWidth: 2, borderColor: 'transparent' },
+    swatch: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+    card: { borderRadius: 20, backgroundColor: colors.surface, overflow: 'hidden' },
+    btnRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 14 },
+    btnIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 9,
+      backgroundColor: fg(0.07),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    linkBtn: { minHeight: 44, justifyContent: 'center', marginTop: 4, marginLeft: 4 },
+    resetBtn: {
+      height: 52,
+      borderRadius: 26,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(248,113,113,0.10)',
+    },
+    linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, minHeight: 52 },
+  });
 
 /** Trạng thái bộ lọc tầng mạng (EasyList + ABPVN) và nút cập nhật ngay. */
 function FilterStatus() {
-  const { accent } = useTheme();
+  const styles = useStyles(makeStyles);
+
+  const { accent, colors } = useTheme();
   const st = useSyncExternalStore(subscribeContentBlocker, getContentBlockerStatus);
   const when = st.updatedAt ? new Date(st.updatedAt).toLocaleDateString('vi-VN') : 'chưa tải';
   const detail = !st.supported

@@ -24,7 +24,7 @@ import { setSiteTheme } from '@/state/site-themes';
 import type { ShieldPrefs } from '@/state/settings';
 import { EMPTY_COUNTS, type Counts } from '@/state/stats';
 import { useTabs, type Tab } from '@/state/tabs';
-import { colors } from '@/theme';
+import { useStyles, useTheme, type Palette } from '@/theme';
 
 /** Kiểu của react-native-webview mặc định P=undefined → props thành never; cố định P=object. */
 const WebView = RNWebView<object>;
@@ -133,6 +133,9 @@ function BrowserTabImpl({
   insetTop,
   insetBottom,
 }: Props) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+
   const { patchTab, refs } = useTabs();
   const { record: recordHistory } = useHistoryActions();
   const ref = useRef<WebViewHandle>(null);
@@ -688,10 +691,11 @@ function BrowserTabImpl({
 
 export const BrowserTab = memo(BrowserTabImpl);
 
-const styles = StyleSheet.create({
-  web: { backgroundColor: colors.bg },
-  // Không đặt zIndex: khung bọc thẻ có thể bị gộp (view flattening) lên cùng cấp với dock/thanh địa chỉ,
-  // zIndex khi đó đẩy trang web đè lên che mất dock. Thẻ ẩn đã trong suốt và không nhận chạm nên thứ tự không quan trọng.
-  shown: { opacity: 1 },
-  hidden: { opacity: 0 },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    web: { backgroundColor: colors.bg },
+    // Không đặt zIndex: khung bọc thẻ có thể bị gộp (view flattening) lên cùng cấp với dock/thanh địa chỉ,
+    // zIndex khi đó đẩy trang web đè lên che mất dock. Thẻ ẩn đã trong suốt và không nhận chạm nên thứ tự không quan trọng.
+    shown: { opacity: 1 },
+    hidden: { opacity: 0 },
+  });
