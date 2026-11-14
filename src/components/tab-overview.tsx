@@ -225,19 +225,21 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
         ) : (
           <HomeMini width={width} />
         )}
-        {/* Thanh địa chỉ của thẻ, đúng chỗ và đúng tỉ lệ như trang thật lúc thu nhỏ vào thẻ (dock ẩn) */}
-        <View
-          pointerEvents="none"
-          style={[
-            styles.cardAddr,
-            addrAtTop
-              ? { top: (insets.top + 4) * (width / W) }
-              : { top: height - (CARD_ADDR_BOTTOM + ADDRESS_BAR_HEIGHT) * (width / W) },
-            { left: (width - addrBarWidth(W) * (width / W)) / 2, transform: [{ scale: width / W }] },
-          ]}
-        >
-          <StaticAddressBar tab={tab} blocked={blocked} width={addrBarWidth(W)} />
-        </View>
+        {/* Chỉ thẻ đang mở (vừa thu nhỏ): thanh địa chỉ đúng chỗ, đúng tỉ lệ như trang thật lúc thu nhỏ (dock ẩn) */}
+        {active && (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.cardAddr,
+              addrAtTop
+                ? { top: (insets.top + 4) * (width / W) }
+                : { top: height - (CARD_ADDR_BOTTOM + ADDRESS_BAR_HEIGHT) * (width / W) },
+              { left: (width - addrBarWidth(W) * (width / W)) / 2, transform: [{ scale: width / W }] },
+            ]}
+          >
+            <StaticAddressBar tab={tab} blocked={blocked} width={addrBarWidth(W)} />
+          </View>
+        )}
         {/* Viền vẽ ĐÈ lên ảnh (không đẩy ảnh vào trong), giống hệt viền mà trang thật có lúc thu nhỏ → đổi qua lại không nháy */}
         <View
           pointerEvents="none"

@@ -28,6 +28,26 @@ export type Palette = {
   popups: string;
 };
 
+/** Matcha: nền xanh bánh matcha, các vật thể (nút, công tắc, màu nhấn) xanh trà sữa đậm, chữ trà đậm */
+const MATCHA: Palette = {
+  scheme: 'light',
+  bg: '#B2C36D',
+  bgDeep: '#A2B45F',
+  surface: '#C6D489',
+  surfaceRaised: '#BCCB7A',
+  text: '#18220E',
+  textMuted: '#3A4A24',
+  textFaint: '#40512A',
+  border: 'rgba(24,34,14,0.14)',
+  glassBorder: 'rgba(24,34,14,0.16)',
+  glassHighlight: 'rgba(255,255,255,0.35)',
+  glassTint: '198,212,137',
+  fgRgb: '24,34,14',
+  danger: '#B91C1C',
+  gambling: '#92400E',
+  popups: '#6D28D9',
+};
+
 const PALETTES: Record<ThemeId, Record<'dark' | 'light', Palette>> = {
   default: {
     dark: {
@@ -67,50 +87,13 @@ const PALETTES: Record<ThemeId, Record<'dark' | 'light', Palette>> = {
       popups: '#7C3AED',
     },
   },
-  /** Matcha: xanh trà — bản tối nền trà đậm chữ kem, bản sáng nền kem sữa chữ trà */
-  matcha: {
-    dark: {
-      scheme: 'dark',
-      bg: '#0C110A',
-      bgDeep: '#080B06',
-      surface: '#151C11',
-      surfaceRaised: '#1E2718',
-      text: '#F2F4E9',
-      textMuted: '#A9B49A',
-      textFaint: '#8B967D',
-      border: 'rgba(214,236,190,0.11)',
-      glassBorder: 'rgba(214,236,190,0.18)',
-      glassHighlight: 'rgba(226,242,204,0.08)',
-      glassTint: '17,24,13',
-      fgRgb: '226,242,204',
-      danger: '#F87171',
-      gambling: '#F59E0B',
-      popups: '#A78BFA',
-    },
-    light: {
-      scheme: 'light',
-      bg: '#F3F5EA',
-      bgDeep: '#E3E9D3',
-      surface: '#FCFDF7',
-      surfaceRaised: '#E8EDDA',
-      text: '#1A2214',
-      textMuted: '#56644A',
-      textFaint: '#67745A',
-      border: 'rgba(40,60,20,0.12)',
-      glassBorder: 'rgba(40,60,20,0.12)',
-      glassHighlight: 'rgba(255,255,255,0.65)',
-      glassTint: '247,249,239',
-      fgRgb: '26,34,20',
-      danger: '#DC2626',
-      gambling: '#B45309',
-      popups: '#7C3AED',
-    },
-  },
+  /** Matcha là giao diện riêng, không có bản sáng/tối: một bảng màu duy nhất (xem MATCHA) */
+  matcha: { dark: MATCHA, light: MATCHA },
 };
 
 export const THEMES: { id: ThemeId; label: string; accent: { dark: string; light: string } }[] = [
   { id: 'default', label: 'Mặc định', accent: { dark: '#34D399', light: '#059669' } },
-  { id: 'matcha', label: 'Matcha', accent: { dark: '#9DC46B', light: '#5E8A2E' } },
+  { id: 'matcha', label: 'Matcha', accent: { dark: '#3F6129', light: '#3F6129' } },
 ];
 export const MODES: { id: ThemeMode; label: string }[] = [
   { id: 'dark', label: 'Tối' },
@@ -153,8 +136,11 @@ export interface ThemeState {
   pageModeLabel: string;
   pageModeIcon: 'sunny-outline' | 'moon-outline';
 }
+/** Matcha luôn là nền sáng (giờ/pin chữ tối), không theo chế độ sáng/tối */
+const schemeFor = (theme: ThemeId, mode: ThemeMode): 'dark' | 'light' =>
+  theme === 'matcha' ? 'light' : schemeOf(mode);
 function build(theme: ThemeId, mode: ThemeMode): ThemeState {
-  const scheme = schemeOf(mode);
+  const scheme = schemeFor(theme, mode);
   const colors: Palette = { ...PALETTES[theme][scheme] };
   return {
     theme,
@@ -170,7 +156,7 @@ function build(theme: ThemeId, mode: ThemeMode): ThemeState {
 // bảng chọn/thông báo của iOS cũng sáng/tối theo. ("Theo máy" thì để iOS tự quyết.)
 function applySystem(t: ThemeState) {
   try {
-    Appearance.setColorScheme(t.mode === 'system' ? 'auto' : t.scheme);
+    Appearance.setColorScheme(t.mode === 'system' && t.theme !== 'matcha' ? 'auto' : t.scheme);
   } catch {}
 }
 
@@ -206,7 +192,7 @@ export async function setAppearance(theme: ThemeId, mode: ThemeMode): Promise<vo
 
 /** Màu nhấn gợi ý cho giao diện + chế độ */
 export function themeAccent(theme: ThemeId, mode: ThemeMode): string {
-  return THEMES.find((t) => t.id === theme)!.accent[schemeOf(mode)];
+  return THEMES.find((t) => t.id === theme)!.accent[schemeFor(theme, mode)];
 }
 
 /** Be Vietnam Pro: hỗ trợ đầy đủ dấu tiếng Việt. */
@@ -217,7 +203,7 @@ export const fonts = {
   bold: 'BeVietnamPro_700Bold',
 };
 
-export const ACCENT_PRESETS = ['#34D399', '#9DC46B', '#38BDF8', '#818CF8', '#F472B6', '#FBBF24', '#FB7185'];
+export const ACCENT_PRESETS = ['#34D399', '#3F6129', '#38BDF8', '#818CF8', '#F472B6', '#FBBF24', '#FB7185'];
 
 /** Lớp phủ tối & cường độ làm mờ theo mức trong suốt (0 = đục, 3 = trong). */
 const GLASS_LEVELS = [

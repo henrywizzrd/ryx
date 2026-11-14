@@ -277,12 +277,17 @@ export default function CustomizeScreen() {
                 value={themeId}
                 onChange={(id) => applyAppearance(id, mode)}
               />
-              <View style={{ height: 10 }} />
-              <Segmented
-                options={MODES.map((m) => ({ value: m.id, label: m.label }))}
-                value={mode}
-                onChange={(m) => applyAppearance(themeId, m)}
-              />
+              {/* Matcha là giao diện riêng, không có bản sáng/tối */}
+              {themeId !== 'matcha' && (
+                <>
+                  <View style={{ height: 10 }} />
+                  <Segmented
+                    options={MODES.map((m) => ({ value: m.id, label: m.label }))}
+                    value={mode}
+                    onChange={(m) => applyAppearance(themeId, m)}
+                  />
+                </>
+              )}
             </Section>
 
             <Section title="Màu nhấn">

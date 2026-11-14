@@ -93,6 +93,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
             ...saved,
             shield: { ...DEFAULT_SETTINGS.shield, ...saved.shield },
             home: { ...DEFAULT_SETTINGS.home, ...saved.home },
+            // Màu nhấn Matcha cũ (trước khi đổi bảng màu) → màu mới
+            accent:
+              ({ '#9DC46B': '#3F6129', '#5E8A2E': '#3F6129' } as Record<string, string>)[saved.accent ?? ''] ??
+              saved.accent ??
+              DEFAULT_SETTINGS.accent,
             // Kiểu thẻ đã bỏ (Lưới 3 cột, Xếp chồng) → về Lưới
             tabLayout: TAB_LAYOUT_IDS.includes(saved.tabLayout as TabLayout)
               ? (saved.tabLayout as TabLayout)
