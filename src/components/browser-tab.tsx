@@ -17,6 +17,7 @@ import { attachContentBlocker } from '@/lib/content-blocker';
 import { applyEdgeEffects, setWebInsets } from '@/lib/edge';
 import { describeDiag, FRAME_DIAG_SCRIPT } from '@/lib/frame-diag';
 import { log } from '@/lib/logger';
+import { playerStore } from '@/lib/player-store';
 import { registerShotTarget } from '@/lib/tab-shots';
 import { getHost, registrableDomain, siteKey } from '@/lib/url';
 import { useHistoryActions } from '@/state/history';
@@ -500,6 +501,14 @@ function BrowserTabImpl({
         kind?: string;
         src?: string;
         level?: string;
+        on?: boolean;
+        w?: number;
+        h?: number;
+        t?: number;
+        d?: number;
+        p?: boolean;
+        r?: number;
+        b?: number;
       };
       try {
         msg = JSON.parse(e.nativeEvent.data);
@@ -608,6 +617,26 @@ function BrowserTabImpl({
         const s = ((msg.ms ?? 0) / 1000).toFixed(1);
         const what = msg.kind === 'waiting' ? 'bị khựng' : 'chờ tải';
         log.perf('video', `Video ở ${msg.host || 'trang'} ${what} ${s} s mới phát`, msg.src || undefined);
+        return;
+      }
+      // Trình phát toàn màn hình của Ryx (lib/inject: window.__ryxFs)
+      if (msg.type === 'ryx:fs') {
+        if (msg.on) {
+          playerStore.start(tab.id, msg.w ?? 16, msg.h ?? 9);
+          log.info('video', 'Mở trình phát Ryx', msg.host ?? '');
+        } else playerStore.stop(tab.id);
+        return;
+      }
+      if (msg.type === 'ryx:fst') {
+        playerStore.tick(tab.id, {
+          t: msg.t ?? 0,
+          d: msg.d ?? 0,
+          playing: !!msg.p,
+          rate: msg.r ?? 1,
+          buffered: msg.b ?? 0,
+          w: msg.w ?? 0,
+          h: msg.h ?? 0,
+        });
         return;
       }
       if (msg.type === 'ryx:theme') {

@@ -28,7 +28,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LAYOUT_MS } from '@/lib/motion';
-import { ADDRESS_BAR_HEIGHT, addrBarWidth, CARD_ADDR_BOTTOM, StaticAddressBar } from './address-bar';
+import { ADDRESS_BAR_HEIGHT, addrBarWidth, CARD_ADDR_BOTTOM, StaticAddressBar, StaticLens } from './address-bar';
 import { faviconFor } from '@/lib/url';
 import { NewTabPage } from './new-tab-page';
 import { useSettings, type TabLayout } from '@/state/settings';
@@ -83,6 +83,8 @@ interface Props {
   /** Nhận hàm đo vị trí thẻ đang mở (để nút Các thẻ phóng đúng chỗ) */
   onActiveMeasurer: (fn: Measurer) => void;
   onActiveThumbShown: (uri: string) => void;
+  /** Thanh địa chỉ của thẻ đang mở đang thu thành nút kính lúp */
+  addrCollapsed?: boolean;
   onPick: (id: string, r: Rect | null) => void;
   onClose: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -123,6 +125,8 @@ type Measurer = (cb: (r: Rect | null) => void) => void;
 interface Ctx {
   /** Ảnh của thẻ đang mở đã hiện xong (để đổi từ trang thật sang ảnh không bị nháy) */
   onActiveThumbShown: (uri: string) => void;
+  /** Thanh địa chỉ của thẻ đang mở đang thu thành nút kính lúp */
+  addrCollapsed?: boolean;
   token: number;
   onActiveMeasurer: (fn: Measurer) => void;
   onPick: (id: string, r: Rect | null) => void;
@@ -226,7 +230,23 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
           <HomeMini width={width} />
         )}
         {/* Chỉ thẻ đang mở (vừa thu nhỏ): thanh địa chỉ đúng chỗ, đúng tỉ lệ như trang thật lúc thu nhỏ (dock ẩn) */}
-        {active && (
+        {active && ctx.addrCollapsed && !addrAtTop && (
+          // Thanh đang thu thành nút kính lúp: nút tròn sát mép trái, đúng như trang thật lúc thu nhỏ
+          <View
+            pointerEvents="none"
+            style={[
+              styles.cardAddr,
+              {
+                left: 16 * (width / W),
+                top: height - (CARD_ADDR_BOTTOM + ADDRESS_BAR_HEIGHT) * (width / W),
+                transform: [{ scale: width / W }],
+              },
+            ]}
+          >
+            <StaticLens />
+          </View>
+        )}
+        {active && !(ctx.addrCollapsed && !addrAtTop) && (
           <View
             pointerEvents="none"
             style={[
@@ -290,7 +310,7 @@ function Item({
   children,
 }: {
   tab: Tab;
-  dir: 'horizontal' | 'up';
+  dir: 'horizontal' | 'right' | 'up';
   ctx: Ctx;
   style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
@@ -607,7 +627,8 @@ function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
             <Item
               key={t.id}
               tab={t}
-              dir="horizontal"
+              // Thẻ nhỏ nằm bên phải: vuốt sang phải (ra mép màn hình) là đóng
+              dir="right"
               ctx={ctx}
               style={{ transform: [{ perspective: 700 }, { rotateY: '-14deg' }] }}
             >
@@ -625,15 +646,18 @@ function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
         </ScrollView>
       )}
       <View style={{ width: bigW, paddingTop: 8, paddingBottom: 16, justifyContent: 'center' }}>
-        <Card
-          tab={active}
-          active
-          hidden={active.id === hideId}
-          width={bigW}
-          height={Math.max(200, bigH)}
-          radius={22}
-          ctx={ctx}
-        />
+        {/* Thẻ lớn (thẻ đang mở): vuốt lên là đóng */}
+        <Item tab={active} dir="up" ctx={ctx}>
+          <Card
+            tab={active}
+            active
+            hidden={active.id === hideId}
+            width={bigW}
+            height={Math.max(200, bigH)}
+            radius={22}
+            ctx={ctx}
+          />
+        </Item>
       </View>
     </View>
   );
@@ -661,6 +685,7 @@ function TabOverviewImpl(props: Props) {
     token: props.token,
     onActiveMeasurer: props.onActiveMeasurer,
     onActiveThumbShown: props.onActiveThumbShown,
+    addrCollapsed: props.addrCollapsed,
   };
 
   // Màn các thẻ hiện dần theo mức thu nhỏ của trang

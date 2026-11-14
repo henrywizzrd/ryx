@@ -4,8 +4,8 @@ import { MOTION } from '@/lib/motion';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 interface Props {
-  /** horizontal: vuốt trái/phải để đóng · up: vuốt lên để đóng (dùng cho kiểu trượt ngang). */
-  direction: 'horizontal' | 'up';
+  /** horizontal: vuốt trái/phải · right: chỉ vuốt sang phải · up: vuốt lên để đóng */
+  direction: 'horizontal' | 'right' | 'up';
   onClose: () => void;
   style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
@@ -18,21 +18,28 @@ const VELOCITY = 900; // hoặc vuốt nhanh
 export function SwipeToClose({ direction, onClose, style, children }: Props) {
   const { width, height } = useWindowDimensions();
   const offset = useSharedValue(0);
-  const horizontal = direction === 'horizontal';
+  const horizontal = direction !== 'up';
+  const rightOnly = direction === 'right';
   const limit = horizontal ? width : height;
 
   const pan = horizontal
-    ? Gesture.Pan().activeOffsetX([-14, 14]).failOffsetY([-12, 12])
+    ? rightOnly
+      ? Gesture.Pan().activeOffsetX([-9999, 14]).failOffsetY([-12, 12])
+      : Gesture.Pan().activeOffsetX([-14, 14]).failOffsetY([-12, 12])
     : Gesture.Pan().activeOffsetY([-14, 9999]).failOffsetX([-12, 12]);
 
   pan
     .onUpdate((e) => {
-      offset.value = horizontal ? e.translationX : Math.min(0, e.translationY);
+      offset.value = horizontal
+        ? rightOnly
+          ? Math.max(0, e.translationX)
+          : e.translationX
+        : Math.min(0, e.translationY);
     })
     .onEnd((e) => {
       const v = horizontal ? e.velocityX : e.velocityY;
       const far = Math.abs(offset.value) > limit * DISTANCE;
-      const fast = horizontal ? Math.abs(v) > VELOCITY : v < -VELOCITY;
+      const fast = horizontal ? (rightOnly ? v > VELOCITY : Math.abs(v) > VELOCITY) : v < -VELOCITY;
       if (far || fast) {
         const sign = horizontal ? (offset.value === 0 ? Math.sign(v) || -1 : Math.sign(offset.value)) : -1;
         offset.value = withTiming(sign * limit, { duration: 180 }, (done) => {

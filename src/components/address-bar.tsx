@@ -475,3 +475,17 @@ export function StaticAddressBar({ tab, blocked, width }: { tab: Tab; blocked: n
     </Glass>
   );
 }
+
+/** Nút kính lúp tĩnh (thanh địa chỉ đang thu gọn), vẽ trong thẻ ở màn các thẻ */
+export function StaticLens() {
+  const { colors } = useTheme();
+  return (
+    <Glass
+      radius={ADDRESS_BAR_HEIGHT / 2}
+      style={{ width: ADDRESS_BAR_HEIGHT, height: ADDRESS_BAR_HEIGHT }}
+      contentStyle={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+    >
+      <Ionicons name="search" size={20} color={colors.text} />
+    </Glass>
+  );
+}

@@ -98,6 +98,7 @@ function applyHide(){
 }
 
 function scan(){
+  try { inlineVideos(); } catch (e) {}
   var changed = false;
   ['ads','gambling','popups'].forEach(function(k){
     if (!P[k] || !SEL[k]) return;
@@ -528,6 +529,84 @@ window.addEventListener('click', function(e){
   try { var f0 = window.fetch; if (f0) window.fetch = function(i){ hls(i && i.url ? i.url : i); return f0.apply(this, arguments); }; } catch (e) {}
   document.addEventListener('loadstart', function(e){ var v = e.target; if (v && v.tagName === 'VIDEO') hls(v.currentSrc || v.src); }, true);
 })();
+/* ---- Toàn màn hình kiểu Ryx: thay màn toàn màn hình của iOS bằng trình phát riêng của app ----
+   Video vẫn chạy trong trang (chạy cả với video blob: như YouTube): khung video được phủ kín màn hình, mọi thứ khác
+   trên trang ẩn đi, app vẽ nút điều khiển đè lên và gửi lệnh vào đây (window.__ryxFs). */
+var fsVideo = null, fsTimer = 0;
+var FS_CSS = 'html.ryx-fs,html.ryx-fs body{background:#000!important;overflow:hidden!important;}' +
+  'html.ryx-fs body *:not([data-ryx-fsp]):not([data-ryx-fs]){visibility:hidden!important;}' +
+  'html.ryx-fs [data-ryx-fsp]{transform:none!important;filter:none!important;contain:none!important;will-change:auto!important;perspective:none!important;visibility:visible!important;}' +
+  'html.ryx-fs video[data-ryx-fs]{visibility:visible!important;position:fixed!important;left:0!important;top:0!important;right:auto!important;bottom:auto!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;z-index:2147483647!important;object-fit:contain!important;transform:none!important;background:#000!important;opacity:1!important;}';
+function bufEnd(v){ try { var b = v.buffered; for (var i = 0; i < b.length; i++) if (b.start(i) <= v.currentTime + 0.5 && b.end(i) >= v.currentTime) return b.end(i); } catch (e) {} return 0; }
+function fsTick(){
+  var v = fsVideo; if (!v) return;
+  send({ type: 'ryx:fst', t: v.currentTime || 0, d: isFinite(v.duration) ? v.duration : 0, p: !v.paused, r: v.playbackRate || 1, b: bufEnd(v), w: v.videoWidth || 0, h: v.videoHeight || 0 });
+}
+function fsEnter(v){
+  if (!v || fsVideo === v) return;
+  if (fsVideo) fsExit();
+  fsVideo = v;
+  v.setAttribute('data-ryx-fs', '');
+  for (var p = v.parentElement; p && p !== root; p = p.parentElement) p.setAttribute('data-ryx-fsp', '');
+  styleEl('ryx-fs').textContent = FS_CSS;
+  root.classList.add('ryx-fs');
+  send({ type: 'ryx:fs', on: true, w: v.videoWidth || 16, h: v.videoHeight || 9, host: HOST });
+  fsTick(); fsTimer = setInterval(fsTick, 250);
+  try { v.dispatchEvent(new Event('webkitbeginfullscreen')); } catch (e) {}
+}
+function fsExit(){
+  var v = fsVideo; if (!v) return;
+  fsVideo = null; clearInterval(fsTimer);
+  v.removeAttribute('data-ryx-fs');
+  var ps = document.querySelectorAll('[data-ryx-fsp]');
+  for (var i = 0; i < ps.length; i++) ps[i].removeAttribute('data-ryx-fsp');
+  root.classList.remove('ryx-fs');
+  styleEl('ryx-fs').textContent = '';
+  send({ type: 'ryx:fs', on: false });
+  try { v.dispatchEvent(new Event('webkitendfullscreen')); } catch (e) {}
+}
+/* Video nào cũng phát ngay trong trang (không để iOS tự bung màn toàn màn hình của nó khi bấm phát) */
+function inlineVideos(){
+  var vs = document.getElementsByTagName('video');
+  for (var i = 0; i < vs.length; i++) {
+    if (!vs[i].hasAttribute('playsinline')) { vs[i].setAttribute('playsinline', ''); vs[i].setAttribute('webkit-playsinline', ''); }
+  }
+}
+try {
+  var VP = HTMLVideoElement.prototype;
+  var origExitFs = VP.webkitExitFullscreen;
+  VP.webkitEnterFullscreen = function(){ fsEnter(this); };
+  VP.webkitEnterFullScreen = VP.webkitEnterFullscreen;
+  VP.webkitExitFullscreen = function(){ if (fsVideo === this) fsExit(); };
+  VP.webkitExitFullScreen = VP.webkitExitFullscreen;
+  var reqFs = function(){
+    var v = this.tagName === 'VIDEO' ? this : this.querySelector && this.querySelector('video');
+    if (v) { fsEnter(v); return Promise.resolve(); }
+    return Promise.reject(new TypeError('Fullscreen not supported'));
+  };
+  Element.prototype.requestFullscreen = reqFs;
+  Element.prototype.webkitRequestFullscreen = reqFs;
+  Element.prototype.webkitRequestFullScreen = reqFs;
+  document.exitFullscreen = function(){ fsExit(); return Promise.resolve(); };
+  document.webkitExitFullscreen = document.exitFullscreen;
+  /* Lọt sang màn của iOS (nút toàn màn hình gốc của iOS, không qua script): thoát ra ngay rồi mở màn của Ryx */
+  document.addEventListener('webkitbeginfullscreen', function(e){
+    var v = e.target; if (!v || v.tagName !== 'VIDEO' || fsVideo === v) return;
+    try { origExitFs && origExitFs.call(v); } catch (err) {}
+    setTimeout(function(){ fsEnter(v); }, 0);
+  }, true);
+  /* Video bị gỡ khỏi trang (đổi video, chuyển trang trong ứng dụng web) thì thoát */
+  setInterval(function(){ if (fsVideo && !fsVideo.isConnected) fsExit(); }, 1000);
+} catch (e) {}
+window.__ryxFs = {
+  exit: fsExit,
+  toggle: function(){ var v = fsVideo; if (!v) return; if (v.paused) v.play().catch(function(){}); else v.pause(); fsTick(); },
+  seek: function(t){ var v = fsVideo; if (!v) return; v.currentTime = Math.max(0, Math.min(t, isFinite(v.duration) ? v.duration - 0.2 : t)); fsTick(); },
+  skip: function(s){ var v = fsVideo; if (v) window.__ryxFs.seek((v.currentTime || 0) + s); },
+  rate: function(r){ var v = fsVideo; if (v) { v.playbackRate = r; fsTick(); } },
+  pip: function(){ var v = fsVideo; if (!v) return; fsExit(); try { v.webkitSetPresentationMode('picture-in-picture'); } catch (e) {} }
+};
+
 window.__ryx = {
   pending: reportPending,
   pick: function(on){ pickOn = !!on; if (!pickOn) pickClearAll(); pickCss(); },

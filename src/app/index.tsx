@@ -1,4 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { useShareIntent } from 'expo-share-intent';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
@@ -43,6 +44,8 @@ import { configureContentBlocker, refreshContentBlocker } from '@/lib/content-bl
 import { applyBackgroundPlay } from '@/lib/background-play';
 import { buildCookieScript } from '@/lib/cookie-consent';
 import { log } from '@/lib/logger';
+import { playerStore, usePlayerOn } from '@/lib/player-store';
+import { RyxPlayer } from '@/components/ryx-player';
 import { MOTION } from '@/lib/motion';
 import { getRyxNetStatus, setRyxNetEnabled } from '@/lib/ryx-net';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
@@ -500,6 +503,27 @@ export default function BrowserScreen() {
     [injectConfig, siteThemes, cookieScript, pageScheme],
   );
 
+  // ---- Trình phát toàn màn hình của Ryx (lib/inject → window.__ryxFs, components/ryx-player) ----
+  const fs = usePlayerOn();
+  const fsOn = fs.on && fs.tabId === active.id;
+  // Đổi sang thẻ khác thì tắt trình phát
+  useEffect(() => {
+    const st = playerStore.get();
+    if (st.on && st.tabId !== active.id) playerStore.stop();
+  }, [active.id]);
+  // Video ngang: xoay ngang màn hình; thoát thì trả lại như cũ
+  useEffect(() => {
+    if (!fsOn) return;
+    if (fs.landscape) {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch((e: unknown) =>
+        log.warn('video', 'Không xoay ngang được', e),
+      );
+    }
+    return () => {
+      ScreenOrientation.unlockAsync().catch(() => {});
+    };
+  }, [fsOn, fs.landscape]);
+
   // ---- Bố cục ----
   const dock = dockMetrics(settings.dockStyle, insets.bottom);
   const addrTop = settings.addressBarPosition === 'top';
@@ -524,7 +548,8 @@ export default function BrowserScreen() {
   const canCollapse = !addrTop && settings.dockStyle !== 'attached';
   // Đổi thẻ / đổi trang / về trang chủ / gõ địa chỉ / thu nhỏ thành thẻ: thanh bung lại (trạng thái thu gọn gắn với
   // đúng "khoá" lúc thu gọn, khoá đổi là tự hết thu gọn)
-  const expandKey = `${active.id}|${active.url ?? ''}|${active.home}|${addrFocused}|${phase}|${canCollapse}`;
+  // (Không gồm màn các thẻ: đang thu gọn thì zoom out vẫn giữ dạng kính lúp)
+  const expandKey = `${active.id}|${active.url ?? ''}|${active.home}|${addrFocused}|${canCollapse}`;
   const [collapsedFor, setCollapsedFor] = useState<string | null>(null);
   const addrCollapsed = collapsedFor === expandKey;
   const collapse = useSharedValue(0);
@@ -811,6 +836,7 @@ export default function BrowserScreen() {
         token={ovToken}
         onActiveMeasurer={onActiveMeasurer}
         onActiveThumbShown={(uri) => revealOverview(uri)}
+        addrCollapsed={addrCollapsed}
         zoom={zoom}
         dockShift={dockX}
         tabs={tabs}
@@ -871,8 +897,8 @@ export default function BrowserScreen() {
                 onChapter={onChapter}
                 onDownload={(url, referer) => download(url, referer)}
                 diag={settings.diagVideo}
-                insetTop={contentTop}
-                insetBottom={webBottomInset}
+                insetTop={fsOn ? 0 : contentTop}
+                insetBottom={fsOn ? 0 : webBottomInset}
               />
             ))}
             {active.home && (
@@ -924,7 +950,7 @@ export default function BrowserScreen() {
             </View>
           )}
 
-          {chapter && !addrFocused && !picking && !notice && (
+          {chapter && !addrFocused && !picking && !notice && !fsOn && (
             <View pointerEvents="box-none" style={[styles.chapWrap, { bottom: chromeBottom + GAP }]}>
               {chapter.prev ? (
                 <Glass radius={22} contentStyle={styles.chapBtn}>
@@ -965,7 +991,10 @@ export default function BrowserScreen() {
         </View>
         {/* Thanh địa chỉ nằm ngoài vùng chụp ảnh thẻ (ảnh thẻ tự vẽ thanh tĩnh ở đúng chỗ, xem tab-overview), nhưng vẫn
           trong lớp thu nhỏ: zoom out thì thanh co lại cùng trang và trôi xuống sát đáy thẻ, dock ẩn đi */}
-        <Animated.View pointerEvents="box-none" style={[styles.addrWrap, addrAnim]}>
+        <Animated.View
+          pointerEvents={fsOn ? 'none' : 'box-none'}
+          style={[styles.addrWrap, addrAnim, fsOn && { opacity: 0 }]}
+        >
           <AddressBar
             tab={active}
             blocked={blocked.total}
@@ -1003,7 +1032,7 @@ export default function BrowserScreen() {
         extraX={dockX}
         extraY={dockY}
         shiftX={dockShift}
-        hidden={addrFocused && kb > 0}
+        hidden={(addrFocused && kb > 0) || fsOn}
         onSwipeSide={(dir) => {
           const i = tabs.findIndex((t) => t.id === active.id);
           const next = tabs[dir === 'next' ? i + 1 : i - 1];
@@ -1052,6 +1081,9 @@ export default function BrowserScreen() {
         onToggleDark={(v) => toggle('dark', v)}
         onAction={onMenuAction}
       />
+      {/* Trình phát toàn màn hình của Ryx (thay màn toàn màn hình của iOS), nằm trên cùng */}
+      {fsOn && <RyxPlayer onCmd={(js) => webRef()?.injectJavaScript(js)} />}
+      <Stack.Screen options={{ statusBarHidden: fsOn, statusBarAnimation: 'fade' }} />
     </View>
   );
 }
