@@ -1,13 +1,15 @@
 import { requireOptionalNativeModule } from 'expo';
 
+import { colors } from '@/theme';
+
 import { log } from './logger';
 
-const Native = requireOptionalNativeModule<{ applyEdgeEffects?: () => Promise<number> }>('RyxNet');
+const Native = requireOptionalNativeModule<{ applyEdgeEffects?: (bg?: string) => Promise<number> }>('RyxNet');
 let timer: ReturnType<typeof setTimeout> | null = null;
 let logged = false;
 
 /**
- * Bật hiệu ứng mờ dần ở mép trên (iOS 26+) cho trang web và trang chủ.
+ * Bật hiệu ứng mờ dần ở mép trên (iOS 26+) cho trang web và trang chủ; WebView bỏ trong suốt (xem RyxPageBg.swift).
  * Gọi lại mỗi khi có WebView/trang chủ mới hiện ra (gộp các lần gọi sát nhau).
  */
 export function applyEdgeEffects(delay = 120): void {
@@ -16,7 +18,8 @@ export function applyEdgeEffects(delay = 120): void {
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;
-    fn()
+    // Màu theme app: WebView hiện màu này trước khi trang có nội dung
+    fn(/^#[0-9a-f]{6}$/i.test(colors.bg) ? colors.bg.toLowerCase() : undefined)
       .then((n) => {
         if (!logged) {
           logged = true;

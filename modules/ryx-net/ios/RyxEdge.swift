@@ -7,8 +7,8 @@ enum RyxEdge {
   /// Vùng cuộn đã đặt rồi: chỉ đặt 1 lần (đổi qua lại kiểu hiệu ứng nhiều lần có thể làm iOS ngừng đổi màu theo trang)
   private static let done = NSHashTable<UIScrollView>.weakObjects()
 
-  /// Áp cho mọi WKWebView (kèm theo dõi theme-color) và mọi vùng cuộn được đánh dấu testID "ryx-edge" (trang chủ). Trả về số vùng đã áp.
-  static func applyAll() -> Int {
+  /// Áp cho mọi WKWebView (kèm bỏ trong suốt, xem RyxPageBg) và mọi vùng cuộn được đánh dấu testID "ryx-edge" (trang chủ). Trả về số vùng đã áp.
+  static func applyAll(bg: UIColor? = nil) -> Int {
     var n = 0
     func soft(_ sv: UIScrollView) {
       guard #available(iOS 26.0, *) else { return }
@@ -26,8 +26,8 @@ enum RyxEdge {
     }
     func walk(_ v: UIView) {
       if let w = v as? WKWebView {
-        // Theo dõi màu theme-color của trang (xem RyxTheme) cho dải dưới giờ/pin
-        RyxTheme.watch(w)
+        // WebView không trong suốt: WebKit tự tô dải dưới giờ/pin bằng màu nền trang (xem RyxPageBg)
+        RyxPageBg.apply(w, bg: bg)
         soft(w.scrollView)
         // Thanh cuộn bắt đầu dưới giờ/pin như nội dung
         w.scrollView.verticalScrollIndicatorInsets.top = w.scrollView.contentInset.top

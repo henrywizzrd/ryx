@@ -209,48 +209,6 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 window.addEventListener('load', scan);
 
-/* Màu đầu trang: app tô dải dưới giờ/pin bằng màu này để trang nhìn liền lên tận mép (giống Safari).
-   Ưu tiên theme-color trang tự khai báo (iOS báo sớm qua WKWebView.themeColor → window.__ryxTop, xem RyxTheme.swift),
-   không có thì đo màu nền ở mép trên. Chỉ gửi sau khi trang mới đã vẽ khung đầu tiên, để dải không đổi màu
-   trong lúc trang cũ vẫn còn hiện. */
-function rgbOf(s){ var m = /rgba?\\(([^)]+)\\)/.exec(s || ''); if (!m) return null;
-  var p = m[1].split(/[\\s,\\/]+/).filter(Boolean).map(parseFloat);
-  return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; }
-function bgUp(el){ while (el && el.nodeType === 1) { var c = rgbOf(getComputedStyle(el).backgroundColor); if (c && c.a > 0.5) return c; el = el.parentElement; } return null; }
-/* Trang đang bị Ryx ép tối (invert 0.9 + hue-rotate 180°): đổi màu theo đúng phép lọc đó */
-function viaDark(c){ var f = function(v){ return v * 0.1 + (255 - v) * 0.9; }; var r = f(c.r), g = f(c.g), b = f(c.b);
-  return { r: -0.574 * r + 1.43 * g + 0.144 * b, g: 0.426 * r + 0.43 * g + 0.144 * b, b: 0.426 * r + 1.43 * g - 0.856 * b }; }
-var topT0 = Date.now(), topPainted = false, topArmed = false, themeHex = null, topSent = '', topAt = 0;
-function topColor(){
-  var c = themeHex
-    ? { r: parseInt(themeHex.slice(1, 3), 16), g: parseInt(themeHex.slice(3, 5), 16), b: parseInt(themeHex.slice(5, 7), 16) }
-    : (bgUp(document.elementFromPoint(4, 1)) || bgUp(document.body) || bgUp(document.documentElement) || { r: 255, g: 255, b: 255 });
-  if (styleEl('ryx-dark').textContent) c = viaDark(c);
-  return '#' + [c.r, c.g, c.b].map(function(v){ v = Math.max(0, Math.min(255, Math.round(v))); return (v < 16 ? '0' : '') + v.toString(16); }).join('');
-}
-function sampleTop(force){
-  if (!topPainted || window.scrollY > 4 || !document.body) return;
-  var now = Date.now(); if (!force && now - topAt < 150) return; topAt = now;
-  var hex = topColor();
-  if (hex !== topSent) { topSent = hex; send({ type: 'ryx:top', color: hex }); }
-}
-/* Khung đầu tiên của trang mới: khi thân trang có phần tử đầu tiên, đợi 2 khung hình (đã vẽ ra màn) */
-function armPaint(){
-  if (topArmed || !document.body || !document.body.firstElementChild) return;
-  topArmed = true;
-  requestAnimationFrame(function(){ requestAnimationFrame(function(){ topPainted = true; sampleTop(true); }); });
-}
-window.__ryxTop = function(h){ themeHex = /^#[0-9a-f]{6}$/.test(h) ? h : null; sampleTop(true); };
-var topMo = new MutationObserver(function(){
-  if (!topPainted) { armPaint(); return; }
-  if (Date.now() - topT0 > 3000) { topMo.disconnect(); return; }
-  sampleTop();
-});
-topMo.observe(root, { childList: true, subtree: true });
-document.addEventListener('DOMContentLoaded', function(){ armPaint(); setTimeout(sampleTop, 600); });
-window.addEventListener('load', function(){ armPaint(); setTimeout(sampleTop, 200); setTimeout(sampleTop, 1500); });
-window.addEventListener('scroll', function(){ if (window.scrollY <= 4) sampleTop(); }, { passive: true });
-setInterval(function(){ if (document.visibilityState === 'visible') sampleTop(); }, 2000);
 
 /* Nhấn giữ ảnh/video → app hiện menu (Lưu vào Ảnh, Sao chép link…) */
 /* Chữ trong link không bị iOS tô chọn khi nhấn giữ (để chỉ hiện menu của Ryx); giữ rồi kéo thì Ryx tự tô */

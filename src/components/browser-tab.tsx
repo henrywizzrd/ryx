@@ -1,6 +1,5 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, StyleSheet, type HostInstance } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { memo, useCallback, useEffect, useRef } from 'react';
+import { Linking, StyleSheet, View, type HostInstance } from 'react-native';
 import { WebView as RNWebView } from 'react-native-webview';
 import type {
   ShouldStartLoadRequest,
@@ -137,14 +136,6 @@ function BrowserTabImpl({
   const { patchTab, refs } = useTabs();
   const { record: recordHistory } = useHistoryActions();
   const ref = useRef<WebViewHandle>(null);
-  // Màu đầu trang (trang tự đo, xem lib/inject): tô dải dưới giờ/pin cho trang liền lên tận mép
-  const [topColor, setTopColor] = useState<string | null>(null);
-  // Đổi màu dải trên cùng mượt (chuyển dần ~0.3 s) thay vì đổi cái rụp khi sang trang khác màu
-  const topBg = useSharedValue<string>(colors.bg);
-  useEffect(() => {
-    if (topColor) topBg.set(withTiming(topColor, { duration: 320, easing: Easing.out(Easing.cubic) }));
-  }, [topColor, topBg]);
-  const topBgStyle = useAnimatedStyle(() => ({ backgroundColor: topBg.get() }));
   const lastPageCounts = useRef<Counts>({ ...EMPTY_COUNTS });
   const urlRef = useRef(tab.url);
   const loadStartedAt = useRef(0);
@@ -498,7 +489,6 @@ function BrowserTabImpl({
         kind?: string;
         src?: string;
         level?: string;
-        color?: string;
       };
       try {
         msg = JSON.parse(e.nativeEvent.data);
@@ -609,10 +599,6 @@ function BrowserTabImpl({
         log.perf('video', `Video ở ${msg.host || 'trang'} ${what} ${s} s mới phát`, msg.src || undefined);
         return;
       }
-      if (msg.type === 'ryx:top') {
-        if (typeof msg.color === 'string' && /^#[0-9a-f]{6}$/.test(msg.color)) setTopColor(msg.color);
-        return;
-      }
       if (msg.type === 'ryx:theme') {
         if (msg.host) setSiteTheme(msg.host, !!msg.dark);
         return;
@@ -640,13 +626,12 @@ function BrowserTabImpl({
   if (!tab.sourceUrl) return null;
 
   return (
-    <Animated.View
+    <View
       ref={shotRef}
       collapsable={false}
       // Không dùng display:none: thẻ ẩn có thể bị dựng lại từ đầu và quay về trang đầu tiên, mất lịch sử lùi/tiến
       pointerEvents={visible ? 'auto' : 'none'}
-      // Nền khung = màu đầu trang (WebView trong suốt nên dải dưới giờ/pin hiện màu này)
-      style={[StyleSheet.absoluteFill, visible ? styles.shown : styles.hidden, topBgStyle]}
+      style={[StyleSheet.absoluteFill, visible ? styles.shown : styles.hidden]}
     >
       <WebView
         ref={setRef}
@@ -692,14 +677,14 @@ function BrowserTabImpl({
         contentMode="mobile"
         keyboardDisplayRequiresUserAction={false}
       />
-    </Animated.View>
+    </View>
   );
 }
 
 export const BrowserTab = memo(BrowserTabImpl);
 
 const styles = StyleSheet.create({
-  web: { backgroundColor: 'transparent' },
+  web: { backgroundColor: colors.bg },
   // Không đặt zIndex: khung bọc thẻ có thể bị gộp (view flattening) lên cùng cấp với dock/thanh địa chỉ,
   // zIndex khi đó đẩy trang web đè lên che mất dock. Thẻ ẩn đã trong suốt và không nhận chạm nên thứ tự không quan trọng.
   shown: { opacity: 1 },
