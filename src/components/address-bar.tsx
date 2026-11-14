@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
   FadeInDown,
@@ -27,6 +27,8 @@ import { IconButton } from './icon-button';
 import { Txt } from './txt';
 
 export const ADDRESS_BAR_HEIGHT = 48;
+/** Bề ngang thanh địa chỉ khi không gõ, so với cả hàng */
+const BAR_W = 0.6;
 
 interface Props {
   tab: Tab;
@@ -156,12 +158,14 @@ export function AddressBar({
   const showPage = !tab.home && !!tab.url;
   const host = showPage ? displayHost(tab.url) : '';
 
-  // Chạm vào thanh: phồng nhẹ ra
+  // Bình thường thanh chỉ rộng 3/5 (nằm giữa), chạm vào để gõ thì dãn ra hết bề ngang, xong thì thu lại
+  const { width: W } = useWindowDimensions();
+  const full = W - 32; // khung bọc ở app/index.tsx cách mép 16 mỗi bên
   const grow = useSharedValue(0);
   useEffect(() => {
-    grow.value = withSpring(focused ? 1 : 0, MOTION.snappy);
+    grow.value = withTiming(focused ? 1 : 0, { duration: 300, easing: Easing.out(Easing.cubic) });
   }, [focused, grow]);
-  const growStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + grow.value * 0.025 }] }));
+  const growStyle = useAnimatedStyle(() => ({ width: full * (BAR_W + (1 - BAR_W) * grow.value) }));
 
   // Khiên chớp nhẹ mỗi lần chặn thêm (tối đa 2 lần/giây)
   const pulse = useSharedValue(1);
@@ -184,7 +188,7 @@ export function AddressBar({
   };
 
   return (
-    <Animated.View style={growStyle}>
+    <Animated.View style={[{ alignSelf: 'center' }, growStyle]}>
       {suggestions.length > 0 && (
         <Glass
           radius={22}
@@ -264,7 +268,7 @@ export function AddressBar({
                 setDraft(t);
                 setTyped(true);
               }}
-              placeholder="Tìm kiếm hoặc nhập địa chỉ"
+              placeholder="Search"
               placeholderTextColor={colors.textMuted}
               onBlur={() => setFocus(false)}
               onSubmitEditing={() => {
@@ -287,7 +291,7 @@ export function AddressBar({
           <Pressable
             onPress={() => setFocus(true)}
             accessibilityRole="search"
-            accessibilityLabel={showPage ? `Địa chỉ: ${host}. Chạm để sửa` : 'Tìm kiếm hoặc nhập địa chỉ'}
+            accessibilityLabel={showPage ? `Địa chỉ: ${host}. Chạm để sửa` : 'Search'}
             style={styles.inputWrap}
           >
             {showPage && (
@@ -305,7 +309,7 @@ export function AddressBar({
               color={showPage ? colors.text : colors.textMuted}
               style={{ flexShrink: 1 }}
             >
-              {showPage ? host : 'Tìm kiếm hoặc nhập địa chỉ'}
+              {showPage ? host : 'Search'}
             </Txt>
           </Pressable>
         )}

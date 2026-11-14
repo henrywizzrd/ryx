@@ -28,7 +28,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LAYOUT_MS } from '@/lib/motion';
-import { faviconFor } from '@/lib/url';
+import { faviconFor, isSecure } from '@/lib/url';
 import { NewTabPage } from './new-tab-page';
 import type { TabLayout } from '@/state/settings';
 import type { Tab } from '@/state/tabs';
@@ -93,6 +93,10 @@ const LAYOUT_ANIM = LinearTransition.springify(LAYOUT_MS).dampingRatio(1);
 const ENTER = ZoomIn.springify(LAYOUT_MS).dampingRatio(1);
 const EXIT = ZoomOut.duration(170);
 const TITLE_H = 28;
+/** Thanh địa chỉ thu nhỏ dưới mỗi thẻ (cao 20 + cách thẻ 6) */
+const ADDR_H = 26;
+/** Phần ngoài ảnh thẻ: tiêu đề + thanh địa chỉ nhỏ */
+const CHROME_H = TITLE_H + ADDR_H;
 
 type MeasureRef = React.RefObject<HostInstance | null>;
 function measure(ref: MeasureRef, cb: (r: Rect | null) => void) {
@@ -233,6 +237,27 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
           ]}
         />
       </Pressable>
+      {/* Thanh địa chỉ của thẻ, thu nhỏ: rộng 3/5 như thanh thật */}
+      {!noTitle && (
+        <View style={[styles.miniAddr, { width: Math.round(width * 0.6) }]} pointerEvents="none">
+          {showPage ? (
+            <>
+              <Ionicons
+                name={isSecure(tab.url) ? 'lock-closed' : 'warning-outline'}
+                size={9}
+                color={isSecure(tab.url) ? colors.textMuted : colors.gambling}
+              />
+              <Txt weight="medium" size={10} numberOfLines={1} style={{ flexShrink: 1 }}>
+                {host}
+              </Txt>
+            </>
+          ) : (
+            <Txt weight="medium" size={10} color={colors.textMuted}>
+              Search
+            </Txt>
+          )}
+        </View>
+      )}
       {titleBelow && titleRow}
     </View>
   );
@@ -314,7 +339,7 @@ function Grid({ tabs, activeId, hideId, ctx, W, H, token, cols }: LayoutProps & 
   const gap = cols === 2 ? 14 : 10;
   const w = Math.floor((W - pad * 2 - gap * (cols - 1)) / cols);
   const h = Math.round(w * (cols === 2 ? 1.38 : 1.5));
-  const rowH = h + TITLE_H + gap;
+  const rowH = h + CHROME_H + gap;
   const ai = Math.max(
     0,
     tabs.findIndex((t) => t.id === activeId),
@@ -421,7 +446,7 @@ function Cascade({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
           dir="horizontal"
           ctx={ctx}
           style={{
-            marginTop: i === 0 ? 0 : -(h + TITLE_H - step),
+            marginTop: i === 0 ? 0 : -(h + CHROME_H - step),
             transform: [{ scale: 1 - Math.min(n - 1 - i, 4) * 0.025 }],
           }}
         >
@@ -574,7 +599,7 @@ function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
   const alone = others.length === 0;
   const leftW = alone ? 0 : Math.round((W - pad * 2 - gap) * 0.34);
   const bigW = alone ? Math.round(W * 0.72) : W - pad * 2 - gap - leftW;
-  const bigH = Math.min(H - 24 - TITLE_H, Math.round(bigW * 1.9));
+  const bigH = Math.min(H - 24 - CHROME_H, Math.round(bigW * 1.9));
   const smallW = leftW;
   return (
     <View style={{ flex: 1, flexDirection: 'row-reverse', paddingHorizontal: pad, gap, justifyContent: 'center' }}>
@@ -750,7 +775,7 @@ function TabOverviewImpl(props: Props) {
   );
 }
 
-const makeStyles = (colors: Palette) =>
+const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
   StyleSheet.create({
     root: { backgroundColor: colors.bgDeep },
     header: {
@@ -776,6 +801,20 @@ const makeStyles = (colors: Palette) =>
     chip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 17 },
     wrap: { flexDirection: 'row', flexWrap: 'wrap' },
     titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, height: TITLE_H, paddingLeft: 4 },
+    miniAddr: {
+      alignSelf: 'center',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+      height: ADDR_H - 6,
+      marginTop: 6,
+      paddingHorizontal: 8,
+      borderRadius: (ADDR_H - 6) / 2,
+      backgroundColor: fg(0.08),
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: fg(0.12),
+    },
     fav: { width: 14, height: 14, borderRadius: 3 },
     bigFav: { width: 40, height: 40, borderRadius: 10, marginBottom: 8 },
     preview: {
