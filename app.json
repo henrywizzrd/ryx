@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ryx",
     "slug": "ryx",
-    "version": "1.0.9",
+    "version": "1.1.0",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -102,6 +102,20 @@
           "photosPermission": "Ryx cần quyền truy cập ảnh để lưu ảnh và video bạn tải từ trang web.",
           "savePhotosPermission": "Ryx lưu ảnh và video bạn tải về vào Thư viện ảnh.",
           "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+            "NSExtensionActivationSupportsWebPageWithMaxCount": 1,
+            "NSExtensionActivationSupportsText": true
+          },
+          "iosShareExtensionName": "Mở bằng Ryx",
+          "androidIntentFilters": [
+            "text/*"
+          ]
         }
       ]
     ],

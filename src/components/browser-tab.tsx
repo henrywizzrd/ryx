@@ -14,7 +14,7 @@ import { shouldBlock, type BlockCategory } from '@/lib/blocker';
 import { buildUpdateCall, FRAME_MEDIA_SCRIPT, type InjectConfig } from '@/lib/inject';
 import { PageError } from '@/components/page-error';
 import { attachContentBlocker } from '@/lib/content-blocker';
-import { applyEdgeEffects } from '@/lib/edge';
+import { applyEdgeEffects, setWebInsets } from '@/lib/edge';
 import { describeDiag, FRAME_DIAG_SCRIPT } from '@/lib/frame-diag';
 import { log } from '@/lib/logger';
 import { registerShotTarget } from '@/lib/tab-shots';
@@ -207,9 +207,14 @@ function BrowserTabImpl({
   }, [tab.sourceUrl]);
 
   // Gắn bộ lọc tầng mạng vào WebView của thẻ này (WebView có thể vào màn hình trễ một chút)
+  // Vùng trên/dưới bị giao diện app che: native báo cho WebKit (obscuredContentInsets, tràn viền kiểu Safari)
+  useEffect(() => {
+    setWebInsets(insetTop, insetBottom);
+  }, [insetTop, insetBottom]);
+
   useEffect(() => {
     attachContentBlocker();
-    applyEdgeEffects();
+    applyEdgeEffects(16);
     const t = setTimeout(() => {
       attachContentBlocker();
       applyEdgeEffects(0);
@@ -673,7 +678,7 @@ function BrowserTabImpl({
         decelerationRate="normal"
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
-        contentInset={{ top: insetTop, bottom: insetBottom }}
+        // Khoảng trên/dưới do native đặt (lib/edge → RyxEdge.obscure), không dùng contentInset ở đây: WebKit sẽ ghi đè
         contentMode="mobile"
         keyboardDisplayRequiresUserAction={false}
       />

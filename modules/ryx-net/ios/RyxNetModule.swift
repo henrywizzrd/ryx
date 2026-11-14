@@ -113,8 +113,8 @@ public class RyxNetModule: Module {
     }.runOnQueue(.main)
 
     /// Gắn bộ lọc vào các WebView mới tạo. Trả số WebView vừa gắn.
-    AsyncFunction("applyEdgeEffects") { (bg: String?) -> Int in
-      RyxEdge.applyAll(bg: RyxPageBg.color(bg))
+    AsyncFunction("applyEdgeEffects") { (bg: String?, top: Double?, bottom: Double?) -> Int in
+      RyxEdge.applyAll(bg: RyxPageBg.color(bg), top: top.map { CGFloat($0) }, bottom: bottom.map { CGFloat($0) })
     }.runOnQueue(.main)
 
     AsyncFunction("attachRules") { () -> Int in

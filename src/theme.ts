@@ -205,3 +205,7 @@ export function useTheme() {
     glass,
   };
 }
+
+/** Nhãn nút đưa trang về cùng kiểu với app: app tối → "Chế độ tối", app sáng → "Chế độ sáng" (lib/inject: DARK_CSS/LIGHT_CSS) */
+export const pageModeLabel = colors.scheme === 'light' ? 'Chế độ sáng' : 'Chế độ tối';
+export const pageModeIcon = colors.scheme === 'light' ? 'sunny-outline' : 'moon-outline';

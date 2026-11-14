@@ -78,6 +78,21 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Ryx.xcarchive/Products/Applications/*.app Payload/
+          # Ký tạm (ad-hoc) kèm entitlements: bản build không ký thì không mang entitlements, công cụ sideload
+          # sẽ không biết app + extension "Mở bằng Ryx" cần chung App Group để chuyển link. Lỗi ở đây không chặn build.
+          APP=$(ls -d Payload/*.app | head -1)
+          (
+            set -e
+            for f in "$APP"/Frameworks/*; do [ -e "$f" ] && codesign -f -s - "$f"; done
+            for ex in "$APP"/PlugIns/*.appex; do
+              [ -d "$ex" ] || continue
+              ENT=$(find ios -maxdepth 2 -name 'ShareExtension.entitlements' | head -1)
+              codesign -f -s - ${ENT:+--entitlements "$ENT"} "$ex"
+            done
+            ENT=$(ls ios/*/*.entitlements 2>/dev/null | grep -v ShareExtension | head -1)
+            codesign -f -s - ${ENT:+--entitlements "$ENT"} "$APP"
+            codesign -d --entitlements - "$APP" 2>/dev/null | grep -c application-groups
+          ) || echo "::warning::Không ký tạm được, IPA vẫn tạo nhưng không mang entitlements"
           VERSION=$(node -p 'require("./app.json").expo.version')
           IPA="Ryx-${VERSION}-build${{ github.run_number }}-unsigned.ipa"
           zip -qry "$IPA" Payload

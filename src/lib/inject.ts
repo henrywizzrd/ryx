@@ -9,6 +9,7 @@ import {
 } from '@/filters';
 import type { ShieldPrefs } from '@/state/settings';
 import type { SiteThemes } from '@/state/site-themes';
+import { colors } from '@/theme';
 
 export interface InjectConfig {
   defaults: ShieldPrefs;
@@ -30,6 +31,8 @@ export function buildInjectedScript(cfg: InjectConfig, themes: SiteThemes = {}):
   const data = JSON.stringify({
     cfg,
     themes,
+    // Giao diện app (sáng/tối): nút "chế độ tối/sáng cho trang" đưa trang về cùng kiểu với app
+    scheme: colors.scheme,
     sel: { ads: AD_SELECTORS, gambling: GAMBLING_SELECTORS, popups: POPUP_SELECTORS },
     site: SITE_AD_SELECTORS,
     hosts: { ads: AD_DOMAINS, gambling: GAMBLING_DOMAINS, gkw: GAMBLING_HOST_KEYWORDS },
@@ -147,9 +150,24 @@ try {
   Node.prototype.insertBefore = guard(Node.prototype.insertBefore);
 } catch (e) {}
 
-/* Chế độ tối */
-var DARK_CSS = 'html{background:#fff!important;filter:invert(0.9) hue-rotate(180deg)!important;}' +
-  'img,video,picture,canvas,iframe,embed,object,svg image,[style*="background-image"]{filter:invert(1) hue-rotate(180deg)!important;}';
+/* Chế độ tối (app tối: làm tối trang sáng) / chế độ sáng (app sáng: làm sáng trang tối).
+   Cùng một cách: đảo màu cả trang rồi đảo ngược lại ảnh/video để giữ nguyên. */
+var MEDIA_CSS = 'img,video,picture,canvas,iframe,embed,object,svg image,[style*="background-image"]{filter:invert(1) hue-rotate(180deg)!important;}';
+var DARK_CSS = 'html{background:#fff!important;filter:invert(0.9) hue-rotate(180deg)!important;}' + MEDIA_CSS;
+var LIGHT_CSS = 'html{background:#000!important;filter:invert(1) hue-rotate(180deg)!important;}' + MEDIA_CSS;
+var APP_LIGHT = D.scheme === 'light';
+/* Màu nền trang sau khi đảo (#fff qua invert 0.9 ≈ #1a1a1a; #000 qua invert 1 = #fff). WebKit tô vùng dưới giờ/pin
+   và chỗ kéo quá đà theo màu nền GỐC của trang, nên báo native màu đúng (RyxPageBg.swift, kênh ryxBg). */
+var FORCED_BG = APP_LIGHT ? '#ffffff' : '#1a1a1a';
+var bgSent = null;
+function postBg(hex){
+  try {
+    var h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ryxBg;
+    if (!h) return; /* kênh chưa gắn (WebView vừa tạo): lần áp sau gửi lại */
+    if (hex === bgSent) return;
+    h.postMessage(hex); bgSent = hex;
+  } catch (e) {}
+}
 var HOST = (location.hostname || '').replace(/^www\\./, '');
 var known = D.themes ? D.themes[HOST] : undefined;
 /* Đã biết trang này sáng/tối từ lần trước → áp dụng đúng ngay, không chớp */
@@ -173,7 +191,9 @@ function detectDark(){
   return true;
 }
 function applyDark(){
-  styleEl('ryx-dark').textContent = (P.dark && pageIsDark !== true) ? DARK_CSS : '';
+  var on = P.dark && (APP_LIGHT ? pageIsDark === true : pageIsDark !== true);
+  styleEl('ryx-dark').textContent = on ? (APP_LIGHT ? LIGHT_CSS : DARK_CSS) : '';
+  postBg(on ? FORCED_BG : '');
 }
 
 function applyAll(){ applyHide(); applyDark(); scan(); }
@@ -207,7 +227,7 @@ document.addEventListener('DOMContentLoaded', function(){
   try { reportChapter(); } catch (e) {}
   if (pageIsDark !== null) send({ type: 'ryx:theme', host: HOST, dark: pageIsDark });
 });
-window.addEventListener('load', scan);
+window.addEventListener('load', function(){ scan(); applyDark(); });
 
 
 /* Nhấn giữ ảnh/video → app hiện menu (Lưu vào Ảnh, Sao chép link…) */

@@ -33,6 +33,8 @@ import {
   type ThemeId,
   type ThemeMode,
   fg,
+  pageModeIcon,
+  pageModeLabel,
 } from '@/theme';
 import * as Updates from 'expo-updates';
 
@@ -376,9 +378,9 @@ export default function CustomizeScreen() {
               onChange={(v) => setShield('cookies', v)}
             />
             <ToggleRow
-              icon="moon-outline"
+              icon={pageModeIcon}
               iconColor="#93C5FD"
-              title="Chế độ tối cho mọi trang"
+              title={`${pageModeLabel} cho mọi trang`}
               value={settings.shield.dark}
               onChange={(v) => setShield('dark', v)}
               last

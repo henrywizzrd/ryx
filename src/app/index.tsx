@@ -1,4 +1,5 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useShareIntent } from 'expo-share-intent';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -521,6 +522,23 @@ export default function BrowserScreen() {
   const reload = () => webRef()?.reload();
 
   const openInNewTab = useCallback((url: string) => newTab(url), [newTab]);
+
+  // ---- Link từ app khác: bảng Chia sẻ → "Mở bằng Ryx" (expo-share-intent) hoặc ryx://open?url=… (Phím tắt) ----
+  const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
+  const { open: openParam } = useLocalSearchParams<{ open?: string }>();
+  const external = hasShareIntent
+    ? (shareIntent.webUrl ?? shareIntent.text?.match(/https?:\/\/\S+/)?.[0] ?? shareIntent.text ?? null)
+    : (openParam ?? null);
+  useEffect(() => {
+    if (!external) return;
+    if (hasShareIntent) resetShareIntent();
+    else router.setParams({ open: undefined });
+    const url = resolveInput(external.trim());
+    log.info('nav', 'Mở link từ app khác', url);
+    // Mở ở khung hình sau (không đặt state ngay trong effect); không huỷ: reset ở trên làm effect chạy lại với link rỗng
+    requestAnimationFrame(() => newTabFrom(null, url));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy khi có link mới
+  }, [external]);
 
   // ---- Nhấn giữ trong trang: menu nhỏ bật ra ngay chỗ ngón tay ----
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);

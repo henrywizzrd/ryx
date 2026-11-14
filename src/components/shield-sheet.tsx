@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { ShieldPrefs } from '@/state/settings';
 import type { Counts } from '@/state/stats';
-import { colors, useTheme, fg } from '@/theme';
+import { colors, useTheme, fg, pageModeIcon, pageModeLabel } from '@/theme';
 import { Sheet } from './sheet';
 import { ToggleRow } from './toggle-row';
 import { Txt } from './txt';
@@ -110,9 +110,9 @@ export function ShieldSheet({
           onChange={(v) => onToggle('cookies', v)}
         />
         <ToggleRow
-          icon="moon-outline"
+          icon={pageModeIcon}
           iconColor="#93C5FD"
-          title={site ? 'Chế độ tối cho trang này' : 'Chế độ tối cho trang web'}
+          title={site ? `${pageModeLabel} cho trang này` : `${pageModeLabel} cho trang web`}
           value={prefs.dark}
           onChange={(v) => onToggle('dark', v)}
           last

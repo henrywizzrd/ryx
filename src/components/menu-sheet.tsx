@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, fg } from '@/theme';
+import { colors, fg, pageModeIcon, pageModeLabel } from '@/theme';
 import type { IconName } from './icon-button';
 import { Sheet } from './sheet';
 import { ToggleRow } from './toggle-row';
@@ -83,9 +83,9 @@ export function MenuSheet({ visible, onClose, hasPage, dark, bookmarked, onToggl
       {hasPage && (
         <View style={styles.group}>
           <ToggleRow
-            icon="moon-outline"
+            icon={pageModeIcon}
             iconColor="#93C5FD"
-            title="Chế độ tối cho trang này"
+            title={`${pageModeLabel} cho trang này`}
             value={dark}
             onChange={onToggleDark}
             last
