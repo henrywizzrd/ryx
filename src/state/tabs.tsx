@@ -1,4 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { File, Paths } from 'expo-file-system';
+
 import type { WebViewHandle } from '@/components/browser-tab';
 
 import { EMPTY_COUNTS, type Counts } from './stats';
@@ -54,6 +56,57 @@ export function totalBlocked(tab: Tab): Counts & { total: number } {
   return { ...c, total: c.ads + c.gambling + c.popups };
 }
 
+// ---- Ghi nhớ phiên: các thẻ đang mở được lưu lại, tắt hẳn app mở lại vẫn còn ----
+// Đọc ĐỒNG BỘ lúc mở app (không chớp "Thẻ mới" rồi mới hiện thẻ cũ). Chỉ thẻ đang mở được nạp ngay;
+// các thẻ khác nạp khi chuyển sang (đỡ tải cả chục trang một lúc).
+interface SavedTab {
+  id: string;
+  url: string | null;
+  title: string;
+  home: boolean;
+}
+const sessionFile = () => new File(Paths.document, 'ryx-session.json');
+function loadSession(): { tabs: Tab[]; active: string } | null {
+  try {
+    const f = sessionFile();
+    if (!f.exists) return null;
+    const data = JSON.parse(f.textSync()) as { active?: string; tabs?: SavedTab[] };
+    const saved = (data.tabs ?? []).filter((t) => t && typeof t.id === 'string').slice(0, 50);
+    if (!saved.length) return null;
+    const active = saved.some((t) => t.id === data.active) ? data.active! : saved[saved.length - 1].id;
+    const tabs = saved.map((t) => {
+      const base = makeTab(null);
+      return {
+        ...base,
+        id: t.id,
+        url: t.url,
+        title: t.title || (t.url ? '' : 'Thẻ mới'),
+        home: t.home || !t.url,
+        // Chỉ thẻ đang mở nạp trang ngay
+        sourceUrl: t.id === active && !t.home ? t.url : null,
+        loading: t.id === active && !t.home && !!t.url,
+      };
+    });
+    return { tabs, active };
+  } catch {
+    return null;
+  }
+}
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function saveSession(tabs: Tab[], active: string) {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      const f = sessionFile();
+      if (!f.exists) f.create();
+      const data = { active, tabs: tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, home: t.home })) };
+      f.writeSync(JSON.stringify(data));
+    } catch {
+      // Ghi không được thì lần sau mở app chỉ mất phiên, không ảnh hưởng gì khác
+    }
+  }, 400);
+}
+
 interface TabsCtx {
   tabs: Tab[];
   activeId: string;
@@ -71,13 +124,27 @@ interface TabsCtx {
 const Ctx = createContext<TabsCtx | null>(null);
 
 export function TabsProvider({ children }: { children: React.ReactNode }) {
-  const [tabs, setTabs] = useState<Tab[]>(() => [makeTab()]);
-  const [activeId, setActiveId] = useState<string>(() => tabs[0].id);
+  const [restored] = useState(loadSession);
+  const [tabs, setTabs] = useState<Tab[]>(() => restored?.tabs ?? [makeTab()]);
+  const [activeId, setActiveIdRaw] = useState<string>(() => restored?.active ?? tabs[0].id);
   const refs = useRef(new Map<string, WebViewHandle | null>());
   const tabsRef = useRef(tabs);
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+
+  /** Chuyển thẻ; thẻ khôi phục từ phiên cũ chưa nạp trang thì nạp lúc này */
+  const setActiveId = useCallback((next: string | ((cur: string) => string)) => {
+    setActiveIdRaw((cur) => {
+      const id = typeof next === 'function' ? next(cur) : next;
+      const t = tabsRef.current.find((x) => x.id === id);
+      if (t && !t.sourceUrl && !t.home && t.url) {
+        const url = t.url;
+        setTabs((list) => list.map((x) => (x.id === id ? { ...x, sourceUrl: url, loading: true } : x)));
+      }
+      return id;
+    });
+  }, []);
 
   const patchTab = useCallback<TabsCtx['patchTab']>((id, patch) => {
     setTabs((list) =>
@@ -85,34 +152,40 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  const newTab = useCallback((url: string | null = null, opts?: { background?: boolean }) => {
-    const tab = makeTab(url);
-    setTabs((list) => [...list, tab]);
-    if (!opts?.background) setActiveId(tab.id);
-    return tab.id;
-  }, []);
+  const newTab = useCallback(
+    (url: string | null = null, opts?: { background?: boolean }) => {
+      const tab = makeTab(url);
+      setTabs((list) => [...list, tab]);
+      if (!opts?.background) setActiveId(tab.id);
+      return tab.id;
+    },
+    [setActiveId],
+  );
 
-  const closeTab = useCallback((id: string) => {
-    refs.current.delete(id);
-    setTabs((list) => {
-      const idx = list.findIndex((t) => t.id === id);
-      const next = list.filter((t) => t.id !== id);
-      if (next.length === 0) {
-        const fresh = makeTab();
-        setActiveId(fresh.id);
-        return [fresh];
-      }
-      setActiveId((cur) => (cur === id ? next[Math.max(0, idx - 1)].id : cur));
-      return next;
-    });
-  }, []);
+  const closeTab = useCallback(
+    (id: string) => {
+      refs.current.delete(id);
+      setTabs((list) => {
+        const idx = list.findIndex((t) => t.id === id);
+        const next = list.filter((t) => t.id !== id);
+        if (next.length === 0) {
+          const fresh = makeTab();
+          setActiveId(fresh.id);
+          return [fresh];
+        }
+        setActiveId((cur) => (cur === id ? next[Math.max(0, idx - 1)].id : cur));
+        return next;
+      });
+    },
+    [setActiveId],
+  );
 
   const closeAll = useCallback(() => {
     refs.current.clear();
     const fresh = makeTab();
     setTabs([fresh]);
     setActiveId(fresh.id);
-  }, []);
+  }, [setActiveId]);
 
   /** Mở URL trong một thẻ (giữ lịch sử nếu WebView đã tồn tại). */
   const open = useCallback(
@@ -131,6 +204,13 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
 
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0];
 
+  // Lưu phiên mỗi khi thẻ/địa chỉ/thẻ đang mở đổi (gộp các lần đổi sát nhau)
+  const sessionKey =
+    tabs.map((t) => `${t.id}|${t.url ?? ''}|${t.home ? 1 : 0}|${t.title}`).join('\n') + '#' + active.id;
+  useEffect(() => {
+    saveSession(tabsRef.current, active.id);
+  }, [sessionKey, active.id]);
+
   const value = useMemo(
     () => ({
       tabs,
@@ -144,7 +224,7 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
       open,
       refs,
     }),
-    [tabs, active, newTab, closeTab, closeAll, patchTab, open],
+    [tabs, active, setActiveId, newTab, closeTab, closeAll, patchTab, open],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -54,6 +54,8 @@ interface Props {
   onLinkLongPress: (l: LinkPress) => void;
   /** Đang giữ link rồi kéo ngón tay → bắt đầu tô chọn chữ (app đóng menu nhấn giữ) */
   onSelectStart?: () => void;
+  /** Vị trí cuộn dọc của trang (để thu gọn thanh địa chỉ khi cuộn xuống) */
+  onScrollY?: (y: number) => void;
   /** Trang/khung nhúng tải một playlist HLS (.m3u8) */
   onHls?: (tabId: string, url: string, page: string) => void;
   /** Đang ở chế độ "Chạm để ẩn quảng cáo" và trang báo phần tử vừa chọn. */
@@ -124,6 +126,7 @@ function BrowserTabImpl({
   onMediaLongPress,
   onLinkLongPress,
   onSelectStart,
+  onScrollY,
   onHls,
   onPick,
   onSlowLoad,
@@ -666,6 +669,11 @@ function BrowserTabImpl({
         renderError={renderError}
         onHttpError={onHttpError}
         onMessage={onMessage}
+        onScroll={
+          onScrollY
+            ? (e: { nativeEvent: { contentOffset: { y: number } } }) => onScrollY(e.nativeEvent.contentOffset.y)
+            : undefined
+        }
         onContentProcessDidTerminate={onProcessTerminated}
         // Vuốt lùi do Ryx tự làm (components/edge-swipe): cử chỉ có sẵn không chạy trong app và sẽ chồng lên nhau
         allowsBackForwardNavigationGestures={false}

@@ -14,6 +14,7 @@ import Animated, {
   withSequence,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 
 import { MOTION } from '@/lib/motion';
@@ -45,6 +46,11 @@ interface Props {
   onFocusChange: (focused: boolean) => void;
   /** Thanh nằm dưới thì gợi ý hiện phía trên, và ngược lại */
   position: 'top' | 'bottom';
+  /** 0 = thanh bình thường, 1 = thu thành nút kính lúp tròn bên trái dock (khi cuộn trang xuống) */
+  collapse?: SharedValue<number>;
+  /** Đang thu gọn: chạm vào nút kính lúp thì bung lại thanh */
+  collapsed?: boolean;
+  onExpand?: () => void;
 }
 
 interface Suggestion {
@@ -149,6 +155,9 @@ export function AddressBar({
   onStop,
   onFocusChange,
   position,
+  collapse,
+  collapsed,
+  onExpand,
 }: Props) {
   const styles = useStyles(makeStyles);
 
@@ -169,7 +178,17 @@ export function AddressBar({
   useEffect(() => {
     grow.value = withTiming(focused ? 1 : 0, { duration: 300, easing: Easing.out(Easing.cubic) });
   }, [focused, grow]);
-  const growStyle = useAnimatedStyle(() => ({ width: full * (BAR_W + (1 - BAR_W) * grow.value) }));
+  const growStyle = useAnimatedStyle(() => {
+    const c = collapse?.value ?? 0;
+    const w = full * (BAR_W + (1 - BAR_W) * grow.value);
+    return {
+      width: w + (ADDRESS_BAR_HEIGHT - w) * c,
+      // Thu gọn: trôi sang trái, thành nút tròn nằm bên trái dock (tâm cách mép 16 + nửa nút)
+      transform: [{ translateX: (16 + ADDRESS_BAR_HEIGHT / 2 - W / 2) * c }],
+    };
+  });
+  const contentFade = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, (collapse?.value ?? 0) * 1.6) }));
+  const lensFade = useAnimatedStyle(() => ({ opacity: Math.max(0, (collapse?.value ?? 0) * 1.6 - 0.6) }));
 
   // Khiên chớp nhẹ mỗi lần chặn thêm (tối đa 2 lần/giây)
   const pulse = useSharedValue(1);
@@ -237,112 +256,129 @@ export function AddressBar({
         </Glass>
       )}
       <Glass radius={ADDRESS_BAR_HEIGHT / 2} style={{ height: ADDRESS_BAR_HEIGHT }} contentStyle={styles.row}>
-        {!focused && (
-          <Pressable
-            onPress={onShieldPress}
-            accessibilityRole="button"
-            accessibilityLabel={`Shield, đã chặn ${blocked} mục trên trang này`}
-            hitSlop={6}
-            style={({ pressed }) => [
-              styles.shield,
-              { backgroundColor: shieldOn ? accentSoft : fg(0.08) },
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Animated.View style={pulseStyle}>
-              <Ionicons
-                name={shieldOn ? 'shield-checkmark' : 'shield-outline'}
-                size={16}
-                color={shieldOn ? accent : colors.textMuted}
-              />
-            </Animated.View>
-            {blocked > 0 && <RollingCount value={blocked} color={accent} />}
-          </Pressable>
-        )}
-
-        {focused ? <Ionicons name="search" size={17} color={colors.textMuted} style={{ marginLeft: 14 }} /> : null}
-
-        {focused ? (
-          <View style={styles.inputWrap}>
-            <TextInput
-              ref={inputRef}
-              autoFocus
-              value={draft}
-              onChangeText={(t) => {
-                setDraft(t);
-                setTyped(true);
-              }}
-              placeholder="Search"
-              placeholderTextColor={colors.textMuted}
-              onBlur={() => setFocus(false)}
-              onSubmitEditing={() => {
-                if (draft.trim()) onSubmit(draft);
-                inputRef.current?.blur();
-              }}
-              selectTextOnFocus
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="web-search"
-              returnKeyType="go"
-              keyboardAppearance={colors.scheme}
-              selectionColor={accent}
-              clearButtonMode="while-editing"
-              accessibilityLabel="Thanh địa chỉ"
-              style={styles.input}
-            />
-          </View>
-        ) : (
-          <Pressable
-            onPress={() => setFocus(true)}
-            accessibilityRole="search"
-            accessibilityLabel={showPage ? `Địa chỉ: ${host}. Chạm để sửa` : 'Search'}
-            style={styles.inputWrap}
-          >
-            {showPage && (
-              <Ionicons
-                name={isSecure(tab.url) ? 'lock-closed' : 'warning-outline'}
-                size={12}
-                color={isSecure(tab.url) ? colors.textMuted : colors.gambling}
-                style={{ marginRight: 6 }}
-              />
-            )}
-            <Txt
-              weight="medium"
-              size={16}
-              numberOfLines={1}
-              color={showPage ? colors.text : colors.textMuted}
-              style={{ flexShrink: 1 }}
+        <Animated.View style={[styles.row, styles.fill, contentFade]} pointerEvents={collapsed ? 'none' : 'auto'}>
+          {!focused && (
+            <Pressable
+              onPress={onShieldPress}
+              accessibilityRole="button"
+              accessibilityLabel={`Shield, đã chặn ${blocked} mục trên trang này`}
+              hitSlop={6}
+              style={({ pressed }) => [
+                styles.shield,
+                { backgroundColor: shieldOn ? accentSoft : fg(0.08) },
+                pressed && { opacity: 0.7 },
+              ]}
             >
-              {showPage ? host : 'Search'}
-            </Txt>
-          </Pressable>
-        )}
+              <Animated.View style={pulseStyle}>
+                <Ionicons
+                  name={shieldOn ? 'shield-checkmark' : 'shield-outline'}
+                  size={16}
+                  color={shieldOn ? accent : colors.textMuted}
+                />
+              </Animated.View>
+              {blocked > 0 && <RollingCount value={blocked} color={accent} />}
+            </Pressable>
+          )}
 
-        {focused ? (
+          {focused ? <Ionicons name="search" size={17} color={colors.textMuted} style={{ marginLeft: 14 }} /> : null}
+
+          {focused ? (
+            <View style={styles.inputWrap}>
+              <TextInput
+                ref={inputRef}
+                autoFocus
+                value={draft}
+                onChangeText={(t) => {
+                  setDraft(t);
+                  setTyped(true);
+                }}
+                placeholder="Search"
+                placeholderTextColor={colors.textMuted}
+                onBlur={() => setFocus(false)}
+                onSubmitEditing={() => {
+                  if (draft.trim()) onSubmit(draft);
+                  inputRef.current?.blur();
+                }}
+                selectTextOnFocus
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="web-search"
+                returnKeyType="go"
+                keyboardAppearance={colors.scheme}
+                selectionColor={accent}
+                clearButtonMode="while-editing"
+                accessibilityLabel="Thanh địa chỉ"
+                style={styles.input}
+              />
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => setFocus(true)}
+              accessibilityRole="search"
+              accessibilityLabel={showPage ? `Địa chỉ: ${host}. Chạm để sửa` : 'Search'}
+              style={styles.inputWrap}
+            >
+              {showPage && (
+                <Ionicons
+                  name={isSecure(tab.url) ? 'lock-closed' : 'warning-outline'}
+                  size={12}
+                  color={isSecure(tab.url) ? colors.textMuted : colors.gambling}
+                  style={{ marginRight: 6 }}
+                />
+              )}
+              <Txt
+                weight="medium"
+                size={16}
+                numberOfLines={1}
+                color={showPage ? colors.text : colors.textMuted}
+                style={{ flexShrink: 1 }}
+              >
+                {showPage ? host : 'Search'}
+              </Txt>
+            </Pressable>
+          )}
+
+          {focused ? (
+            <Pressable
+              onPress={() => inputRef.current?.blur()}
+              accessibilityRole="button"
+              hitSlop={8}
+              style={styles.cancel}
+            >
+              <Txt weight="medium" size={15} color={accent}>
+                Huỷ
+              </Txt>
+            </Pressable>
+          ) : showPage ? (
+            <IconButton
+              icon={tab.loading ? 'close' : 'refresh'}
+              label={tab.loading ? 'Dừng tải' : 'Tải lại'}
+              onPress={tab.loading ? onStop : onReload}
+              iconSize={18}
+              size={40}
+              color={colors.textMuted}
+            />
+          ) : (
+            <View style={{ width: 40 }} />
+          )}
+
+          {!focused && showPage && <ProgressLine loading={tab.loading} progress={tab.progress} color={accent} />}
+        </Animated.View>
+        {/* Nút kính lúp khi thanh thu gọn (giống ô tìm kiếm cạnh thanh tab của Apple Music) */}
+        <Animated.View
+          style={[StyleSheet.absoluteFill, styles.lens, lensFade]}
+          pointerEvents={collapsed ? 'auto' : 'none'}
+        >
           <Pressable
-            onPress={() => inputRef.current?.blur()}
+            onPress={onExpand}
             accessibilityRole="button"
-            hitSlop={8}
-            style={styles.cancel}
+            accessibilityLabel="Hiện thanh địa chỉ"
+            hitSlop={6}
+            style={styles.lens}
           >
-            <Txt weight="medium" size={15} color={accent}>
-              Huỷ
-            </Txt>
+            <Ionicons name="search" size={20} color={colors.text} />
           </Pressable>
-        ) : showPage ? (
-          <IconButton
-            icon={tab.loading ? 'close' : 'refresh'}
-            label={tab.loading ? 'Dừng tải' : 'Tải lại'}
-            onPress={tab.loading ? onStop : onReload}
-            iconSize={18}
-            size={40}
-            color={colors.textMuted}
-          />
-        ) : (
-          <View style={{ width: 40 }} />
-        )}
-
-        {!focused && showPage && <ProgressLine loading={tab.loading} progress={tab.progress} color={accent} />}
+        </Animated.View>
       </Glass>
     </Animated.View>
   );
@@ -351,6 +387,8 @@ export function AddressBar({
 const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
   StyleSheet.create({
     row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 },
+    fill: { flex: 1, alignSelf: 'stretch', paddingHorizontal: 0 },
+    lens: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     shield: {
       flexDirection: 'row',
       alignItems: 'center',

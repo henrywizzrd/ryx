@@ -15,7 +15,9 @@ import {
   type HostInstance,
 } from 'react-native';
 import Animated, {
+  Easing,
   runOnJS,
+  useDerivedValue,
   useAnimatedKeyboard,
   useAnimatedReaction,
   useAnimatedStyle,
@@ -518,11 +520,62 @@ export default function BrowserScreen() {
     },
     [addrFocused],
   );
+  // ---- Cuộn trang xuống: thanh địa chỉ thu thành nút kính lúp bên trái dock (kiểu Apple Music), cuộn lên thì bung lại ----
+  const canCollapse = !addrTop && settings.dockStyle !== 'attached';
+  // Đổi thẻ / đổi trang / về trang chủ / gõ địa chỉ / thu nhỏ thành thẻ: thanh bung lại (trạng thái thu gọn gắn với
+  // đúng "khoá" lúc thu gọn, khoá đổi là tự hết thu gọn)
+  const expandKey = `${active.id}|${active.url ?? ''}|${active.home}|${addrFocused}|${phase}|${canCollapse}`;
+  const [collapsedFor, setCollapsedFor] = useState<string | null>(null);
+  const addrCollapsed = collapsedFor === expandKey;
+  const collapse = useSharedValue(0);
+  const keyRef = useRef(expandKey);
+  const collapsedRef = useRef(false);
+  const setCollapsed = useCallback(
+    (v: boolean) => {
+      if (collapsedRef.current === v) return;
+      collapsedRef.current = v;
+      setCollapsedFor(v ? keyRef.current : null);
+      collapse.set(withTiming(v ? 1 : 0, { duration: 340, easing: Easing.out(Easing.cubic) }));
+    },
+    [collapse],
+  );
+  // Dock dịch sang phải cùng lúc để nhường chỗ cho nút kính lúp (không đè lên nhau)
+  const dockShift = useDerivedValue(() => collapse.get() * 28);
+  const scrollRef = useRef({ last: 0, acc: 0 });
+  const onScrollY = useCallback(
+    (y: number) => {
+      const st = scrollRef.current;
+      const d = y - st.last;
+      st.last = y;
+      // Gần đầu trang: luôn hiện thanh
+      if (y < 40) {
+        st.acc = 0;
+        setCollapsed(false);
+        return;
+      }
+      // Cộng dồn theo một hướng; đổi hướng thì đếm lại (tránh bật/tắt liên tục khi tay rung)
+      st.acc = Math.sign(d) === Math.sign(st.acc) ? st.acc + d : d;
+      if (st.acc > 28) setCollapsed(true);
+      else if (st.acc < -28) setCollapsed(false);
+    },
+    [setCollapsed],
+  );
+  useEffect(() => {
+    keyRef.current = expandKey;
+    scrollRef.current = { last: 0, acc: 0 };
+    if (collapsedRef.current) {
+      collapsedRef.current = false;
+      collapse.set(withTiming(0, { duration: 340, easing: Easing.out(Easing.cubic) }));
+    }
+  }, [expandKey, collapse]);
+  const lensBottom = dock.bottom + (dock.height - ADDRESS_BAR_HEIGHT) / 2;
+
   const addrAnim = useAnimatedStyle(() => {
     if (addrTop) return { top: insets.top + 4 };
     const base = addrKb.get() ? Math.max(dockTop, kbAnim.height.value) + GAP : dockTop + GAP;
+    const c = collapse.get();
     const p = zoom.value;
-    return { bottom: base * (1 - p) + CARD_ADDR_BOTTOM * p };
+    return { bottom: (base + (lensBottom - base) * c) * (1 - p) + CARD_ADDR_BOTTOM * p };
   });
   const chromeBottom = addrTop ? dock.top : dock.top + GAP + ADDRESS_BAR_HEIGHT;
   const contentTop = insets.top + (addrTop ? ADDRESS_BAR_HEIGHT + GAP * 1.2 : 0);
@@ -811,6 +864,7 @@ export default function BrowserScreen() {
                 onMediaLongPress={onMediaLongPress}
                 onLinkLongPress={onLinkLongPress}
                 onSelectStart={closeCtxMenu}
+                onScrollY={canCollapse && t.id === active.id ? onScrollY : undefined}
                 onHls={onHls}
                 onPick={onPick}
                 onSlowLoad={onSlowLoad}
@@ -922,6 +976,9 @@ export default function BrowserScreen() {
             onStop={() => webRef()?.stopLoading()}
             onFocusChange={setAddrFocused}
             position={addrTop ? 'top' : 'bottom'}
+            collapse={collapse}
+            collapsed={addrCollapsed}
+            onExpand={() => setCollapsed(false)}
           />
         </Animated.View>
         <Animated.View
@@ -945,6 +1002,7 @@ export default function BrowserScreen() {
         onZoomEnd={zoomSettled}
         extraX={dockX}
         extraY={dockY}
+        shiftX={dockShift}
         hidden={addrFocused && kb > 0}
         onSwipeSide={(dir) => {
           const i = tabs.findIndex((t) => t.id === active.id);

@@ -69,6 +69,8 @@ interface Props {
   /** Lệch thêm do màn các thẻ (dock đi theo thẻ đang mở / nảy từ dưới lên) */
   extraX: SharedValue<number>;
   extraY: SharedValue<number>;
+  /** Dịch dock sang phải (nhường chỗ nút kính lúp khi thanh địa chỉ thu gọn) */
+  shiftX?: SharedValue<number>;
   /** Ẩn mượt (vd khi đang gõ địa chỉ) */
   hidden: boolean;
   /** Vuốt ngang trên dock → thẻ bên cạnh */
@@ -129,6 +131,7 @@ export function Dock({
   onZoomEnd,
   extraX,
   extraY,
+  shiftX,
   hidden,
 }: Props) {
   const styles = useStyles(makeStyles);
@@ -234,7 +237,7 @@ export function Dock({
       opacity: 1 - hide.value,
       transform: [
         { translateY: ty.value + extraY.value + hide.value * 40 },
-        { translateX: tx.value + extraX.value * zoom.value },
+        { translateX: tx.value + extraX.value * zoom.value + (shiftX?.value ?? 0) },
         { scale: reduceMotion ? 1 : 1 - press.value * 0.03 + lift - hide.value * 0.06 },
       ],
     };
