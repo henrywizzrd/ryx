@@ -129,7 +129,7 @@ export function RyxPlayer({ onCmd }: { onCmd: (js: string) => void }) {
     });
   const pan = Gesture.Pan()
     .activeOffsetY(14)
-    .failOffsetX([-30, 30])
+    .failOffsetX([-20, 20])
     .onUpdate((e) => {
       dragY.set(e.translationY);
     })
@@ -148,12 +148,24 @@ export function RyxPlayer({ onCmd }: { onCmd: (js: string) => void }) {
     if (locked) return;
     skip(x < screenW / 2 ? 'l' : 'r');
   }
-  const gesture = locked ? Gesture.Exclusive(single) : Gesture.Race(pan, Gesture.Exclusive(double, single));
+  // Vuốt ngang ở bất kỳ đâu: trái → phải tới 10 s, phải → trái lùi 10 s
+  const swipe = Gesture.Pan()
+    .activeOffsetX([-20, 20])
+    .failOffsetY([-24, 24])
+    .onEnd((e) => {
+      if (e.translationX > 50 || e.velocityX > 700) scheduleOnRN(skip, 'r');
+      else if (e.translationX < -50 || e.velocityX < -700) scheduleOnRN(skip, 'l');
+    });
+  const gesture = locked
+    ? Gesture.Exclusive(single)
+    : Gesture.Race(pan, swipe, Gesture.Exclusive(double, single));
 
   // Thanh tua: kéo để chọn giây, thả ra mới tua
   const seekFromX = (x: number) => Math.max(0, Math.min(1, x / trackW)) * (p.d || 0);
   const seekPan = Gesture.Pan()
     .minDistance(0)
+    // Kéo thanh tua thì không tính là vuốt tua 10 s / vuốt xuống thoát
+    .blocksExternalGesture(swipe, pan)
     .onBegin((e) => {
       scheduleOnRN(setScrubX, e.x);
     })

@@ -607,6 +607,38 @@ window.__ryxFs = {
   pip: function(){ var v = fsVideo; if (!v) return; fsExit(); try { v.webkitSetPresentationMode('picture-in-picture'); } catch (e) {} }
 };
 
+/* ---- Nhớ vị trí cuộn: vuốt lùi/tới quay lại đúng chỗ đã đứng ở trang đó ----
+   Lưu vị trí cuộn theo từng địa chỉ (sessionStorage của trang); khi trang được mở lại bằng lùi/tới thì cuộn về chỗ cũ,
+   đợi trang dài đủ (nội dung tải dần) rồi mới cuộn; người dùng chạm vào màn thì thôi. */
+var SCROLL_KEY = 'ryx-scroll:' + location.href;
+var scrollSaveT = 0;
+function saveScroll(){ try { sessionStorage.setItem(SCROLL_KEY, String(Math.round(window.scrollY))); } catch (e) {} }
+window.addEventListener('scroll', function(){ clearTimeout(scrollSaveT); scrollSaveT = setTimeout(saveScroll, 150); }, { passive: true });
+window.addEventListener('pagehide', saveScroll);
+function backForward(){
+  try { var n = performance.getEntriesByType('navigation')[0]; return !!n && n.type === 'back_forward'; } catch (e) { return false; }
+}
+var restoreStop = false;
+function restoreScroll(){
+  if (!backForward()) return;
+  var y = 0; try { y = +sessionStorage.getItem(SCROLL_KEY) || 0; } catch (e) {}
+  if (y < 10) return;
+  try { history.scrollRestoration = 'manual'; } catch (e) {}
+  var stop = function(){ restoreStop = true; };
+  window.addEventListener('touchstart', stop, { once: true, passive: true });
+  var tries = 0;
+  (function go(){
+    if (restoreStop) return;
+    tries++;
+    var max = (document.scrollingElement || root).scrollHeight - window.innerHeight;
+    window.scrollTo(0, Math.min(y, Math.max(0, max)));
+    if (max >= y - 4 || tries > 50) return;
+    setTimeout(go, 100);
+  })();
+}
+document.addEventListener('DOMContentLoaded', restoreScroll);
+/* Trang lấy lại từ bộ nhớ đệm lùi/tới (bfcache): iOS đã giữ nguyên vị trí, chỉ cần không cuộn lại */
+
 window.__ryx = {
   pending: reportPending,
   pick: function(on){ pickOn = !!on; if (!pickOn) pickClearAll(); pickCss(); },

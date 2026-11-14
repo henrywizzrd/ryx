@@ -603,7 +603,60 @@ function Coverflow({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
 }
 
 /** Chia đôi: các thẻ khác nhỏ, nghiêng ở cột trái; thẻ vừa thu nhỏ to bên phải */
-function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
+function Split(props: LayoutProps) {
+  const { width: SW, height: SH } = useWindowDimensions();
+  return SW > SH ? <SplitLandscape {...props} /> : <SplitPortrait {...props} />;
+}
+
+/**
+ * Chia đôi khi xoay ngang: thẻ đang mở nằm ngang ở giữa phía trên, các thẻ khác xếp một hàng ngang phía dưới
+ * (trái qua phải, cuộn ngang). Thẻ theo đúng tỉ lệ màn hình ngang. Vuốt lên để đóng.
+ */
+function SplitLandscape({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
+  const { width: SW, height: SH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const aspect = SW / SH;
+  const others = tabs.filter((t) => t.id !== activeId);
+  const active = tabs.find((t) => t.id === activeId) ?? tabs[0];
+  const smallH = others.length ? Math.max(56, Math.round(H * 0.27)) : 0;
+  const smallW = Math.round(smallH * aspect);
+  const rowH = others.length ? smallH + 12 : 0;
+  const maxBigH = Math.max(80, H - rowH - TITLE_H - 12);
+  const bigW = Math.min(W - insets.left - insets.right - 48, Math.round(maxBigH * aspect));
+  const bigH = Math.round(bigW / aspect);
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <Item key={active.id} tab={active} dir="up" ctx={ctx}>
+        <Card tab={active} active hidden={active.id === hideId} width={bigW} height={bigH} radius={16} ctx={ctx} />
+      </Item>
+      {others.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0, alignSelf: 'stretch', marginTop: 12 }}
+          contentContainerStyle={{ paddingLeft: insets.left + 24, paddingRight: insets.right + 24, gap: 14 }}
+        >
+          {others.map((t) => (
+            <Item key={t.id} tab={t} dir="up" ctx={ctx}>
+              <Card
+                tab={t}
+                active={false}
+                hidden={t.id === hideId}
+                width={smallW}
+                height={smallH}
+                radius={10}
+                noTitle
+                ctx={ctx}
+              />
+            </Item>
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+function SplitPortrait({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
   const pad = 16;
   const gap = 16;
   const others = tabs.filter((t) => t.id !== activeId);
@@ -647,7 +700,8 @@ function Split({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
       )}
       <View style={{ width: bigW, paddingTop: 8, paddingBottom: 16, justifyContent: 'center' }}>
         {/* Thẻ lớn (thẻ đang mở): vuốt lên là đóng */}
-        <Item tab={active} dir="up" ctx={ctx}>
+        {/* key theo thẻ: đóng thẻ lớn xong thì thẻ mới lên thay là khung mới (không kế thừa vị trí đã vuốt đi) */}
+        <Item key={active.id} tab={active} dir="up" ctx={ctx}>
           <Card
             tab={active}
             active
@@ -695,7 +749,9 @@ function TabOverviewImpl(props: Props) {
     // (trước đây lệch 6% → trang bay vào khung to hơn thẻ thật rồi giật về đúng chỗ).
   }));
 
-  const bodyH = H - insets.top - 104 - bottomPad;
+  // Màn ngang: hàng kiểu sắp xếp lên chung hàng với "Đóng tất cả" / nút + để dành chiều cao cho thẻ
+  const landscape = W > H;
+  const bodyH = H - insets.top - (landscape ? 60 : 104) - bottomPad;
   const lp: LayoutProps = { tabs, activeId, hideId, ctx, W, H: bodyH, dockShift, token: props.token };
   let body: React.ReactNode;
   switch (layout) {
@@ -723,13 +779,19 @@ function TabOverviewImpl(props: Props) {
       style={[StyleSheet.absoluteFill, styles.root, fade]}
       pointerEvents={phase === 'open' ? 'auto' : 'none'}
     >
-      <View style={[styles.header, { marginTop: insets.top + 4 }]}>
+      <View
+        style={[
+          styles.header,
+          { marginTop: insets.top + 4 },
+          landscape && { paddingLeft: insets.left + 16, paddingRight: insets.right + 16 },
+        ]}
+      >
         <Pressable onPress={props.onCloseAll} accessibilityRole="button" hitSlop={8} style={styles.headBtn}>
           <Txt weight="medium" size={15} color={colors.danger}>
             Đóng tất cả
           </Txt>
         </Pressable>
-        <View pointerEvents="none" style={styles.count}>
+        <View pointerEvents="none" style={[styles.count, landscape && { opacity: 0 }]}>
           <Txt weight="bold" size={17} accessibilityRole="header">
             {tabs.length} thẻ
           </Txt>
@@ -757,7 +819,21 @@ function TabOverviewImpl(props: Props) {
       </View>
 
       {/* Hàng chọn kiểu sắp xếp: ngay trên dock, trong tầm ngón cái */}
-      <View style={{ marginBottom: bottomPad }}>
+      <View
+        style={
+          landscape
+            ? {
+                position: 'absolute',
+                top: insets.top + 4,
+                left: insets.left + 150,
+                right: insets.right + 80,
+                height: 56,
+                justifyContent: 'center',
+                alignItems: 'center',
+              }
+            : { marginBottom: bottomPad }
+        }
+      >
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}

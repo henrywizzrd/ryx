@@ -48,6 +48,10 @@ export function SwipeToClose({ direction, onClose, style, children }: Props) {
       } else {
         offset.value = withSpring(0, MOTION.snappy);
       }
+    })
+    // Cử chỉ bị huỷ giữa chừng (bị cử chỉ khác giành) thì trả thẻ về chỗ cũ, không để kẹt lệch/mờ
+    .onFinalize((_e, success) => {
+      if (!success && Math.abs(offset.value) < limit) offset.value = withSpring(0, MOTION.snappy);
     });
 
   const animated = useAnimatedStyle(() => {
