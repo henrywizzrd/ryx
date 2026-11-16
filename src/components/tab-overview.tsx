@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -32,7 +32,7 @@ import { ADDRESS_BAR_HEIGHT, addrBarWidth, CARD_ADDR_BOTTOM, StaticAddressBar, S
 import { faviconFor } from '@/lib/url';
 import { NewTabPage } from './new-tab-page';
 import { useSettings, type TabLayout } from '@/state/settings';
-import type { Tab } from '@/state/tabs';
+import { byRecent, type Tab } from '@/state/tabs';
 import { useTheme, useStyles, type Palette } from '@/theme';
 import { IconButton, type IconName } from './icon-button';
 import { SwipeToClose } from './swipe-to-close';
@@ -85,9 +85,14 @@ interface Props {
   onActiveThumbShown: (uri: string) => void;
   /** Thanh địa chỉ của thẻ đang mở đang thu thành nút kính lúp */
   addrCollapsed?: boolean;
+  /** Nhóm thẻ đang xem (Nhóm thẻ kiểu Safari); chạm vào tên nhóm để đổi/tạo nhóm */
+  groupName: string;
+  onGroupPress: () => void;
   onPick: (id: string, r: Rect | null) => void;
   onClose: (id: string) => void;
   onDuplicate: (id: string) => void;
+  /** Chuyển thẻ sang nhóm khác */
+  onMove: (id: string) => void;
   onCloseAll: () => void;
   onNewTab: (r: Rect | null) => void;
 }
@@ -132,6 +137,8 @@ interface Ctx {
   onPick: (id: string, r: Rect | null) => void;
   onClose: (id: string) => void;
   onDuplicate: (id: string) => void;
+  /** Chuyển thẻ sang nhóm khác */
+  onMove: (id: string) => void;
   onActiveFrame: (r: Rect) => void;
 }
 
@@ -195,6 +202,7 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
             tab,
             () => ctx.onDuplicate(tab.id),
             () => ctx.onClose(tab.id),
+            () => ctx.onMove(tab.id),
           )
         }
         delayLongPress={350}
@@ -722,7 +730,18 @@ function SplitPortrait({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
 function TabOverviewImpl(props: Props) {
   const styles = useStyles(makeStyles);
 
-  const { phase, zoom, dockShift, tabs, activeId, hideId, layout, bottomPad } = props;
+  const { phase, zoom, dockShift, activeId, hideId, layout, bottomPad } = props;
+  // Thứ tự thẻ: dùng gần nhất trước (thẻ đang mở đầu tiên, thẻ vừa dùng/vừa mở thứ 2…), ở mọi kiểu xếp.
+  // Chốt thứ tự mỗi lần mở màn này (token) để chọn thẻ xong các thẻ không nhảy chỗ trong lúc zoom vào.
+  const [order, setOrder] = useState(() => ({
+    token: props.token,
+    ids: [...props.tabs].sort(byRecent).map((t) => t.id),
+  }));
+  if (order.token !== props.token)
+    setOrder({ token: props.token, ids: [...props.tabs].sort(byRecent).map((t) => t.id) });
+  const rank = new Map(order.ids.map((id, i) => [id, i]));
+  // Thẻ mới thêm sau khi mở màn (chưa có trong thứ tự chốt) đứng đầu
+  const tabs = [...props.tabs].sort((a, b) => (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1));
   const insets = useSafeAreaInsets();
   const { width: W, height: H } = useWindowDimensions();
   const { accent, accentSoft, onAccent, colors } = useTheme();
@@ -735,6 +754,7 @@ function TabOverviewImpl(props: Props) {
       props.onClose(id);
     },
     onDuplicate: props.onDuplicate,
+    onMove: props.onMove,
     onActiveFrame: props.onActiveFrame,
     token: props.token,
     onActiveMeasurer: props.onActiveMeasurer,
@@ -791,10 +811,23 @@ function TabOverviewImpl(props: Props) {
             Đóng tất cả
           </Txt>
         </Pressable>
-        <View pointerEvents="none" style={[styles.count, landscape && { opacity: 0 }]}>
-          <Txt weight="bold" size={17} accessibilityRole="header">
-            {tabs.length} thẻ
-          </Txt>
+        {/* Tên nhóm + số thẻ: chạm để đổi nhóm, tạo nhóm mới, đổi tên, xoá nhóm */}
+        <View pointerEvents={landscape ? 'none' : 'box-none'} style={[styles.count, landscape && { opacity: 0 }]}>
+          <Pressable
+            onPress={() => {
+              void Haptics.selectionAsync();
+              props.onGroupPress();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Nhóm ${props.groupName}, ${tabs.length} thẻ. Chạm để đổi nhóm`}
+            hitSlop={8}
+            style={({ pressed }) => [styles.groupBtn, pressed && { opacity: 0.6 }]}
+          >
+            <Txt weight="bold" size={17} numberOfLines={1} style={{ maxWidth: 160 }}>
+              {props.groupName === 'Thẻ' ? `${tabs.length} thẻ` : `${props.groupName} · ${tabs.length}`}
+            </Txt>
+            <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+          </Pressable>
         </View>
         <Pressable
           ref={plusRef}
@@ -897,6 +930,7 @@ const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
     wrap: { flexDirection: 'row', flexWrap: 'wrap' },
     titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, height: TITLE_H, paddingLeft: 4 },
     cardAddr: { position: 'absolute', transformOrigin: 'left top' },
+    groupBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 8 },
     fav: { width: 14, height: 14, borderRadius: 3 },
     bigFav: { width: 40, height: 40, borderRadius: 10, marginBottom: 8 },
     preview: {

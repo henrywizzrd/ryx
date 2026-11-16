@@ -106,11 +106,51 @@ final class RyxProxy {
     }
   }
 
+  // MARK: - Đổi mạng (bật/tắt VPN, Wi-Fi ↔ 4G)
+
+  /// Đổi mạng thì kết quả DNS đã lưu có thể không còn đúng (vd lúc bật VPN 1.1.1.1/WARP hỏi ra máy chủ Google hợp
+  /// với đường mạng của Cloudflare, có cả IPv6; tắt VPN rồi vẫn dùng tiếp → Google chặn/không kết nối được).
+  /// Nên: xoá bộ nhớ DNS, bỏ danh sách máy chủ DoH đang "tạm bỏ qua", đóng kết nối DoH cũ, ghi log.
+  private let pathMonitor = NWPathMonitor()
+  private var pathWatching = false
+  private var lastPathKey: String?
+
+  private func watchNetwork() {
+    if pathWatching { return }
+    pathWatching = true
+    pathMonitor.pathUpdateHandler = { [weak self] path in
+      guard let self else { return }
+      let ifaces = path.availableInterfaces.map { $0.name }
+      let vpn = ifaces.contains { $0.hasPrefix("utun") || $0.hasPrefix("ipsec") || $0.hasPrefix("ppp") }
+      let kind: String
+      if path.status != .satisfied { kind = "mất mạng" }
+      else if path.usesInterfaceType(.wifi) { kind = "Wi-Fi" }
+      else if path.usesInterfaceType(.cellular) { kind = "4G/5G" }
+      else { kind = "mạng khác" }
+      let desc = vpn ? "\(kind) + VPN" : kind
+      let key = "\(path.status)|\(desc)|\(ifaces.joined(separator: ","))|\(path.supportsIPv6)"
+      // Chạy trên `queue` (pathMonitor.start(queue:)): đọc/ghi cache an toàn
+      if self.lastPathKey == nil {
+        self.lastPathKey = key
+        return
+      }
+      if key == self.lastPathKey { return }
+      self.lastPathKey = key
+      let n = self.cache.count
+      self.cache.removeAll()
+      self.downUntil.removeAll()
+      self.session.reset {}
+      self.log("info", "Mạng đổi → \(desc)\(path.supportsIPv6 ? ", có IPv6" : ""): xoá \(n) tên miền đã nhớ, hỏi DNS lại từ đầu")
+    }
+    pathMonitor.start(queue: queue)
+  }
+
   func start() {
     guard #available(iOS 17.0, *) else {
       log("warn", "DNS riêng cần iOS 17 trở lên, máy đang dùng bản thấp hơn")
       return
     }
+    watchNetwork()
     queue.async {
       if self.listener != nil {
         if self.running { self.applyProxy() }

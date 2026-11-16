@@ -42,16 +42,22 @@ export function tabInfo(tab: Tab, colors: Palette) {
   };
 }
 
-/** Menu khi nhấn giữ một thẻ: Nhân đôi / Sao chép link / Đóng. */
-export function showTabMenu(tab: Tab, onDuplicate: () => void, onClose: () => void) {
+/** Menu khi nhấn giữ một thẻ: Nhân đôi / Sao chép link / Chuyển sang nhóm / Đóng. */
+export function showTabMenu(tab: Tab, onDuplicate: () => void, onClose: () => void, onMove?: () => void) {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   const { showPage, title } = tabInfo(tab, getTheme().colors);
-  const options = showPage ? ['Huỷ', 'Nhân đôi thẻ', 'Sao chép link', 'Đóng thẻ'] : ['Huỷ', 'Đóng thẻ'];
+  const options = [
+    'Huỷ',
+    ...(showPage ? ['Nhân đôi thẻ', 'Sao chép link'] : []),
+    ...(onMove ? ['Chuyển sang nhóm…'] : []),
+    'Đóng thẻ',
+  ];
   ActionSheetIOS.showActionSheetWithOptions(
     { title, options, cancelButtonIndex: 0, destructiveButtonIndex: options.length - 1 },
     (i) => {
       const picked = options[i];
       if (picked === 'Nhân đôi thẻ') onDuplicate();
+      else if (picked === 'Chuyển sang nhóm…') onMove?.();
       else if (picked === 'Sao chép link' && tab.url) {
         Clipboard.setStringAsync(tab.url).catch((e) => log.error('tabs', 'Không sao chép được link', e));
       } else if (picked === 'Đóng thẻ') onClose();
