@@ -1,0 +1,8 @@
+# Graphify: chỉ dựng đồ thị cho code của app
+.claude/
+src/generated/
+node_modules/
+ios/
+android/
+dist/
+assets/

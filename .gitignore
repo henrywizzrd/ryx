@@ -43,3 +43,6 @@ example
 # generated native folders
 /ios
 /android
+
+# Graphify (đồ thị code, dựng lại được bằng `graphify update .`)
+graphify-out/
