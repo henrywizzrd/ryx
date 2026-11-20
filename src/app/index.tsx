@@ -6,7 +6,6 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
-  ActionSheetIOS,
   Alert,
   Linking,
   Pressable,
@@ -86,7 +85,7 @@ export default function BrowserScreen() {
   const { record } = useStats();
   const {
     tabs,
-    groupTabs,
+    visibleTabs,
     active,
     newTab,
     closeTab,
@@ -95,13 +94,12 @@ export default function BrowserScreen() {
     open,
     refs,
     setActive,
-    groups,
-    group,
-    switchGroup,
-    createGroup,
-    renameGroup,
-    deleteGroup,
-    moveTab,
+    folders,
+    folderMode,
+    setFolderMode,
+    merge,
+    unfold,
+    renameFolder,
   } = useTabs();
   const { width: W, height: H } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
@@ -144,7 +142,7 @@ export default function BrowserScreen() {
     const j = jank.get();
     const detail =
       `${result} sau ${Date.now() - t} ms · ${j.frames} khung hình, ${j.slow} khung bị giật (chậm nhất ${Math.round(j.max)} ms)` +
-      `\nKiểu thẻ: ${settings.tabLayout} · Đo được vị trí thẻ: ${measured ? 'có' : 'không'} · Số thẻ: ${groupTabs.length}`;
+      `\nKiểu thẻ: ${settings.tabLayout} · Đo được vị trí thẻ: ${measured ? 'có' : 'không'} · Số thẻ: ${visibleTabs.length}`;
     if (j.slow > 2) log.perf('ui', `${what}: hiệu ứng bị giật`, detail);
     else log.info('ui', what, detail);
     if (what.startsWith('Mở màn các thẻ') && result === 'Mở' && !measured)
@@ -522,62 +520,6 @@ export default function BrowserScreen() {
     [injectConfig, siteThemes, cookieScript, pageScheme],
   );
 
-  // ---- Nhóm thẻ kiểu Safari (màn các thẻ: chạm tên nhóm ở giữa đầu màn; nhấn giữ thẻ → Chuyển sang nhóm) ----
-  const askName = (title: string, initial: string, done: (name: string) => void) =>
-    Alert.prompt(
-      title,
-      undefined,
-      [
-        { text: 'Huỷ', style: 'cancel' },
-        { text: 'Lưu', onPress: (v?: string) => v?.trim() && done(v) },
-      ],
-      'plain-text',
-      initial,
-    );
-  const showGroupMenu = () => {
-    const isMain = group.id === 'main';
-    const names = groups.map((g) => (g.id === group.id ? `✓ ${g.name}` : g.name));
-    const options = ['Huỷ', ...names, 'Nhóm mới…', ...(isMain ? [] : ['Đổi tên nhóm…', 'Xoá nhóm này'])];
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: 'Nhóm thẻ',
-        options,
-        cancelButtonIndex: 0,
-        destructiveButtonIndex: isMain ? undefined : options.length - 1,
-      },
-      (i) => {
-        if (i <= 0) return;
-        if (i <= groups.length) {
-          const g = groups[i - 1];
-          if (g.id !== group.id) {
-            log.info('tabs', 'Đổi nhóm thẻ', `${group.name} → ${g.name}`);
-            switchGroup(g.id);
-          }
-          return;
-        }
-        const picked = options[i];
-        if (picked === 'Nhóm mới…') askName('Nhóm mới', '', (n) => createGroup(n));
-        else if (picked === 'Đổi tên nhóm…') askName('Đổi tên nhóm', group.name, (n) => renameGroup(group.id, n));
-        else if (picked === 'Xoá nhóm này') {
-          const count = groupTabs.length;
-          Alert.alert(`Xoá nhóm "${group.name}"?`, `${count} thẻ trong nhóm sẽ bị đóng.`, [
-            { text: 'Huỷ', style: 'cancel' },
-            { text: 'Xoá', style: 'destructive', onPress: () => deleteGroup(group.id) },
-          ]);
-        }
-      },
-    );
-  };
-  const showMoveMenu = (tabId: string) => {
-    const targets = groups.filter((g) => g.id !== group.id);
-    const options = ['Huỷ', ...targets.map((g) => g.name), 'Nhóm mới…'];
-    ActionSheetIOS.showActionSheetWithOptions({ title: 'Chuyển thẻ sang nhóm', options, cancelButtonIndex: 0 }, (i) => {
-      if (i <= 0) return;
-      if (i <= targets.length) moveTab(tabId, targets[i - 1].id);
-      else askName('Nhóm mới', '', (n) => createGroup(n, tabId));
-    });
-  };
-
   // ---- Trình phát toàn màn hình của Ryx (lib/inject → window.__ryxFs, components/ryx-player) ----
   const fs = usePlayerOn();
   const fsOn = fs.on && fs.tabId === active.id;
@@ -914,7 +856,7 @@ export default function BrowserScreen() {
         addrCollapsed={addrCollapsed}
         zoom={zoom}
         dockShift={dockX}
-        tabs={groupTabs}
+        tabs={visibleTabs}
         activeId={active.id}
         hideId={hideId}
         layout={settings.tabLayout}
@@ -926,9 +868,22 @@ export default function BrowserScreen() {
         onActiveFrame={onActiveFrame}
         onPick={pickTab}
         onClose={closeTab}
-        groupName={group.name}
-        onGroupPress={showGroupMenu}
-        onMove={showMoveMenu}
+        folders={folders}
+        folderMode={folderMode}
+        onFolderMode={(id) => {
+          log.info(
+            'tabs',
+            id ? 'Vào khung thẻ' : 'Thu nhỏ khung thẻ',
+            folders.find((f) => f.id === (id ?? folderMode))?.name ?? '',
+          );
+          setFolderMode(id);
+        }}
+        onMerge={(drag, target) => {
+          log.info('tabs', 'Gộp thẻ vào khung', `${drag} → ${target}`);
+          merge(drag, target);
+        }}
+        onUnfold={unfold}
+        onRenameFolder={renameFolder}
         onDuplicate={(id) => {
           const t = tabs.find((x) => x.id === id);
           if (t?.url) newTab(t.url, { background: true });
@@ -1097,7 +1052,7 @@ export default function BrowserScreen() {
       <Dock
         dockStyle={settings.dockStyle}
         buttons={settings.dockButtons}
-        tabCount={groupTabs.length}
+        tabCount={visibleTabs.length}
         canGoBack={canGoBack}
         canGoForward={canGoForward}
         blocked={blocked.total}
@@ -1112,9 +1067,9 @@ export default function BrowserScreen() {
         shiftX={dockShift}
         hidden={(addrFocused && kb > 0) || fsOn}
         onSwipeSide={(dir) => {
-          // Vuốt dock sang trái/phải: thẻ kề bên trong cùng nhóm (theo thứ tự mở)
-          const i = groupTabs.findIndex((t) => t.id === active.id);
-          const next = groupTabs[dir === 'next' ? i + 1 : i - 1];
+          // Vuốt dock sang trái/phải: thẻ kề bên (chế độ khung: trong khung đó), theo thứ tự mở
+          const i = visibleTabs.findIndex((t) => t.id === active.id);
+          const next = visibleTabs[dir === 'next' ? i + 1 : i - 1];
           if (next) {
             void Haptics.selectionAsync();
             setActive(next.id);

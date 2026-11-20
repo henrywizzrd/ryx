@@ -1,11 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   useWindowDimensions,
   View,
   type HostInstance,
@@ -13,8 +15,11 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
+  FadeIn,
+  FadeOut,
   interpolate,
   LayoutAnimationConfig,
   LinearTransition,
@@ -26,13 +31,14 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { LAYOUT_MS } from '@/lib/motion';
 import { ADDRESS_BAR_HEIGHT, addrBarWidth, CARD_ADDR_BOTTOM, StaticAddressBar, StaticLens } from './address-bar';
 import { faviconFor } from '@/lib/url';
 import { NewTabPage } from './new-tab-page';
 import { useSettings, type TabLayout } from '@/state/settings';
-import { byRecent, type Tab } from '@/state/tabs';
+import { byRecent, type Tab, type TabFolder } from '@/state/tabs';
 import { useTheme, useStyles, type Palette } from '@/theme';
 import { IconButton, type IconName } from './icon-button';
 import { SwipeToClose } from './swipe-to-close';
@@ -85,14 +91,19 @@ interface Props {
   onActiveThumbShown: (uri: string) => void;
   /** Thanh địa chỉ của thẻ đang mở đang thu thành nút kính lúp */
   addrCollapsed?: boolean;
-  /** Nhóm thẻ đang xem (Nhóm thẻ kiểu Safari); chạm vào tên nhóm để đổi/tạo nhóm */
-  groupName: string;
-  onGroupPress: () => void;
+  /** Khung thẻ (kiểu Cốc Cốc) */
+  folders: TabFolder[];
+  /** Đang ở chế độ khung: chỉ hiện thẻ của khung này */
+  folderMode: string | null;
+  onFolderMode: (id: string | null) => void;
+  /** Kéo thẻ thả lên thẻ/khung khác */
+  onMerge: (dragId: string, targetId: string) => void;
+  /** Bỏ thẻ ra khỏi khung */
+  onUnfold: (id: string) => void;
+  onRenameFolder: (id: string, name: string) => void;
   onPick: (id: string, r: Rect | null) => void;
   onClose: (id: string) => void;
   onDuplicate: (id: string) => void;
-  /** Chuyển thẻ sang nhóm khác */
-  onMove: (id: string) => void;
   onCloseAll: () => void;
   onNewTab: (r: Rect | null) => void;
 }
@@ -109,11 +120,211 @@ function measure(ref: MeasureRef, cb: (r: Rect | null) => void) {
   node.measureInWindow((x, y, w, h) => cb(w > 0 ? { x, y, w, h } : null));
 }
 
+// ---------- Khung thẻ + kéo thả ----------
+
+interface FolderInfo {
+  id: string;
+  name: string;
+  tabs: Tab[];
+}
+/** Một ô ở màn các thẻ: thẻ lẻ, hoặc khung (id = id khung, các trường khác lấy của thẻ dùng gần nhất trong khung) */
+type Entry = Tab & { folder?: FolderInfo };
+
+interface HitRect extends Rect {
+  id: string;
+}
+interface DragInfo {
+  id: string;
+  tab: Tab;
+  w: number;
+  h: number;
+  radius: number;
+  /** grid: kéo ở màn các thẻ (thả lên thẻ khác để gộp) · folder: kéo trong khung đang mở (kéo ra ngoài để bỏ khỏi khung) */
+  source: 'grid' | 'folder';
+}
+interface DragApi {
+  absX: SharedValue<number>;
+  absY: SharedValue<number>;
+  offX: SharedValue<number>;
+  offY: SharedValue<number>;
+  rects: SharedValue<HitRect[]>;
+  hoverSv: SharedValue<string>;
+  moved: SharedValue<number>;
+  begin: (d: DragInfo) => void;
+  end: (moved: boolean, target: string, x: number, y: number) => void;
+  hover: (id: string) => void;
+}
+
+/** Nhấn giữ ~0,3 giây rồi kéo: thẻ nhấc lên theo ngón tay. Thả ra mà chưa kéo thì hiện menu của thẻ. */
+function Draggable({
+  info,
+  ctx,
+  enabled = true,
+  children,
+}: {
+  info: DragInfo;
+  ctx: Ctx;
+  enabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const { absX, absY, offX, offY, rects, hoverSv, moved, begin, end, hover } = ctx.drag;
+  const { id, source } = info;
+  const onBegin = () => begin(info);
+  const onEnd = (m: boolean, target: string, x: number, y: number) => end(m, target, x, y);
+  const onHover = (h: string) => hover(h);
+  const pan = Gesture.Pan()
+    .enabled(enabled)
+    .activateAfterLongPress(320)
+    .onStart((e) => {
+      absX.set(e.absoluteX);
+      absY.set(e.absoluteY);
+      offX.set(e.x);
+      offY.set(e.y);
+      hoverSv.set('');
+      moved.set(0);
+      scheduleOnRN(onBegin);
+    })
+    .onUpdate((e) => {
+      absX.set(e.absoluteX);
+      absY.set(e.absoluteY);
+      if (Math.abs(e.translationX) + Math.abs(e.translationY) > 10) moved.set(1);
+      if (source !== 'grid') return;
+      const list = rects.get();
+      let hit = '';
+      for (let i = 0; i < list.length; i++) {
+        const r = list[i];
+        if (
+          r.id !== id &&
+          e.absoluteX >= r.x &&
+          e.absoluteX <= r.x + r.w &&
+          e.absoluteY >= r.y &&
+          e.absoluteY <= r.y + r.h
+        ) {
+          hit = r.id;
+          break;
+        }
+      }
+      if (hit !== hoverSv.get()) {
+        hoverSv.set(hit);
+        scheduleOnRN(onHover, hit);
+      }
+    })
+    // Gọi cả khi cử chỉ không bắt đầu (chạm nhanh): lúc đó chưa có gì đang kéo nên end() bỏ qua
+    .onFinalize(() => {
+      scheduleOnRN(onEnd, moved.get() === 1, hoverSv.get(), absX.get(), absY.get());
+    });
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View collapsable={false}>{children}</Animated.View>
+    </GestureDetector>
+  );
+}
+
+/** Ảnh thu nhỏ của một thẻ (dùng trong khung, trong bảng khung đang mở, và bản nhấc lên khi kéo) */
+function MiniThumb({
+  tab,
+  width,
+  height,
+  radius,
+  onDisplay,
+}: {
+  tab: Tab;
+  width: number;
+  height: number;
+  radius: number;
+  onDisplay?: (uri: string) => void;
+}) {
+  const { colors, accent } = useTheme();
+  const { showPage, tint } = tabInfo(tab, colors);
+  const box = { width, height, borderRadius: radius, overflow: 'hidden' as const };
+  if (tab.thumb && tab.thumbKey === thumbKeyOf(tab))
+    return (
+      <View style={[box, { backgroundColor: tint }]}>
+        <Image
+          source={{ uri: tab.thumb }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          contentPosition="top"
+          transition={0}
+          onDisplay={onDisplay ? () => onDisplay(tab.thumb!) : undefined}
+          accessibilityIgnoresInvertColors
+        />
+      </View>
+    );
+  const icon = Math.max(10, Math.min(28, Math.round(width * 0.34)));
+  return (
+    <View
+      style={[box, { backgroundColor: showPage ? tint : colors.bg, alignItems: 'center', justifyContent: 'center' }]}
+    >
+      {showPage ? (
+        <Image source={faviconFor(tab.url!)} style={{ width: icon, height: icon, borderRadius: icon * 0.22 }} />
+      ) : (
+        <Ionicons name="shield-checkmark" size={icon} color={accent} />
+      )}
+    </View>
+  );
+}
+
+/** Mặt khung: lưới 2×2 ảnh thu nhỏ như thư mục ở màn hình chính iPhone; hơn 4 thẻ thì ô cuối chia nhỏ 2×2 */
+function FolderGrid({
+  folder,
+  width,
+  height,
+  activeTabId,
+  onActiveShown,
+}: {
+  folder: FolderInfo;
+  width: number;
+  height: number;
+  activeTabId?: string;
+  onActiveShown?: (uri: string) => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const { fg } = useTheme();
+  const pad = Math.max(3, Math.round(width * 0.07));
+  const gap = Math.max(2, Math.round(width * 0.045));
+  const cw = Math.floor((width - pad * 2 - gap) / 2);
+  const ch = Math.floor((height - pad * 2 - gap) / 2);
+  const r = Math.max(3, Math.round(cw * 0.12));
+  const many = folder.tabs.length > 4;
+  const main = folder.tabs.slice(0, many ? 3 : 4);
+  const rest = many ? folder.tabs.slice(3, 7) : [];
+  const g2 = Math.max(1, Math.round(gap / 2));
+  const sw = Math.floor((cw - g2) / 2);
+  const sh = Math.floor((ch - g2) / 2);
+  const shown = (t: Tab) => (t.id === activeTabId ? onActiveShown : undefined);
+  return (
+    <View style={[StyleSheet.absoluteFill, { padding: pad, backgroundColor: fg(0.07) }]}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap, width: cw * 2 + gap }}>
+        {main.map((t) => (
+          <MiniThumb key={t.id} tab={t} width={cw} height={ch} radius={r} onDisplay={shown(t)} />
+        ))}
+        {many && (
+          <View style={{ width: cw, height: ch, flexDirection: 'row', flexWrap: 'wrap', gap: g2 }}>
+            {rest.map((t) => (
+              <MiniThumb key={t.id} tab={t} width={sw} height={sh} radius={Math.max(2, r / 2)} onDisplay={shown(t)} />
+            ))}
+          </View>
+        )}
+      </View>
+      {width >= 70 && (
+        <View style={styles.badge}>
+          <Txt weight="bold" size={11} color="#fff">
+            {folder.tabs.length}
+          </Txt>
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ---------- Thẻ ----------
 
 interface CardProps {
-  tab: Tab;
+  tab: Entry;
   active: boolean;
+  /** Chia đôi: khung chứa thẻ đang mở (thẻ đó đang hiện to) → viền nét đứt */
+  ring?: boolean;
   hidden: boolean;
   width: number;
   height: number;
@@ -128,6 +339,8 @@ interface CardProps {
 type Measurer = (cb: (r: Rect | null) => void) => void;
 
 interface Ctx {
+  /** Id thẻ đang mở thật (khi ô đang mở là một khung) */
+  activeTabId: string;
   /** Ảnh của thẻ đang mở đã hiện xong (để đổi từ trang thật sang ảnh không bị nháy) */
   onActiveThumbShown: (uri: string) => void;
   /** Thanh địa chỉ của thẻ đang mở đang thu thành nút kính lúp */
@@ -137,12 +350,29 @@ interface Ctx {
   onPick: (id: string, r: Rect | null) => void;
   onClose: (id: string) => void;
   onDuplicate: (id: string) => void;
-  /** Chuyển thẻ sang nhóm khác */
-  onMove: (id: string) => void;
   onActiveFrame: (r: Rect) => void;
+  onOpenFolder: (id: string) => void;
+  /** Đăng ký hàm đo vị trí của một ô (để biết đang kéo thẻ đè lên ô nào) */
+  register: (id: string, m: Measurer) => () => void;
+  drag: DragApi;
+  /** Ô đang được kéo (mờ đi ở chỗ cũ) và ô đang bị kéo đè lên (sẽ gộp vào) */
+  dragId: string | null;
+  hoverId: string | null;
 }
 
-function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noTitle, previewStyle, ctx }: CardProps) {
+function Card({
+  tab,
+  active,
+  ring,
+  hidden,
+  width,
+  height,
+  radius = 18,
+  titleBelow,
+  noTitle,
+  previewStyle,
+  ctx,
+}: CardProps) {
   const styles = useStyles(makeStyles);
 
   const { accent, colors, fg } = useTheme();
@@ -151,7 +381,11 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
   const { width: W } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const addrAtTop = useSettings().settings.addressBarPosition === 'top';
-  const { token, onActiveMeasurer, onActiveFrame } = ctx;
+  const { token, onActiveMeasurer, onActiveFrame, register } = ctx;
+  const folder = tab.folder;
+  const ghost = ctx.dragId === tab.id;
+  const targeted = ctx.hoverId === tab.id;
+  useEffect(() => register(tab.id, (cb) => measure(ref, cb)), [register, tab.id]);
   useEffect(() => {
     if (!active) return;
     onActiveMeasurer((cb) => measure(ref, cb));
@@ -166,7 +400,17 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
     };
   }, [active, token, onActiveMeasurer, onActiveFrame, radius]);
 
-  const titleRow = noTitle ? null : (
+  const titleRow = noTitle ? null : folder ? (
+    <View style={[styles.titleRow, { width }]}>
+      <Ionicons name="folder-open" size={13} color={accent} />
+      <Txt weight={active || ring ? 'semibold' : 'medium'} size={12} numberOfLines={1} style={{ flex: 1 }}>
+        {folder.name}
+      </Txt>
+      <Txt size={12} color={colors.textMuted} style={{ paddingRight: 8 }}>
+        {folder.tabs.length}
+      </Txt>
+    </View>
+  ) : (
     <View style={[styles.titleRow, { width }]}>
       {showPage ? (
         <Image source={faviconFor(tab.url!)} style={styles.fav} />
@@ -190,96 +434,108 @@ function Card({ tab, active, hidden, width, height, radius = 18, titleBelow, noT
   return (
     <View style={{ width }}>
       {!titleBelow && titleRow}
-      <Pressable
-        ref={ref}
-        collapsable={false}
-        onPress={() => {
-          void Haptics.selectionAsync();
-          measure(ref, (r) => ctx.onPick(tab.id, r && { ...r, radius }));
-        }}
-        onLongPress={() =>
-          showTabMenu(
-            tab,
-            () => ctx.onDuplicate(tab.id),
-            () => ctx.onClose(tab.id),
-            () => ctx.onMove(tab.id),
-          )
-        }
-        delayLongPress={350}
-        accessibilityRole="button"
-        accessibilityLabel={`${title}${active ? ', đang mở' : ''}`}
-        style={({ pressed }) => [
-          styles.preview,
-          { width, height, borderRadius: radius, backgroundColor: tint },
-          hidden && { opacity: 0 },
-          pressed && { transform: [{ scale: 0.97 }] },
-          previewStyle,
-        ]}
-      >
-        {tab.thumb && tab.thumbKey === thumbKeyOf(tab) ? (
-          // Ảnh chụp cả màn hình, khớp chiều ngang, cắt phần dưới — đúng như trang thật khi thu nhỏ vào khung
-          <Image
-            source={{ uri: tab.thumb }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            contentPosition="top"
-            transition={0}
-            onDisplay={active ? () => ctx.onActiveThumbShown(tab.thumb!) : undefined}
-            accessibilityIgnoresInvertColors
-          />
-        ) : showPage ? (
-          <>
-            <Image source={faviconFor(tab.url!)} style={styles.bigFav} />
-            <Txt size={12} color={colors.textMuted} numberOfLines={1} style={{ paddingHorizontal: 8 }}>
-              {host}
-            </Txt>
-          </>
-        ) : (
-          <HomeMini width={width} />
-        )}
-        {/* Chỉ thẻ đang mở (vừa thu nhỏ): thanh địa chỉ đúng chỗ, đúng tỉ lệ như trang thật lúc thu nhỏ (dock ẩn) */}
-        {active && ctx.addrCollapsed && !addrAtTop && (
-          // Thanh đang thu thành nút kính lúp: nút tròn sát mép trái, đúng như trang thật lúc thu nhỏ
-          <View
-            pointerEvents="none"
-            style={[
-              styles.cardAddr,
-              {
-                left: 16 * (width / W),
-                top: height - (CARD_ADDR_BOTTOM + ADDRESS_BAR_HEIGHT) * (width / W),
-                transform: [{ scale: width / W }],
-              },
-            ]}
-          >
-            <StaticLens />
-          </View>
-        )}
-        {active && !(ctx.addrCollapsed && !addrAtTop) && (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.cardAddr,
-              addrAtTop
-                ? { top: (insets.top + 4) * (width / W) }
-                : { top: height - (CARD_ADDR_BOTTOM + ADDRESS_BAR_HEIGHT) * (width / W) },
-              { left: (width - addrBarWidth(W) * (width / W)) / 2, transform: [{ scale: width / W }] },
-            ]}
-          >
-            <StaticAddressBar tab={tab} blocked={blocked} width={addrBarWidth(W)} />
-          </View>
-        )}
-        {/* Viền vẽ ĐÈ lên ảnh (không đẩy ảnh vào trong), giống hệt viền mà trang thật có lúc thu nhỏ → đổi qua lại không nháy */}
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            { borderRadius: radius },
-            active
-              ? { borderWidth: 2, borderColor: accent }
-              : { borderWidth: StyleSheet.hairlineWidth, borderColor: fg(0.14) },
+      <Draggable info={{ id: tab.id, tab, w: width, h: height, radius, source: 'grid' }} ctx={ctx} enabled={!folder}>
+        <Pressable
+          ref={ref}
+          collapsable={false}
+          onPress={() => {
+            void Haptics.selectionAsync();
+            if (folder) ctx.onOpenFolder(folder.id);
+            else measure(ref, (r) => ctx.onPick(tab.id, r && { ...r, radius }));
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={
+            folder
+              ? `Khung ${folder.name}, ${folder.tabs.length} thẻ`
+              : `${title}${active ? ', đang mở' : ''}. Nhấn giữ rồi kéo lên thẻ khác để gộp thành khung`
+          }
+          style={({ pressed }) => [
+            styles.preview,
+            { width, height, borderRadius: radius, backgroundColor: folder ? colors.surface : tint },
+            hidden && { opacity: 0 },
+            ghost && { opacity: 0.25 },
+            pressed && { transform: [{ scale: 0.97 }] },
+            targeted && { transform: [{ scale: 0.9 }] },
+            previewStyle,
           ]}
-        />
-      </Pressable>
+        >
+          {folder ? (
+            <FolderGrid
+              folder={folder}
+              width={width}
+              height={height}
+              activeTabId={active ? ctx.activeTabId : undefined}
+              onActiveShown={ctx.onActiveThumbShown}
+            />
+          ) : tab.thumb && tab.thumbKey === thumbKeyOf(tab) ? (
+            // Ảnh chụp cả màn hình, khớp chiều ngang, cắt phần dưới — đúng như trang thật khi thu nhỏ vào khung
+            <Image
+              source={{ uri: tab.thumb }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              contentPosition="top"
+              transition={0}
+              onDisplay={active ? () => ctx.onActiveThumbShown(tab.thumb!) : undefined}
+              accessibilityIgnoresInvertColors
+            />
+          ) : showPage ? (
+            <>
+              <Image source={faviconFor(tab.url!)} style={styles.bigFav} />
+              <Txt size={12} color={colors.textMuted} numberOfLines={1} style={{ paddingHorizontal: 8 }}>
+                {host}
+              </Txt>
+            </>
+          ) : (
+            <HomeMini width={width} />
+          )}
+          {/* Chỉ thẻ đang mở (vừa thu nhỏ): thanh địa chỉ đúng chỗ, đúng tỉ lệ như trang thật lúc thu nhỏ (dock ẩn) */}
+          {active && !folder && ctx.addrCollapsed && !addrAtTop && (
+            // Thanh đang thu thành nút kính lúp: nút tròn sát mép trái, đúng như trang thật lúc thu nhỏ
+            <View
+              pointerEvents="none"
+              style={[
+                styles.cardAddr,
+                {
+                  left: 16 * (width / W),
+                  top: height - (CARD_ADDR_BOTTOM + ADDRESS_BAR_HEIGHT) * (width / W),
+                  transform: [{ scale: width / W }],
+                },
+              ]}
+            >
+              <StaticLens />
+            </View>
+          )}
+          {active && !folder && !(ctx.addrCollapsed && !addrAtTop) && (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.cardAddr,
+                addrAtTop
+                  ? { top: (insets.top + 4) * (width / W) }
+                  : { top: height - (CARD_ADDR_BOTTOM + ADDRESS_BAR_HEIGHT) * (width / W) },
+                { left: (width - addrBarWidth(W) * (width / W)) / 2, transform: [{ scale: width / W }] },
+              ]}
+            >
+              <StaticAddressBar tab={tab} blocked={blocked} width={addrBarWidth(W)} />
+            </View>
+          )}
+          {/* Viền vẽ ĐÈ lên ảnh (không đẩy ảnh vào trong), giống hệt viền mà trang thật có lúc thu nhỏ → đổi qua lại không nháy */}
+          <View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              { borderRadius: radius },
+              targeted
+                ? { borderWidth: 3, borderColor: accent }
+                : active
+                  ? { borderWidth: 2, borderColor: accent }
+                  : ring
+                    ? { borderWidth: 2, borderColor: accent, borderStyle: 'dashed' }
+                    : { borderWidth: StyleSheet.hairlineWidth, borderColor: fg(0.14) },
+            ]}
+          />
+        </Pressable>
+      </Draggable>
       {titleBelow && titleRow}
     </View>
   );
@@ -317,12 +573,19 @@ function Item({
   style,
   children,
 }: {
-  tab: Tab;
+  tab: Entry;
   dir: 'horizontal' | 'right' | 'up';
   ctx: Ctx;
   style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
 }) {
+  // Khung không vuốt để đóng (tránh lỡ tay đóng cả loạt thẻ)
+  if (tab.folder)
+    return (
+      <Animated.View entering={ENTER} exiting={EXIT} layout={LAYOUT_ANIM} style={style}>
+        {children}
+      </Animated.View>
+    );
   return (
     <Animated.View entering={ENTER} exiting={EXIT} layout={LAYOUT_ANIM} style={style}>
       <SwipeToClose direction={dir} onClose={() => ctx.onClose(tab.id)}>
@@ -345,8 +608,11 @@ function useReveal(token: number, x: number, y: number) {
 
 interface LayoutProps {
   token: number;
-  tabs: Tab[];
+  tabs: Entry[];
+  /** Ô đang mở (có thể là khung chứa thẻ đang mở) */
   activeId: string;
+  /** Thẻ đang mở thật (Chia đôi luôn hiện to thẻ này) */
+  activeTab: Tab;
   hideId: string | null;
   ctx: Ctx;
   W: number;
@@ -369,7 +635,12 @@ function Grid({ tabs, activeId, hideId, ctx, W, H, token, cols }: LayoutProps & 
   const y0 = Math.max(0, Math.floor(ai / cols) * rowH - H * 0.3);
   const ref = useReveal(token, 0, y0);
   return (
-    <ScrollView ref={ref} contentOffset={{ x: 0, y: y0 }} contentContainerStyle={[styles.wrap, { padding: pad, gap }]}>
+    <ScrollView
+      ref={ref}
+      scrollEnabled={!ctx.dragId}
+      contentOffset={{ x: 0, y: y0 }}
+      contentContainerStyle={[styles.wrap, { padding: pad, gap }]}
+    >
       {tabs.map((t) => (
         <Item key={t.id} tab={t} dir="horizontal" ctx={ctx}>
           <Card
@@ -399,11 +670,14 @@ function List({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
   return (
     <ScrollView
       ref={ref}
+      scrollEnabled={!ctx.dragId}
       contentOffset={{ x: 0, y: Math.max(0, ai * 82 - H * 0.3) }}
       contentContainerStyle={{ padding: 16, gap: 10 }}
     >
       {tabs.map((t) => {
-        const { title, host } = tabInfo(t, colors);
+        const info = tabInfo(t, colors);
+        const title = t.folder ? t.folder.name : info.title;
+        const host = t.folder ? `Khung · ${t.folder.tabs.length} thẻ` : info.host;
         const active = t.id === activeId;
         return (
           <Item key={t.id} tab={t} dir="horizontal" ctx={ctx}>
@@ -426,14 +700,25 @@ function List({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
                   {host || 'Trang chủ Ryx'}
                 </Txt>
               </View>
-              <IconButton
-                icon="close"
-                label="Đóng thẻ"
-                size={40}
-                iconSize={16}
-                color={colors.textMuted}
-                onPress={() => ctx.onClose(t.id)}
-              />
+              {t.folder ? (
+                <IconButton
+                  icon="chevron-forward"
+                  label="Mở khung"
+                  size={40}
+                  iconSize={16}
+                  color={colors.textMuted}
+                  onPress={() => ctx.onOpenFolder(t.id)}
+                />
+              ) : (
+                <IconButton
+                  icon="close"
+                  label="Đóng thẻ"
+                  size={40}
+                  iconSize={16}
+                  color={colors.textMuted}
+                  onPress={() => ctx.onClose(t.id)}
+                />
+              )}
             </View>
           </Item>
         );
@@ -458,6 +743,7 @@ function Cascade({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
   return (
     <ScrollView
       ref={ref}
+      scrollEnabled={!ctx.dragId}
       contentOffset={{ x: 0, y: Math.max(0, ai * step - 60) }}
       contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 60 }}
     >
@@ -508,6 +794,7 @@ function Carousel({ tabs, activeId, hideId, ctx, W, H, token, dockShift }: Layou
       <Animated.ScrollView
         ref={ref as never}
         horizontal
+        scrollEnabled={!ctx.dragId}
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsHorizontalScrollIndicator={false}
@@ -581,6 +868,7 @@ function Coverflow({ tabs, activeId, hideId, ctx, W, H, token }: LayoutProps) {
       <Animated.ScrollView
         ref={ref as never}
         horizontal
+        scrollEnabled={!ctx.dragId}
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsHorizontalScrollIndicator={false}
@@ -620,12 +908,11 @@ function Split(props: LayoutProps) {
  * Chia đôi khi xoay ngang: thẻ đang mở nằm ngang ở giữa phía trên, các thẻ khác xếp một hàng ngang phía dưới
  * (trái qua phải, cuộn ngang). Thẻ theo đúng tỉ lệ màn hình ngang. Vuốt lên để đóng.
  */
-function SplitLandscape({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
+function SplitLandscape({ tabs, activeTab: active, hideId, ctx, W, H }: LayoutProps) {
   const { width: SW, height: SH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const aspect = SW / SH;
-  const others = tabs.filter((t) => t.id !== activeId);
-  const active = tabs.find((t) => t.id === activeId) ?? tabs[0];
+  const others = tabs.filter((t) => t.id !== active.id);
   const smallH = others.length ? Math.max(56, Math.round(H * 0.27)) : 0;
   const smallW = Math.round(smallH * aspect);
   const rowH = others.length ? smallH + 12 : 0;
@@ -640,6 +927,7 @@ function SplitLandscape({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
       {others.length > 0 && (
         <ScrollView
           horizontal
+          scrollEnabled={!ctx.dragId}
           showsHorizontalScrollIndicator={false}
           style={{ flexGrow: 0, alignSelf: 'stretch', marginTop: 12 }}
           contentContainerStyle={{ paddingLeft: insets.left + 24, paddingRight: insets.right + 24, gap: 14 }}
@@ -649,6 +937,7 @@ function SplitLandscape({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
               <Card
                 tab={t}
                 active={false}
+                ring={!!t.folder?.tabs.some((x) => x.id === active.id)}
                 hidden={t.id === hideId}
                 width={smallW}
                 height={smallH}
@@ -664,11 +953,11 @@ function SplitLandscape({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
   );
 }
 
-function SplitPortrait({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
+function SplitPortrait({ tabs, activeTab: active, hideId, ctx, W, H }: LayoutProps) {
   const pad = 16;
   const gap = 16;
-  const others = tabs.filter((t) => t.id !== activeId);
-  const active = tabs.find((t) => t.id === activeId) ?? tabs[0];
+  // Thẻ lớn luôn là thẻ đang mở; nếu nó nằm trong khung thì khung vẫn ở cột nhỏ (viền nét đứt)
+  const others = tabs.filter((t) => t.id !== active.id);
   // Cân đối: lề trái = lề phải = 16, khoảng giữa 2 cột 16; chỉ có 1 thẻ thì thẻ lớn nằm giữa.
   // Thẻ nhỏ ở bên phải cho vừa tầm ngón cái tay phải (row-reverse), nghiêng vào phía thẻ lớn.
   const alone = others.length === 0;
@@ -680,6 +969,7 @@ function SplitPortrait({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
     <View style={{ flex: 1, flexDirection: 'row-reverse', paddingHorizontal: pad, gap, justifyContent: 'center' }}>
       {!alone && (
         <ScrollView
+          scrollEnabled={!ctx.dragId}
           style={{ width: leftW, flexGrow: 0 }}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingTop: 8, paddingBottom: 40, gap: 14 }}
@@ -696,6 +986,7 @@ function SplitPortrait({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
               <Card
                 tab={t}
                 active={false}
+                ring={!!t.folder?.tabs.some((x) => x.id === active.id)}
                 hidden={t.id === hideId}
                 width={smallW}
                 height={Math.round(smallW * 1.6)}
@@ -725,12 +1016,137 @@ function SplitPortrait({ tabs, activeId, hideId, ctx, W, H }: LayoutProps) {
   );
 }
 
+/** Bảng khung đang mở: nổi lên giữa màn, đổi tên được; chạm thẻ để vào chế độ khung, kéo thẻ ra ngoài để bỏ khỏi khung */
+function FolderPopup({
+  folder,
+  ctx,
+  panelRef,
+  onClose,
+  onRename,
+  onEnter,
+}: {
+  folder: FolderInfo;
+  ctx: Ctx;
+  panelRef: MeasureRef;
+  onClose: () => void;
+  onRename: (name: string) => void;
+  onEnter: (tabId: string, r: Rect | null) => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const { colors, scheme } = useTheme();
+  const { width: W, height: H } = useWindowDimensions();
+  const landscape = W > H;
+  const cols = landscape ? 4 : 3;
+  const panelW = Math.min(W - 48, landscape ? 600 : 400);
+  const gap = 12;
+  const cellW = Math.floor((panelW - 32 - gap * (cols - 1)) / cols);
+  const cellH = Math.round(cellW * Math.min(1.6, H / W));
+  return (
+    <Animated.View
+      entering={FadeIn.duration(180)}
+      exiting={FadeOut.duration(150)}
+      style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}
+    >
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Đóng khung">
+        <BlurView intensity={30} tint={scheme === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.25)' }]} />
+      </Pressable>
+      <Animated.View entering={ENTER}>
+        <View ref={panelRef} collapsable={false} style={[styles.panel, { width: panelW }]}>
+          <TextInput
+            defaultValue={folder.name}
+            onEndEditing={(e) => onRename(e.nativeEvent.text)}
+            returnKeyType="done"
+            selectTextOnFocus
+            maxLength={40}
+            accessibilityLabel="Tên khung"
+            style={[styles.folderName, { color: colors.text }]}
+          />
+          <ScrollView
+            style={{ maxHeight: H * (landscape ? 0.5 : 0.55), flexGrow: 0 }}
+            scrollEnabled={!ctx.dragId}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', gap }}
+          >
+            {folder.tabs.map((t) => (
+              <FolderCell key={t.id} tab={t} w={cellW} h={cellH} ctx={ctx} onEnter={onEnter} />
+            ))}
+          </ScrollView>
+          <Txt size={12} color={colors.textMuted} style={{ textAlign: 'center', marginTop: 12 }}>
+            Nhấn giữ rồi kéo thẻ ra ngoài để bỏ khỏi khung
+          </Txt>
+        </View>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+function FolderCell({
+  tab,
+  w,
+  h,
+  ctx,
+  onEnter,
+}: {
+  tab: Tab;
+  w: number;
+  h: number;
+  ctx: Ctx;
+  onEnter: (tabId: string, r: Rect | null) => void;
+}) {
+  const { colors, accent, fg } = useTheme();
+  const ref = useRef<HostInstance>(null);
+  const { title } = tabInfo(tab, colors);
+  const active = tab.id === ctx.activeTabId;
+  return (
+    <View style={{ width: w }}>
+      <Draggable info={{ id: tab.id, tab, w, h, radius: 14, source: 'folder' }} ctx={ctx}>
+        <Pressable
+          ref={ref}
+          collapsable={false}
+          onPress={() => {
+            void Haptics.selectionAsync();
+            measure(ref, (r) => onEnter(tab.id, r && { ...r, radius: 14 }));
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`${title}. Mở thẻ trong khung`}
+          style={({ pressed }) => [
+            { width: w, height: h, borderRadius: 14 },
+            ctx.dragId === tab.id && { opacity: 0.25 },
+            pressed && { transform: [{ scale: 0.96 }] },
+          ]}
+        >
+          <MiniThumb tab={tab} width={w} height={h} radius={14} />
+          <View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              { borderRadius: 14 },
+              active
+                ? { borderWidth: 2, borderColor: accent }
+                : { borderWidth: StyleSheet.hairlineWidth, borderColor: fg(0.14) },
+            ]}
+          />
+        </Pressable>
+      </Draggable>
+      <Txt
+        size={11}
+        weight={active ? 'semibold' : 'regular'}
+        numberOfLines={1}
+        style={{ marginTop: 4, textAlign: 'center' }}
+      >
+        {title}
+      </Txt>
+    </View>
+  );
+}
+
 // ---------- Màn các thẻ ----------
 
 function TabOverviewImpl(props: Props) {
   const styles = useStyles(makeStyles);
 
-  const { phase, zoom, dockShift, activeId, hideId, layout, bottomPad } = props;
+  const { phase, zoom, dockShift, activeId, hideId, layout, bottomPad, folderMode } = props;
   // Thứ tự thẻ: dùng gần nhất trước (thẻ đang mở đầu tiên, thẻ vừa dùng/vừa mở thứ 2…), ở mọi kiểu xếp.
   // Chốt thứ tự mỗi lần mở màn này (token) để chọn thẻ xong các thẻ không nhảy chỗ trong lúc zoom vào.
   const [order, setOrder] = useState(() => ({
@@ -742,24 +1158,143 @@ function TabOverviewImpl(props: Props) {
   const rank = new Map(order.ids.map((id, i) => [id, i]));
   // Thẻ mới thêm sau khi mở màn (chưa có trong thứ tự chốt) đứng đầu
   const tabs = [...props.tabs].sort((a, b) => (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1));
+  const activeTab = props.tabs.find((t) => t.id === activeId) ?? tabs[0];
+
+  // Gom thẻ trong khung thành một ô (đứng ở chỗ thẻ dùng gần nhất của khung). Chế độ khung thì hiện từng thẻ.
+  const folderById = new Map(props.folders.map((f) => [f.id, f]));
+  const entries: Entry[] = [];
+  if (folderMode) entries.push(...tabs);
+  else {
+    const seen = new Map<string, FolderInfo>();
+    for (const t of tabs) {
+      const f = t.folderId ? folderById.get(t.folderId) : undefined;
+      if (!f) {
+        entries.push(t);
+        continue;
+      }
+      const ex = seen.get(f.id);
+      if (ex) ex.tabs.push(t);
+      else {
+        const info: FolderInfo = { id: f.id, name: f.name, tabs: [t] };
+        seen.set(f.id, info);
+        entries.push({ ...t, id: f.id, folder: info });
+      }
+    }
+  }
+  const entryOf = (id: string) => entries.find((e) => e.id === id || e.folder?.tabs.some((t) => t.id === id))?.id ?? id;
+  const split = layout === 'split';
+
   const insets = useSafeAreaInsets();
   const { width: W, height: H } = useWindowDimensions();
   const { accent, accentSoft, onAccent, colors } = useTheme();
   const plusRef = useRef<HostInstance>(null);
 
+  // ---- Bảng khung đang mở (đóng lại mỗi lần mở màn các thẻ) ----
+  const [popup, setPopup] = useState<{ token: number; id: string | null }>({ token: props.token, id: null });
+  const popupId = popup.token === props.token ? popup.id : null;
+  const popupFolder = popupId ? entries.find((e) => e.id === popupId)?.folder : undefined;
+  const panelRef = useRef<HostInstance>(null);
+
+  // ---- Kéo thả ----
+  const absX = useSharedValue(0);
+  const absY = useSharedValue(0);
+  const offX = useSharedValue(0);
+  const offY = useSharedValue(0);
+  const rects = useSharedValue<HitRect[]>([]);
+  const hoverSv = useSharedValue('');
+  const moved = useSharedValue(0);
+  const [drag, setDrag] = useState<DragInfo | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const dragRef = useRef<DragInfo | null>(null);
+  const panelRect = useRef<Rect | null>(null);
+  const measurers = useRef(new Map<string, Measurer>());
+  const register = useCallback((id: string, m: Measurer) => {
+    measurers.current.set(id, m);
+    return () => {
+      if (measurers.current.get(id) === m) measurers.current.delete(id);
+    };
+  }, []);
+  const begin = (d: DragInfo) => {
+    dragRef.current = d;
+    setDrag(d);
+    setHoverId(null);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (d.source === 'folder') {
+      rects.set([]);
+      panelRect.current = null;
+      panelRef.current?.measureInWindow((x, y, w, h) => {
+        panelRect.current = w > 0 ? { x, y, w, h } : null;
+      });
+      return;
+    }
+    // Chụp vị trí mọi ô lúc bắt đầu kéo (màn không cuộn trong lúc kéo)
+    const list = [...measurers.current.entries()].filter(([id]) => id !== d.id);
+    const out: HitRect[] = [];
+    let left = list.length;
+    list.forEach(([id, m]) =>
+      m((r) => {
+        if (r) out.push({ id, ...r });
+        if (--left === 0) rects.set(out);
+      }),
+    );
+  };
+  const end = (wasMoved: boolean, target: string, x: number, y: number) => {
+    const d = dragRef.current;
+    if (!d) return;
+    dragRef.current = null;
+    setDrag(null);
+    setHoverId(null);
+    rects.set([]);
+    if (!wasMoved) {
+      // Nhấn giữ rồi thả (không kéo): menu của thẻ như trước
+      const inFolder = d.source === 'folder' || !!folderMode;
+      showTabMenu(
+        d.tab,
+        () => props.onDuplicate(d.id),
+        () => ctx.onClose(d.id),
+        inFolder ? () => props.onUnfold(d.id) : undefined,
+      );
+      return;
+    }
+    if (d.source === 'grid') {
+      if (target) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        props.onMerge(d.id, target);
+      }
+      return;
+    }
+    const p = panelRect.current;
+    if (p && (x < p.x || x > p.x + p.w || y < p.y || y > p.y + p.h)) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      props.onUnfold(d.id);
+    }
+  };
+  const hover = (id: string) => {
+    if (id) void Haptics.selectionAsync();
+    setHoverId(id || null);
+  };
+  const lift = useAnimatedStyle(() => ({
+    transform: [{ translateX: absX.get() - offX.get() }, { translateY: absY.get() - offY.get() }, { scale: 1.06 }],
+  }));
+
   const ctx: Ctx = {
+    activeTabId: activeId,
     onPick: props.onPick,
     onClose: (id) => {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       props.onClose(id);
     },
     onDuplicate: props.onDuplicate,
-    onMove: props.onMove,
     onActiveFrame: props.onActiveFrame,
     token: props.token,
     onActiveMeasurer: props.onActiveMeasurer,
     onActiveThumbShown: props.onActiveThumbShown,
     addrCollapsed: props.addrCollapsed,
+    onOpenFolder: (id) => setPopup({ token: props.token, id }),
+    register,
+    drag: { absX, absY, offX, offY, rects, hoverSv, moved, begin, end, hover },
+    dragId: drag?.id ?? null,
+    hoverId,
   };
 
   // Màn các thẻ hiện dần theo mức thu nhỏ của trang
@@ -772,7 +1307,18 @@ function TabOverviewImpl(props: Props) {
   // Màn ngang: hàng kiểu sắp xếp lên chung hàng với "Đóng tất cả" / nút + để dành chiều cao cho thẻ
   const landscape = W > H;
   const bodyH = H - insets.top - (landscape ? 60 : 104) - bottomPad;
-  const lp: LayoutProps = { tabs, activeId, hideId, ctx, W, H: bodyH, dockShift, token: props.token };
+  const lp: LayoutProps = {
+    tabs: entries,
+    // Chia đôi: thẻ to là thẻ đang mở thật; kiểu khác: ô đang mở có thể là khung chứa nó
+    activeId: split ? activeId : entryOf(activeId),
+    activeTab,
+    hideId: hideId && (split ? hideId : entryOf(hideId)),
+    ctx,
+    W,
+    H: bodyH,
+    dockShift,
+    token: props.token,
+  };
   let body: React.ReactNode;
   switch (layout) {
     case 'list':
@@ -794,6 +1340,30 @@ function TabOverviewImpl(props: Props) {
       body = <Grid {...lp} cols={2} />;
   }
 
+  const modeFolder = folderMode ? folderById.get(folderMode) : undefined;
+  const folderBar = modeFolder && (
+    <>
+      <Txt weight="bold" size={17} numberOfLines={1} style={{ maxWidth: landscape ? 200 : 130 }}>
+        {`${modeFolder.name} · ${tabs.length}`}
+      </Txt>
+      <Pressable
+        onPress={() => {
+          void Haptics.selectionAsync();
+          props.onFolderMode(null);
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="Thu nhỏ khung, về tất cả thẻ"
+        hitSlop={8}
+        style={({ pressed }) => [styles.minBtn, { backgroundColor: accentSoft }, pressed && { opacity: 0.6 }]}
+      >
+        <Ionicons name="contract-outline" size={14} color={accent} />
+        <Txt weight="semibold" size={13} color={accent}>
+          Thu nhỏ
+        </Txt>
+      </Pressable>
+    </>
+  );
+
   return (
     <Animated.View
       style={[StyleSheet.absoluteFill, styles.root, fade]}
@@ -808,33 +1378,31 @@ function TabOverviewImpl(props: Props) {
       >
         <Pressable onPress={props.onCloseAll} accessibilityRole="button" hitSlop={8} style={styles.headBtn}>
           <Txt weight="medium" size={15} color={colors.danger}>
-            Đóng tất cả
+            {modeFolder ? 'Đóng khung' : 'Đóng tất cả'}
           </Txt>
         </Pressable>
-        {/* Tên nhóm + số thẻ: chạm để đổi nhóm, tạo nhóm mới, đổi tên, xoá nhóm */}
-        <View pointerEvents={landscape ? 'none' : 'box-none'} style={[styles.count, landscape && { opacity: 0 }]}>
-          <Pressable
-            onPress={() => {
-              void Haptics.selectionAsync();
-              props.onGroupPress();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={`Nhóm ${props.groupName}, ${tabs.length} thẻ. Chạm để đổi nhóm`}
-            hitSlop={8}
-            style={({ pressed }) => [styles.groupBtn, pressed && { opacity: 0.6 }]}
-          >
-            <Txt weight="bold" size={17} numberOfLines={1} style={{ maxWidth: 160 }}>
-              {props.groupName === 'Thẻ' ? `${tabs.length} thẻ` : `${props.groupName} · ${tabs.length}`}
-            </Txt>
-            <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
-          </Pressable>
+        {/* Giữa: số thẻ; chế độ khung thì tên khung + nút Thu nhỏ (màn ngang: nằm cạnh nút Đóng) */}
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.count,
+            landscape && (modeFolder ? { left: insets.left + 130, right: undefined } : { opacity: 0 }),
+          ]}
+        >
+          <View style={styles.countRow}>
+            {folderBar ?? (
+              <Txt weight="bold" size={17}>
+                {`${tabs.length} thẻ`}
+              </Txt>
+            )}
+          </View>
         </View>
         <Pressable
           ref={plusRef}
           collapsable={false}
           onPress={() => measure(plusRef, (r) => props.onNewTab(r))}
           accessibilityRole="button"
-          accessibilityLabel="Thẻ mới"
+          accessibilityLabel={modeFolder ? 'Thẻ mới trong khung' : 'Thẻ mới'}
           hitSlop={6}
           style={({ pressed }) => [styles.plus, { backgroundColor: accent }, pressed && { opacity: 0.8 }]}
         >
@@ -858,7 +1426,7 @@ function TabOverviewImpl(props: Props) {
             ? {
                 position: 'absolute',
                 top: insets.top + 4,
-                left: insets.left + 150,
+                left: insets.left + (modeFolder ? 380 : 150),
                 right: insets.right + 80,
                 height: 56,
                 justifyContent: 'center',
@@ -899,6 +1467,32 @@ function TabOverviewImpl(props: Props) {
           })}
         </ScrollView>
       </View>
+
+      {popupFolder && (
+        <FolderPopup
+          key={popupFolder.id}
+          folder={popupFolder}
+          ctx={ctx}
+          panelRef={panelRef}
+          onClose={() => setPopup({ token: props.token, id: null })}
+          onRename={(n) => props.onRenameFolder(popupFolder.id, n)}
+          onEnter={(tabId, r) => {
+            setPopup({ token: props.token, id: null });
+            props.onFolderMode(popupFolder.id);
+            props.onPick(tabId, r);
+          }}
+        />
+      )}
+
+      {/* Bản thẻ nhấc lên, chạy theo ngón tay khi kéo */}
+      {drag && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.lift, { width: drag.w, height: drag.h, borderRadius: drag.radius }, lift]}
+        >
+          <MiniThumb tab={drag.tab} width={drag.w} height={drag.h} radius={drag.radius} />
+        </Animated.View>
+      )}
     </Animated.View>
   );
 }
@@ -930,7 +1524,40 @@ const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
     wrap: { flexDirection: 'row', flexWrap: 'wrap' },
     titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, height: TITLE_H, paddingLeft: 4 },
     cardAddr: { position: 'absolute', transformOrigin: 'left top' },
-    groupBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 8 },
+    countRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    minBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, paddingHorizontal: 10, borderRadius: 15 },
+    badge: {
+      position: 'absolute',
+      right: 6,
+      bottom: 6,
+      minWidth: 20,
+      height: 20,
+      borderRadius: 10,
+      paddingHorizontal: 5,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.55)',
+    },
+    panel: {
+      padding: 16,
+      borderRadius: 28,
+      backgroundColor: colors.surface,
+      shadowColor: '#000',
+      shadowOpacity: 0.35,
+      shadowRadius: 30,
+      shadowOffset: { width: 0, height: 12 },
+    },
+    folderName: { fontSize: 20, fontWeight: '700', textAlign: 'center', marginBottom: 14, paddingVertical: 4 },
+    lift: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOpacity: 0.4,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 8 },
+    },
     fav: { width: 14, height: 14, borderRadius: 3 },
     bigFav: { width: 40, height: 40, borderRadius: 10, marginBottom: 8 },
     preview: {
@@ -956,7 +1583,7 @@ const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
 
 /** Khoá nội dung của thẻ ảnh hưởng tới màn các thẻ (bỏ qua tiến trình tải… để không vẽ lại liên tục) */
 const tabsKey = (tabs: Tab[]) =>
-  tabs.map((t) => `${t.id}|${t.title}|${t.url}|${t.home}|${t.thumb}|${t.thumbKey}`).join('\n');
+  tabs.map((t) => `${t.id}|${t.title}|${t.url}|${t.home}|${t.thumb}|${t.thumbKey}|${t.folderId}`).join('\n');
 
 /**
  * Màn các thẻ luôn được gắn sẵn (ẩn) để lúc kéo dock không phải dựng từ đầu → không khựng khung hình đầu.
@@ -969,6 +1596,8 @@ export const TabOverview = memo(TabOverviewImpl, (a, b) => {
     a.layout === b.layout &&
     a.bottomPad === b.bottomPad &&
     a.hideId === b.hideId &&
+    a.folders === b.folders &&
+    a.folderMode === b.folderMode &&
     tabsKey(a.tabs) === tabsKey(b.tabs)
   );
 });
