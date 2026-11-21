@@ -26,6 +26,8 @@ export interface Tab {
   thumb?: string;
   /** Ảnh chụp ứng với trạng thái nào của thẻ (`home|url`); lệch thì không dùng ảnh nữa */
   thumbKey?: string;
+  /** Mép trên của trang (dưới giờ/pin) đang tối? Script trong trang đo rồi báo; chưa biết thì theo giao diện app */
+  topDark?: boolean;
   /** Lần cuối được mở/chuyển tới (ms): màn các thẻ xếp theo cái này, gần nhất đứng đầu */
   lastUsed: number;
   /** Nằm trong khung nào (Khung thẻ kiểu Cốc Cốc); null = thẻ lẻ */

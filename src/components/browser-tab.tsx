@@ -639,6 +639,10 @@ function BrowserTabImpl({
         });
         return;
       }
+      if (msg.type === 'ryx:tone') {
+        patchTab(tab.id, { topDark: !!msg.dark });
+        return;
+      }
       if (msg.type === 'ryx:theme') {
         if (msg.host) setSiteTheme(msg.host, !!msg.dark);
         return;

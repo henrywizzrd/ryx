@@ -1117,7 +1117,22 @@ export default function BrowserScreen() {
       />
       {/* Trình phát toàn màn hình của Ryx (thay màn toàn màn hình của iOS), nằm trên cùng */}
       {fsOn && <RyxPlayer onCmd={(js) => webRef()?.injectJavaScript(js)} />}
-      <Stack.Screen options={{ statusBarHidden: fsOn, statusBarAnimation: 'fade' }} />
+      {/* Giờ/pin: đang xem trang web thì chữ trắng/đen theo màu mép trên của trang (như Safari);
+          trang chủ, màn các thẻ, lúc gõ địa chỉ thì theo giao diện app */}
+      <Stack.Screen
+        options={{
+          statusBarHidden: fsOn,
+          statusBarAnimation: 'fade',
+          statusBarStyle:
+            pageOn && !active.home && !addrFocused && active.topDark !== undefined
+              ? active.topDark
+                ? 'light'
+                : 'dark'
+              : pageScheme === 'light'
+                ? 'dark'
+                : 'light',
+        }}
+      />
     </View>
   );
 }

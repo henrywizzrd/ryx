@@ -195,7 +195,52 @@ function applyDark(){
   var on = P.dark && (APP_LIGHT ? pageIsDark === true : pageIsDark !== true);
   styleEl('ryx-dark').textContent = on ? (APP_LIGHT ? LIGHT_CSS : DARK_CSS) : '';
   postBg(on ? FORCED_BG : '');
+  scheduleTone();
 }
+
+/* Màu ở mép trên trang (nằm dưới giờ/pin): báo app chọn chữ giờ/pin trắng hay đen như Safari.
+   Lấy nền của phần tử ở mép trên (3 điểm ngang), đi ngược lên cha tới khi gặp nền có màu; tính cả lúc Ryx đảo màu trang. */
+var toneSent = null, toneT = 0;
+function hexLum(c){
+  var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c || '').trim()); if (!m) return null;
+  var h = m[1]; if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  var v = parseInt(h, 16);
+  return (0.2126*((v>>16)&255) + 0.7152*((v>>8)&255) + 0.0722*(v&255)) / 255;
+}
+function bgLumAt(x){
+  var el = document.elementFromPoint(x, 2);
+  while (el && el.nodeType === 1) {
+    var l = luminance(getComputedStyle(el).backgroundColor);
+    if (l !== null) return l;
+    el = el.parentElement;
+  }
+  return null;
+}
+function measureTone(){
+  if (!document.body) return;
+  var w = window.innerWidth || 0, sum = 0, n = 0;
+  [0.15, 0.5, 0.85].forEach(function(f){ var l = bgLumAt(w * f); if (l !== null) { sum += l; n++; } });
+  var l = n ? sum / n : null;
+  if (l === null) {
+    var mt = document.querySelector('meta[name="theme-color"]');
+    l = hexLum(mt && mt.content);
+  }
+  if (l === null) {
+    var cs = document.querySelector('meta[name="color-scheme"]');
+    l = cs && /dark/.test(cs.content) && !/light/.test(cs.content) ? 0.1 : 1; /* không tô nền gì: nền mặc định */
+  }
+  var s = document.getElementById('ryx-dark');
+  if (s && s.textContent) l = APP_LIGHT ? 1 - l : 0.1 + 0.8 * (1 - l);
+  var dark = l < 0.5;
+  if (dark === toneSent) return;
+  toneSent = dark;
+  send({ type: 'ryx:tone', dark: dark });
+}
+/* Đo tối đa ~6 lần/giây khi cuộn hoặc trang đổi */
+function scheduleTone(){ if (!toneT) toneT = setTimeout(function(){ toneT = 0; try { measureTone(); } catch (e) {} }, 150); }
+window.addEventListener('scroll', scheduleTone, { passive: true });
+window.addEventListener('resize', scheduleTone);
+window.addEventListener('pageshow', function(){ toneSent = null; scheduleTone(); });
 
 function applyAll(){ applyHide(); applyDark(); scan(); }
 
@@ -207,7 +252,7 @@ function earlyDetect(){
   earlyDone = true;
   if (detectDark()) applyDark();
 }
-new MutationObserver(function(){ earlyDetect(); scheduleScan(); }).observe(root, { childList: true, subtree: true });
+new MutationObserver(function(){ earlyDetect(); scheduleScan(); scheduleTone(); }).observe(root, { childList: true, subtree: true });
 function send(m){ try { window.ReactNativeWebView.postMessage(JSON.stringify(m)); } catch (e) {} }
 /* Đo video chờ tải: từ lúc bắt đầu tải / bị khựng (waiting) tới lúc phát được. Chỉ báo khi > 2 giây. */
 function vsrc(v){ return String(v.currentSrc || v.src || '').slice(0, 200); }
@@ -228,7 +273,7 @@ document.addEventListener('DOMContentLoaded', function(){
   try { reportChapter(); } catch (e) {}
   if (pageIsDark !== null) send({ type: 'ryx:theme', host: HOST, dark: pageIsDark });
 });
-window.addEventListener('load', function(){ scan(); applyDark(); });
+window.addEventListener('load', function(){ scan(); applyDark(); setTimeout(scheduleTone, 1000); });
 
 
 /* Nhấn giữ ảnh/video → app hiện menu (Lưu vào Ảnh, Sao chép link…) */
