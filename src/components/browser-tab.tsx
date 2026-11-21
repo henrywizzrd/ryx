@@ -724,7 +724,11 @@ function BrowserTabImpl({
         decelerationRate="normal"
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
-        // Khoảng trên/dưới do native đặt (lib/edge → RyxEdge.obscure), không dùng contentInset ở đây: WebKit sẽ ghi đè
+        // Vùng bị che do native báo cho WebKit (lib/edge → RyxEdge.obscure, obscuredContentInsets); WebKit tự đặt
+        // contentInset của vùng cuộn theo đó. Nhưng react-native-webview mỗi lần bố cục lại (layoutSubviews) gán đè
+        // contentInset bằng prop này — để trống là về 0: phần đầu trang lọt dưới header cố định của trang, kéo xuống
+        // mới thấy rồi thả ra lại nảy mất. Nên truyền đúng bằng vùng bị che để hai bên luôn khớp.
+        contentInset={{ top: insetTop, bottom: insetBottom, left: 0, right: 0 }}
         contentMode="mobile"
         keyboardDisplayRequiresUserAction={false}
       />
