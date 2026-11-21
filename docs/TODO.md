@@ -12,12 +12,13 @@ Ghi lại theo yêu cầu của Tyson, chưa làm. Làm xong mục nào thì xo�
 
 ## Màn ngang khi đang xem trang
 
-- [ ] **Dock nằm bên phải màn hình**, thanh địa chỉ vẫn ở dưới.
+- [ ] **Dock dọc nằm bên phải màn hình** (icon xoay ngang theo), thanh địa chỉ vẫn ở dưới, nút + ở góc trên bên phải.
 - [ ] **Không thu gọn** thanh địa chỉ / dock khi cuộn trang ở màn ngang.
 - [ ] **Vuốt mở màn các thẻ:** vuốt từ thanh địa chỉ lên, hoặc từ dock (bên phải) kéo vào giữa màn hình
       → mở màn tất cả thẻ.
 
-## Cần hỏi lại trước khi làm
+## Đã chốt
 
-- Dock bên phải: dock dọc (nút xếp từ trên xuống) hay vẫn ngang nhưng dời sang góc phải?
-- Nút + (thẻ mới) đi theo dock sang phải hay ở chỗ khác?
+- Dock bên phải là **dock dọc** (nút xếp từ trên xuống), **icon xoay ngang theo** màn hình
+  (cầm ngang thì icon vẫn đứng thẳng, đúng chiều đọc).
+- **Nút + (thẻ mới) nằm góc trên bên phải.**
