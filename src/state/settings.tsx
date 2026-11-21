@@ -41,6 +41,8 @@ export interface Settings {
   siteOverrides: Record<string, Partial<ShieldPrefs>>;
   /** Phần tử cậu tự chọn ẩn ("Chạm để ẩn quảng cáo"), theo từng trang */
   customHides: Record<string, string[]>;
+  /** Mô tả dễ đọc của từng mục đã tự ẩn ("Ảnh 320×50 · …"), khoá `trang\nbộ chọn` (để liệt kê trong Shield) */
+  customHideLabels: Record<string, string>;
   /** Video/nhạc tiếp tục phát khi tắt màn hình hoặc chuyển app */
   backgroundPlay: boolean;
   /** Ghi chi tiết trình phát video vào Nhật ký (chỉ bật khi cần dò lỗi) */
@@ -62,6 +64,7 @@ export const DEFAULT_SETTINGS: Settings = {
   diagVideo: false,
   backgroundPlay: true,
   customHides: {},
+  customHideLabels: {},
   home: { logo: true, title: true, search: true, subtitle: true, stats: true, reading: true, quick: true },
 };
 
@@ -71,6 +74,10 @@ interface SettingsCtx {
   settings: Settings;
   ready: boolean;
   update: (patch: Partial<Settings>) => void;
+  /** Thêm các mục tự ẩn cho một trang (bỏ qua mục đã có); trả về các bộ chọn thật sự được thêm */
+  addHides: (site: string, items: { sel: string; label: string }[]) => string[];
+  /** Bỏ ẩn các mục (không truyền `sels` = bỏ hết của trang đó) */
+  removeHides: (site: string, sels?: string[]) => void;
   reset: () => void;
   prefsFor: (site: string) => ShieldPrefs;
   setSitePref: (site: string, key: keyof ShieldPrefs, value: boolean) => void;
@@ -123,6 +130,40 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const reset = useCallback(() => setSettings(DEFAULT_SETTINGS), []);
 
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+  const addHides = useCallback((site: string, items: { sel: string; label: string }[]) => {
+    const have = settingsRef.current.customHides[site] ?? [];
+    const add = items.filter((x, i) => x.sel && !have.includes(x.sel) && items.findIndex((y) => y.sel === x.sel) === i);
+    if (!add.length) return [];
+    setSettings((s) => {
+      const labels = { ...s.customHideLabels };
+      add.forEach((x) => (labels[`${site}\n${x.sel}`] = x.label));
+      const list = s.customHides[site] ?? [];
+      return {
+        ...s,
+        customHides: { ...s.customHides, [site]: [...list, ...add.map((x) => x.sel).filter((x) => !list.includes(x))] },
+        customHideLabels: labels,
+      };
+    });
+    return add.map((x) => x.sel);
+  }, []);
+  const removeHides = useCallback((site: string, sels?: string[]) => {
+    setSettings((s) => {
+      const list = s.customHides[site] ?? [];
+      const gone = sels ?? list;
+      const keep = list.filter((x) => !gone.includes(x));
+      const hides = { ...s.customHides };
+      if (keep.length) hides[site] = keep;
+      else delete hides[site];
+      const labels = { ...s.customHideLabels };
+      gone.forEach((x) => delete labels[`${site}\n${x}`]);
+      return { ...s, customHides: hides, customHideLabels: labels };
+    });
+  }, []);
+
   const prefsFor = useCallback(
     (site: string): ShieldPrefs => ({ ...settings.shield, ...settings.siteOverrides[site] }),
     [settings.shield, settings.siteOverrides],
@@ -142,8 +183,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ settings, ready, update, reset, prefsFor, setSitePref }),
-    [settings, ready, update, reset, prefsFor, setSitePref],
+    () => ({ settings, ready, update, addHides, removeHides, reset, prefsFor, setSitePref }),
+    [settings, ready, update, addHides, removeHides, reset, prefsFor, setSitePref],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

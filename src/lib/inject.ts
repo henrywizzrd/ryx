@@ -87,25 +87,95 @@ function styleEl(id){
   if (!s) { s = document.createElement('style'); s.id = id; (document.head || root).appendChild(s); }
   return s;
 }
+/* ---- Không bao giờ ẩn video thật và trình phát của nó (khung player, thanh thời gian, nút điều khiển) ----
+   Video thật (không phải banner video lặp) được đánh dấu: khung player = data-ryx-keepbox, nó và mọi khung cha = data-ryx-keep.
+   Luật ẩn (Shield tự động lẫn mục tự ẩn) bỏ qua các phần tử này; riêng quảng cáo đè trong player (data-ryx-adish) vẫn ẩn được. */
+var PLAYER_RE = /player|jwplayer|video-js|vjs-|plyr|mejs|flowplayer|artplayer|videojs|html5-video|shaka|ckplayer/i;
+var ADISH_RE = /(^|[^a-z])(ads?|advert|advertisement|vast|ima|preroll|sponsor|banner|promo|catfish)([^a-z]|$)/i;
+var EMBED_HINTS = ['youtube.com/embed', 'youtube-nocookie.com', 'player.vimeo.com', 'dailymotion.com/embed', 'streamable.com', '/embed/'];
+var KEEP = ':not([data-ryx-keep]):not([data-ryx-keepbox] :not([data-ryx-adish]))';
+var keepBoxes = [];
+function clsOf(el){ return (typeof el.className === 'string' ? el.className : '') + ' ' + (el.id || ''); }
+function adishUp(el, n){ for (var p = el, d = 0; p && p !== root && d < n; p = p.parentElement, d++) { if (ADISH_RE.test(clsOf(p))) return true; } return false; }
+function playerBox(v){
+  for (var p = v.parentElement, d = 0; p && p !== document.body && p !== root && d < 6; p = p.parentElement, d++) {
+    var c = clsOf(p);
+    if (PLAYER_RE.test(c) && !ADISH_RE.test(c)) return p;
+  }
+  return null;
+}
+/* Không có lớp tên "player": lấy khung cha cao nhất vẫn ôm sát video (thường chứa thanh điều khiển tự vẽ) */
+function tightBox(v){
+  var r = v.getBoundingClientRect(), box = v;
+  for (var p = v.parentElement, d = 0; p && p !== document.body && p !== root && d < 4; p = p.parentElement, d++) {
+    var q = p.getBoundingClientRect();
+    if (q.width > r.width + 80 || q.height > r.height + 120) break;
+    box = p;
+  }
+  return box;
+}
+function playerIframe(el){
+  if (!el || el.tagName !== 'IFRAME') return false;
+  var s = String(el.src || '');
+  for (var i = 0; i < EMBED_HINTS.length; i++) if (s.indexOf(EMBED_HINTS[i]) >= 0) return true;
+  return false;
+}
+function keepBox(box){
+  if (box.hasAttribute('data-ryx-keepbox')) return;
+  box.setAttribute('data-ryx-keepbox', '');
+  keepBoxes.push(box);
+  for (var p = box; p && p !== root; p = p.parentElement) p.setAttribute('data-ryx-keep', '');
+}
+function guardVideos(){
+  var vs = document.getElementsByTagName('video');
+  for (var i = 0; i < vs.length; i++) {
+    var v = vs[i];
+    if (v.__ryxKeep) continue;
+    var box = playerBox(v);
+    /* Banner video quảng cáo: lặp, không nút điều khiển, nằm trong khung quảng cáo / link */
+    if (!box && !v.controls && (v.loop || adishUp(v, 4) || v.closest('a[href]'))) continue;
+    v.__ryxKeep = 1;
+    keepBox(box || tightBox(v));
+  }
+  var fs = document.getElementsByTagName('iframe');
+  for (var j = 0; j < fs.length; j++) if (!fs[j].__ryxKeep && playerIframe(fs[j])) { fs[j].__ryxKeep = 1; keepBox(fs[j]); }
+  /* Quảng cáo đè trong player (lớp tên ads/vast/preroll…) thì vẫn cho ẩn */
+  for (var k = 0; k < keepBoxes.length; k++) {
+    var all = keepBoxes[k].getElementsByTagName('*');
+    for (var m = 0; m < all.length; m++) {
+      var e = all[m];
+      if (!e.__ryxAdChk) { e.__ryxAdChk = 1; if (ADISH_RE.test(clsOf(e)) && e.tagName !== 'VIDEO') e.setAttribute('data-ryx-adish', ''); }
+    }
+  }
+}
+function isKept(el){
+  if (!el || el.nodeType !== 1) return false;
+  if (el.__ryxKeep || el.hasAttribute('data-ryx-keep') || playerIframe(el)) return true;
+  return !!el.closest('[data-ryx-keepbox]') && !el.closest('[data-ryx-adish]');
+}
+
 function applyHide(){
   var css = '';
   ['ads','gambling','popups'].forEach(function(k){
-    if (P[k] && SEL[k]) css += SEL[k] + '{display:none!important;visibility:hidden!important;}';
+    if (P[k] && SEL[k]) css += ':is(' + SEL[k] + ')' + KEEP + '{display:none!important;visibility:hidden!important;}';
   });
   var mine = valid((CFG.hides || {})[HKEY] || []);
-  if (mine) css += mine + '{display:none!important;}';
+  if (mine) css += ':is(' + mine + ')' + KEEP + '{display:none!important;}';
   styleEl('ryx-hide').textContent = css;
 }
 
 function scan(){
   try { inlineVideos(); } catch (e) {}
+  try { guardVideos(); } catch (e) {}
   var changed = false;
   ['ads','gambling','popups'].forEach(function(k){
     if (!P[k] || !SEL[k]) return;
     var els; try { els = document.querySelectorAll(SEL[k]); } catch (e) { return; }
     for (var i = 0; i < els.length; i++) {
       if (!els[i].__ryxSeen) {
-        els[i].__ryxSeen = 1; counts[k]++; changed = true;
+        els[i].__ryxSeen = 1;
+        if (isKept(els[i])) continue; /* video thật / trình phát: không ẩn, không đếm */
+        counts[k]++; changed = true;
         /* Banner video: ẩn luôn khung bọc (link/banner) để không chừa ô trống */
         if (els[i].tagName === 'VIDEO') {
           var box = els[i].closest('a,[class*="banner"],[class*="catfish"],[id*="catfish"],[class*="ads"]');
@@ -508,6 +578,15 @@ function pickAdd(el){
   pickSet = pickSet.filter(function(x){ if (el.contains(x)) { setMark(x, false); return false; } return true; });
   pickSet.push(el); setMark(el, true);
 }
+/* Mô tả mục đã ẩn để liệt kê trong Shield: "Ảnh 320×50 · chữ trong đó" */
+function pickLabel(el){
+  var r = el.getBoundingClientRect(), t = el.tagName;
+  var kind = t === 'IMG' ? 'Ảnh' : t === 'IFRAME' ? 'Khung nhúng' : t === 'A' ? 'Link' : (el.querySelector && el.querySelector('img')) ? 'Khối có ảnh' : 'Khối';
+  var extra = '';
+  if (t === 'IFRAME') { try { extra = new URL(el.src, location.href).hostname; } catch (e) {} }
+  else extra = String(el.innerText || el.getAttribute('alt') || '').split(String.fromCharCode(10)).join(' ').trim().slice(0, 40);
+  return kind + ' ' + Math.round(r.width) + '×' + Math.round(r.height) + (extra ? ' · ' + extra : '');
+}
 function pickedOf(t){ if (!t || !t.closest) return null; var c = t.closest('[data-ryx-pick]'); return c && pickSet.indexOf(c) >= 0 ? c : null; }
 function pickCount(){ send({ type: 'ryx:pick', kind: 'count', count: pickSet.length }); }
 function esc(x){ return (window.CSS && CSS.escape) ? CSS.escape(x) : x; }
@@ -562,7 +641,11 @@ window.addEventListener('click', function(e){
   var t = e.target; if (!t || t === document.body || t === root || t === document.documentElement) return;
   var already = pickedOf(t);
   if (already) { pickSet.splice(pickSet.indexOf(already), 1); setMark(already, false); }
-  else pickAdd(t);
+  else {
+    try { guardVideos(); } catch (e2) {}
+    if (isKept(t)) { send({ type: 'ryx:pick', kind: 'blocked' }); return; }
+    pickAdd(t);
+  }
   pickCount();
 }, true);
 
@@ -691,15 +774,21 @@ window.__ryx = {
   pickParent: function(){
     var h = pickHeld, p = h && h.parentElement;
     if (!h || !p || p === document.body || p === root || p === document.documentElement) return;
+    try { guardVideos(); } catch (e) {}
+    if (isKept(p)) { send({ type: 'ryx:pick', kind: 'blocked' }); return; }
     pickSet.splice(pickSet.indexOf(h), 1); setMark(h, false);
     pickAdd(p); pickHeld = p; pickCount();
   },
   pickClear: function(){ pickClearAll(); pickCount(); },
   /* Ẩn tất cả mục đã chọn: gửi bộ chọn cho app lưu lại */
   pickHide: function(){
-    var sels = [];
-    for (var i = 0; i < pickSet.length; i++) { var x = selFor(pickSet[i]); if (x && sels.indexOf(x) < 0) sels.push(x); }
-    send({ type: 'ryx:pick', kind: 'done', selectors: sels });
+    var sels = [], labels = [];
+    for (var i = 0; i < pickSet.length; i++) {
+      if (isKept(pickSet[i])) continue;
+      var x = selFor(pickSet[i]);
+      if (x && sels.indexOf(x) < 0) { sels.push(x); labels.push(pickLabel(pickSet[i])); }
+    }
+    send({ type: 'ryx:pick', kind: 'done', selectors: sels, labels: labels });
   },
   update: function(c){ CFG = c; P = prefs(); applyAll(); post(); },
   pip: pipFromMenu,

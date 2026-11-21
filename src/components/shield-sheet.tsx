@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -17,8 +18,11 @@ interface Props {
   onToggle: (key: keyof ShieldPrefs, value: boolean) => void;
   onReload: () => void;
   /** Số phần tử cậu tự ẩn trên trang này */
-  customHidden: number;
+  /** Các mục đã tự ẩn trên trang này (bộ chọn + mô tả) */
+  customHidden: { sel: string; label: string }[];
   onStartPick: () => void;
+  /** Bỏ ẩn một mục */
+  onUnhide: (sel: string) => void;
   onClearCustom: () => void;
 }
 
@@ -32,8 +36,11 @@ export function ShieldSheet({
   onReload,
   customHidden,
   onStartPick,
+  onUnhide,
   onClearCustom,
 }: Props) {
+  const [showAll, setShowAll] = useState(false);
+  const hiddenShown = showAll ? customHidden : customHidden.slice(0, 5);
   const styles = useStyles(makeStyles);
 
   const { accent, accentSoft, onAccent, colors, fg, pageModeLabel, pageModeIcon } = useTheme();
@@ -129,7 +136,11 @@ export function ShieldSheet({
               onStartPick();
             }}
             accessibilityRole="button"
-            style={({ pressed }) => [styles.linkRow, customHidden > 0 && styles.divider, pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              styles.linkRow,
+              customHidden.length > 0 && styles.divider,
+              pressed && { opacity: 0.7 },
+            ]}
           >
             <Ionicons name="hand-left-outline" size={20} color={accent} />
             <View style={{ flex: 1 }}>
@@ -142,7 +153,46 @@ export function ShieldSheet({
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
           </Pressable>
-          {customHidden > 0 && (
+          {/* Từng mục đã tự ẩn: bỏ ẩn riêng từng cái nếu lỡ tay */}
+          {hiddenShown.map((h, i) => (
+            <View
+              key={h.sel}
+              style={[
+                styles.linkRow,
+                (i < hiddenShown.length - 1 || customHidden.length > 1) && styles.divider,
+                { paddingVertical: 8 },
+              ]}
+            >
+              <Ionicons name="eye-off-outline" size={18} color={colors.textMuted} />
+              <Txt size={14} numberOfLines={2} style={{ flex: 1 }}>
+                {h.label}
+              </Txt>
+              <Pressable
+                onPress={() => onUnhide(h.sel)}
+                accessibilityRole="button"
+                accessibilityLabel={`Bỏ ẩn ${h.label}`}
+                hitSlop={8}
+                style={({ pressed }) => [styles.unhide, { backgroundColor: accentSoft }, pressed && { opacity: 0.6 }]}
+              >
+                <Txt weight="semibold" size={13} color={accent}>
+                  Bỏ ẩn
+                </Txt>
+              </Pressable>
+            </View>
+          ))}
+          {customHidden.length > 5 && (
+            <Pressable
+              onPress={() => setShowAll((v) => !v)}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.linkRow, styles.divider, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons name={showAll ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+              <Txt weight="medium" size={14} color={colors.textMuted} style={{ flex: 1 }}>
+                {showAll ? 'Thu gọn' : `Xem tất cả ${customHidden.length} mục`}
+              </Txt>
+            </Pressable>
+          )}
+          {customHidden.length > 1 && (
             <Pressable
               onPress={onClearCustom}
               accessibilityRole="button"
@@ -150,7 +200,7 @@ export function ShieldSheet({
             >
               <Ionicons name="trash-outline" size={20} color={colors.danger} />
               <Txt weight="medium" size={15} style={{ flex: 1 }}>
-                Bỏ {customHidden} phần tử đã tự ẩn
+                Bỏ ẩn cả {customHidden.length} mục
               </Txt>
             </Pressable>
           )}
@@ -195,6 +245,7 @@ const makeStyles = (_colors: Palette, fg: (alpha: number) => string) =>
       marginBottom: 12,
     },
     linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingVertical: 8 },
+    unhide: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center' },
     divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: fg(0.12) },
     reload: {
       height: 50,

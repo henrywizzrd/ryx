@@ -81,11 +81,24 @@ interface SavedTab {
   lastUsed?: number;
   folderId?: string | null;
 }
+/** Thẻ vừa đóng (để mở lại). Các thẻ đóng cùng lúc ("Đóng tất cả") chung một `batch`. */
+export interface ClosedTab {
+  id: string;
+  batch: string;
+  url: string;
+  title: string;
+  folderId: string | null;
+  folderName: string | null;
+  closedAt: number;
+}
+const MAX_CLOSED = 20;
+
 interface Session {
   tabs: Tab[];
   active: string;
   folders: TabFolder[];
   folderMode: string | null;
+  closed: ClosedTab[];
 }
 const sessionFile = () => new File(Paths.document, 'ryx-session.json');
 function loadSession(): Session | null {
@@ -97,9 +110,12 @@ function loadSession(): Session | null {
       tabs?: SavedTab[];
       folders?: TabFolder[];
       folderMode?: string | null;
+      closed?: ClosedTab[];
     };
+    const closed = (data.closed ?? []).filter((c) => c && c.url && c.batch).slice(0, MAX_CLOSED);
     const saved = (data.tabs ?? []).filter((t) => t && typeof t.id === 'string').slice(0, 100);
-    if (!saved.length) return null;
+    if (!saved.length)
+      return closed.length ? { tabs: [makeTab()], active: '', folders: [], folderMode: null, closed } : null;
     const active = saved.some((t) => t.id === data.active) ? data.active! : saved[saved.length - 1].id;
     const now = Date.now();
     let tabs: Tab[] = saved.map((t, i) => {
@@ -124,13 +140,19 @@ function loadSession(): Session | null {
     const ok = new Set(folders.map((g) => g.id));
     tabs = tabs.map((t) => (t.folderId && !ok.has(t.folderId) ? { ...t, folderId: null } : t));
     const folderMode = data.folderMode && ok.has(data.folderMode) ? data.folderMode : null;
-    return { tabs, active, folders, folderMode };
+    return { tabs, active, folders, folderMode, closed };
   } catch {
     return null;
   }
 }
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-function saveSession(tabs: Tab[], active: string, folders: TabFolder[], folderMode: string | null) {
+function saveSession(
+  tabs: Tab[],
+  active: string,
+  folders: TabFolder[],
+  folderMode: string | null,
+  closed: ClosedTab[],
+) {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
@@ -140,6 +162,7 @@ function saveSession(tabs: Tab[], active: string, folders: TabFolder[], folderMo
         active,
         folders,
         folderMode,
+        closed,
         tabs: tabs.map((t) => ({
           id: t.id,
           url: t.url,
@@ -183,9 +206,9 @@ interface TabsCtx {
   setActive: (id: string) => void;
   /** background: mở thẻ nhưng vẫn ở lại thẻ hiện tại */
   newTab: (url?: string | null, opts?: { background?: boolean }) => string;
-  closeTab: (id: string) => void;
+  closeTab: (id: string) => string | null;
   /** Đóng mọi thẻ (chế độ khung: mọi thẻ của khung) */
-  closeAll: () => void;
+  closeAll: () => string | null;
   patchTab: (id: string, patch: Partial<Tab> | ((t: Tab) => Partial<Tab>)) => void;
   open: (id: string, url: string) => void;
   refs: React.MutableRefObject<Map<string, WebViewHandle | null>>;
@@ -199,6 +222,13 @@ interface TabsCtx {
   /** Bỏ thẻ ra khỏi khung (khung còn 1 thẻ thì tự tan) */
   unfold: (tabId: string) => void;
   renameFolder: (id: string, name: string) => void;
+  // ---- Thẻ vừa đóng ----
+  /** Mới đóng trước, tối đa 20 thẻ */
+  closed: ClosedTab[];
+  /** Mở lại cả lượt đóng (một thẻ, hoặc mọi thẻ của một lần "Đóng tất cả") */
+  reopenBatch: (batch: string) => void;
+  /** Mở lại một thẻ trong danh sách */
+  reopenOne: (id: string) => void;
 }
 
 const Ctx = createContext<TabsCtx | null>(null);
@@ -208,7 +238,12 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
   const [tabs, setTabs] = useState<Tab[]>(() => restored?.tabs ?? [makeTab()]);
   const [folders, setFolders] = useState<TabFolder[]>(() => restored?.folders ?? []);
   const [folderMode, setFolderModeRaw] = useState<string | null>(() => restored?.folderMode ?? null);
-  const [activeId, setActiveIdRaw] = useState<string>(() => restored?.active ?? tabs[0].id);
+  const [activeId, setActiveIdRaw] = useState<string>(() => restored?.active || tabs[0].id);
+  const [closed, setClosed] = useState<ClosedTab[]>(() => restored?.closed ?? []);
+  const closedRef = useRef(closed);
+  useEffect(() => {
+    closedRef.current = closed;
+  }, [closed]);
   const refs = useRef(new Map<string, WebViewHandle | null>());
   const tabsRef = useRef(tabs);
   useEffect(() => {
@@ -267,8 +302,74 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
     [setActiveId],
   );
 
+  /** Ghi các thẻ sắp đóng vào danh sách "vừa đóng"; trả về mã lượt đóng (null nếu toàn thẻ trống) */
+  const remember = useCallback((list: Tab[]): string | null => {
+    const real = list.filter((t) => !t.home && t.url);
+    if (!real.length) return null;
+    const batch = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    const now = Date.now();
+    const items: ClosedTab[] = [...real].sort(byRecent).map((t, i) => ({
+      id: `${batch}-${i}`,
+      batch,
+      url: t.url!,
+      title: t.title || t.url!,
+      folderId: t.folderId,
+      folderName: foldersRef.current.find((f) => f.id === t.folderId)?.name ?? null,
+      closedAt: now,
+    }));
+    setClosed((cs) => [...items, ...cs].slice(0, MAX_CLOSED));
+    return batch;
+  }, []);
+
+  /** Mở lại các thẻ đã đóng: vào lại khung cũ (khung đã tan mà mở lại từ 2 thẻ trở lên thì dựng lại khung) */
+  const reopenItems = useCallback(
+    (items: ClosedTab[]) => {
+      if (!items.length) return;
+      const ids = new Set(items.map((c) => c.id));
+      setClosed((cs) => cs.filter((c) => !ids.has(c.id)));
+      const have = new Set(foldersRef.current.map((f) => f.id));
+      const count = new Map<string, number>();
+      items.forEach((c) => c.folderId && count.set(c.folderId, (count.get(c.folderId) ?? 0) + 1));
+      const revive: TabFolder[] = [];
+      count.forEach((n, fid) => {
+        if (!have.has(fid) && n >= 2)
+          revive.push({ id: fid, name: items.find((c) => c.folderId === fid)?.folderName ?? 'Nhóm' });
+      });
+      if (revive.length) {
+        foldersRef.current = [...foldersRef.current, ...revive];
+        setFolders((fs) => [...fs, ...revive]);
+      }
+      const ok = new Set(foldersRef.current.map((f) => f.id));
+      const now = Date.now();
+      // Chỉ thẻ đầu (mới đóng nhất) nạp trang ngay, các thẻ khác nạp khi được mở tới
+      const back: Tab[] = items.map((c, i) => ({
+        ...makeTab(c.url, c.folderId && ok.has(c.folderId) ? c.folderId : null),
+        sourceUrl: null,
+        loading: false,
+        title: c.title,
+        lastUsed: now - i,
+      }));
+      const fm = folderModeRef.current;
+      if (fm && back[0].folderId !== fm) setFolderModeRaw(null);
+      // Bỏ thẻ trống do "Đóng tất cả" tạo ra (nếu chỉ còn mình nó)
+      setTabs((l) => (l.length === 1 && l[0].home && !l[0].url ? [...back] : [...l, ...back]));
+      setActiveId(back[0].id);
+    },
+    [setActiveId],
+  );
+  const reopenBatch = useCallback(
+    (batch: string) => reopenItems(closedRef.current.filter((c) => c.batch === batch)),
+    [reopenItems],
+  );
+  const reopenOne = useCallback(
+    (id: string) => reopenItems(closedRef.current.filter((c) => c.id === id)),
+    [reopenItems],
+  );
+
   const closeTab = useCallback(
     (id: string) => {
+      const gone = tabsRef.current.find((t) => t.id === id);
+      const batch = remember(gone ? [gone] : []);
       refs.current.delete(id);
       setTabs((list) => {
         const gone = list.find((t) => t.id === id);
@@ -284,12 +385,14 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
         setActiveId((cur) => (cur === id ? pick.id : cur));
         return next;
       });
+      return batch;
     },
-    [setActiveId, tidy],
+    [setActiveId, tidy, remember],
   );
 
-  const closeAll = useCallback(() => {
+  const closeAll = useCallback((): string | null => {
     const fm = folderModeRef.current;
+    const batch = remember(fm ? tabsRef.current.filter((t) => t.folderId === fm) : tabsRef.current);
     if (fm) {
       // Chế độ khung: đóng các thẻ của khung, ra lại màn tất cả thẻ
       setTabs((list) => {
@@ -305,14 +408,15 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
       });
       setFolders((fs) => fs.filter((f) => f.id !== fm));
       setFolderModeRaw(null);
-      return;
+      return batch;
     }
     refs.current.clear();
     const fresh = makeTab();
     setTabs([fresh]);
     setFolders([]);
     setActiveId(fresh.id);
-  }, [setActiveId]);
+    return batch;
+  }, [setActiveId, remember]);
 
   /** Mở URL trong một thẻ (giữ lịch sử nếu WebView đã tồn tại). */
   const open = useCallback(
@@ -386,9 +490,11 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
     '#' +
     folders.map((g) => `${g.id}:${g.name}`).join(',') +
     '#' +
-    folderMode;
+    folderMode +
+    '#' +
+    closed.map((c) => c.id).join(',');
   useEffect(() => {
-    saveSession(tabsRef.current, active.id, foldersRef.current, folderModeRef.current);
+    saveSession(tabsRef.current, active.id, foldersRef.current, folderModeRef.current, closedRef.current);
   }, [sessionKey, active.id]);
 
   const value = useMemo(
@@ -410,6 +516,9 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
       merge,
       unfold,
       renameFolder,
+      closed,
+      reopenBatch,
+      reopenOne,
     }),
     [
       tabs,
@@ -427,6 +536,9 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
       merge,
       unfold,
       renameFolder,
+      closed,
+      reopenBatch,
+      reopenOne,
     ],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

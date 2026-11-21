@@ -105,6 +105,8 @@ interface Props {
   onClose: (id: string) => void;
   onDuplicate: (id: string) => void;
   onCloseAll: () => void;
+  /** Nhấn giữ nút +: danh sách thẻ vừa đóng */
+  onShowClosed: (x: number, y: number) => void;
   onNewTab: (r: Rect | null) => void;
 }
 
@@ -1401,8 +1403,11 @@ function TabOverviewImpl(props: Props) {
           ref={plusRef}
           collapsable={false}
           onPress={() => measure(plusRef, (r) => props.onNewTab(r))}
+          onLongPress={() => measure(plusRef, (r) => props.onShowClosed(r ? r.x : W - 60, r ? r.y + r.h : 100))}
+          delayLongPress={350}
           accessibilityRole="button"
           accessibilityLabel={modeFolder ? 'Thẻ mới trong khung' : 'Thẻ mới'}
+          accessibilityHint="Nhấn giữ để xem thẻ vừa đóng"
           hitSlop={6}
           style={({ pressed }) => [styles.plus, { backgroundColor: accent }, pressed && { opacity: 0.8 }]}
         >

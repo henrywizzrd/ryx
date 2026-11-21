@@ -87,7 +87,9 @@ export interface ChapterInfo {
 export type PickedElement =
   | { kind: 'count'; count: number }
   | { kind: 'menu'; count: number; tag: string; w: number; h: number; x: number; y: number }
-  | { kind: 'done'; selectors: string[] };
+  | { kind: 'done'; selectors: string[]; labels?: string[] }
+  /** Chạm vào video/trình phát: không cho chọn để ẩn */
+  | { kind: 'blocked' };
 
 export interface MediaPress {
   kind: 'image' | 'video';
@@ -532,7 +534,7 @@ function BrowserTabImpl({
       }
       if (msg.type === 'ryx:pick') {
         const p = msg as unknown as PickedElement;
-        if (p.kind === 'count' || p.kind === 'menu' || p.kind === 'done') onPick(p);
+        if (p.kind === 'count' || p.kind === 'menu' || p.kind === 'done' || p.kind === 'blocked') onPick(p);
         return;
       }
       if (msg.type === 'ryx:media') {

@@ -33,7 +33,11 @@ const newId = () => `b-${Date.now().toString(36)}-${seq++}`;
 
 /** So khớp bỏ qua dấu "/" cuối và "www." để không lưu trùng. */
 export function sameUrl(a: string, b: string): boolean {
-  const n = (u: string) => u.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/+$/, '').toLowerCase();
+  const n = (u: string) =>
+    u
+      .replace(/^https?:\/\/(www\.)?/i, '')
+      .replace(/\/+$/, '')
+      .toLowerCase();
   return n(a) === n(b);
 }
 

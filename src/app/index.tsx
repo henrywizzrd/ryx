@@ -75,13 +75,16 @@ const GAP = 10;
 /** Đợi bảng trước đóng xong rồi mới mở bảng/màn hình khác (iOS không trình bày 2 modal cùng lúc). */
 const SHEET_HANDOFF_MS = 280;
 
+/** Mã mới cho mỗi lần hiện thông báo (để tự ẩn tính lại từ đầu) */
+const noticeKey = () => Date.now();
+
 export default function BrowserScreen() {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
 
   const insets = useSafeAreaInsets();
   const kb = useKeyboardHeight();
-  const { settings, prefsFor, setSitePref, update } = useSettings();
+  const { settings, prefsFor, setSitePref, update, addHides, removeHides } = useSettings();
   const { record } = useStats();
   const {
     tabs,
@@ -100,6 +103,9 @@ export default function BrowserScreen() {
     merge,
     unfold,
     renameFolder,
+    closed,
+    reopenBatch,
+    reopenOne,
   } = useTabs();
   const { width: W, height: H } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
@@ -415,6 +421,43 @@ export default function BrowserScreen() {
     };
   }, [downloadFinishedRef]);
 
+  // ---- Đóng thẻ có nút Mở lại ----
+  const closeWithUndo = (id: string) => {
+    const t = tabs.find((x) => x.id === id);
+    const batch = closeTab(id);
+    if (!batch) return;
+    setNotice({
+      key: Date.now(),
+      icon: 'trash-outline',
+      title: 'Đã đóng thẻ',
+      subtitle: t?.title || t?.url || '',
+      action: { label: 'Mở lại', run: () => reopenBatch(batch) },
+      autoHide: 5000,
+    });
+  };
+  /** Nhấn giữ nút + ở màn các thẻ: danh sách thẻ vừa đóng (như Safari) */
+  const showClosed = (x: number, y: number) => {
+    if (!closed.length) {
+      setNotice({ key: noticeKey(), icon: 'time-outline', title: 'Chưa có thẻ nào vừa đóng', autoHide: 2500 });
+      return;
+    }
+    const seen = new Map<string, number>();
+    const items: MenuItem[] = closed.slice(0, 10).map((c) => {
+      const base = c.title || c.url;
+      const n = (seen.get(base) ?? 0) + 1;
+      seen.set(base, n);
+      return { label: n > 1 ? `${base} (${n})` : base, icon: 'time-outline', run: () => reopenOne(c.id) };
+    });
+    const first = closed.filter((c) => c.batch === closed[0].batch).length;
+    if (first > 1)
+      items.unshift({
+        label: `Mở lại ${first} thẻ vừa đóng cùng lúc`,
+        icon: 'arrow-undo-outline',
+        run: () => reopenBatch(closed[0].batch),
+      });
+    showMenu(x, y, 'Thẻ vừa đóng', `${closed.length} thẻ, mới đóng trước`, items);
+  };
+
   // Không bọc useCallback: React Compiler tự ghi nhớ
   const onSlowLoad = () => {
     const st = getRyxNetStatus();
@@ -447,6 +490,17 @@ export default function BrowserScreen() {
     runInActive(`window.__ryx && window.__ryx.pick(${on})`);
   };
   const onPick = (p: PickedElement) => {
+    if (p.kind === 'blocked') {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      setNotice({
+        key: noticeKey(),
+        icon: 'play-circle-outline',
+        title: 'Không ẩn được phần của trình phát video',
+        subtitle: 'Ryx luôn giữ video, thanh thời gian và nút điều khiển',
+        autoHide: 3000,
+      });
+      return;
+    }
     if (p.kind === 'count') {
       void Haptics.selectionAsync();
       setPickCount(p.count);
@@ -477,12 +531,28 @@ export default function BrowserScreen() {
     // done: lưu các bộ chọn cho trang này
     const pageSite = siteKey(active.url);
     if (!pageSite || p.selectors.length === 0) return setPick(false);
-    const list = settings.customHides[pageSite] ?? [];
-    const add = p.selectors.filter((x) => !list.includes(x));
-    update({ customHides: { ...settings.customHides, [pageSite]: [...list, ...add] } });
+    const added = addHides(
+      pageSite,
+      p.selectors.map((sel, i) => ({ sel, label: p.labels?.[i] ?? 'Phần tử' })),
+    );
     log.info('block', `Tự ẩn ${p.selectors.length} phần tử trên ${pageSite}`, p.selectors.join('\n'));
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setPick(false);
+    if (added.length)
+      setNotice({
+        key: noticeKey(),
+        icon: 'eye-off-outline',
+        title: `Đã ẩn ${added.length} mục trên ${pageSite}`,
+        subtitle: 'Lỡ tay? Bấm Hoàn tác, hoặc bỏ ẩn từng mục trong Shield',
+        action: {
+          label: 'Hoàn tác',
+          run: () => {
+            removeHides(pageSite, added);
+            log.info('block', `Hoàn tác ẩn ${added.length} phần tử trên ${pageSite}`, added.join('\n'));
+          },
+        },
+        autoHide: 7000,
+      });
   };
 
   const hasPage = !active.home && !!active.url;
@@ -829,7 +899,7 @@ export default function BrowserScreen() {
       case 'newTab':
         return newTab();
       case 'closeTab':
-        return closeTab(active.id);
+        return closeWithUndo(active.id);
       case 'logs':
         return setTimeout(() => router.push('/logs'), SHEET_HANDOFF_MS);
       case 'history':
@@ -867,7 +937,8 @@ export default function BrowserScreen() {
         }}
         onActiveFrame={onActiveFrame}
         onPick={pickTab}
-        onClose={closeTab}
+        onClose={closeWithUndo}
+        onShowClosed={showClosed}
         folders={folders}
         folderMode={folderMode}
         onFolderMode={(id) => {
@@ -889,7 +960,16 @@ export default function BrowserScreen() {
           if (t?.url) newTab(t.url, { background: true });
         }}
         onCloseAll={() => {
-          closeAll();
+          const n = visibleTabs.filter((t) => !t.home && t.url).length;
+          const batch = closeAll();
+          if (batch)
+            setNotice({
+              key: Date.now(),
+              icon: 'trash-outline',
+              title: `Đã đóng ${n} thẻ`,
+              action: { label: 'Mở lại', run: () => reopenBatch(batch) },
+              autoHide: 6000,
+            });
           setHideId(null);
           zoomTo(0, zoomSettled);
           setPhase('closing');
@@ -1098,13 +1178,13 @@ export default function BrowserScreen() {
         prefs={prefs}
         onToggle={toggle}
         onReload={reload}
-        customHidden={settings.customHides[site]?.length ?? 0}
+        customHidden={(settings.customHides[site] ?? []).map((sel) => ({
+          sel,
+          label: settings.customHideLabels[`${site}\n${sel}`] ?? sel,
+        }))}
+        onUnhide={(sel) => removeHides(site, [sel])}
         onStartPick={() => setTimeout(() => setPick(true), SHEET_HANDOFF_MS)}
-        onClearCustom={() => {
-          const next = { ...settings.customHides };
-          delete next[site];
-          update({ customHides: next });
-        }}
+        onClearCustom={() => removeHides(site)}
       />
       <MenuSheet
         visible={menuOpen}
