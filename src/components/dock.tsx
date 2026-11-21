@@ -39,6 +39,16 @@ const SIZES: Record<DockStyle, { height: number; button: number; icon: number; m
   attached: { height: 52, button: 46, icon: 23, margin: 0 },
 };
 
+/**
+ * Màn ngang: dock dọc ở mép phải (giữa theo chiều dọc), nút + ở góc trên bên phải.
+ * right: khoảng từ mép phải màn hình tới dock · width: bề ngang dock · pad: tổng chỗ cần chừa bên phải.
+ */
+export function sideDockMetrics(style: DockStyle, rightInset: number) {
+  const s = SIZES[style === 'attached' ? 'floating' : style];
+  const right = Math.max(12, rightInset);
+  return { right, width: s.height, pad: right + s.height + 12 };
+}
+
 /** Khoảng cách từ đáy màn hình tới mép trên của dock (dùng để đặt thanh địa chỉ & inset nội dung). */
 export function dockMetrics(style: DockStyle, bottomInset: number) {
   const s = SIZES[style];
@@ -73,8 +83,12 @@ interface Props {
   shiftX?: SharedValue<number>;
   /** Ẩn mượt (vd khi đang gõ địa chỉ) */
   hidden: boolean;
-  /** Vuốt ngang trên dock → thẻ bên cạnh */
+  /** Vuốt ngang trên dock → thẻ bên cạnh (dock dọc: vuốt lên/xuống) */
   onSwipeSide: (dir: 'next' | 'prev') => void;
+  /** Màn ngang: dock dọc bên phải, kéo dock vào giữa màn để mở màn các thẻ; nút + ra góc trên bên phải */
+  vertical?: boolean;
+  /** Ẩn nút + ở góc (dock dọc) — vd đang ở màn các thẻ, ở đó đã có nút + riêng */
+  plusHidden?: boolean;
 }
 
 /** Ngưỡng để coi là "vuốt" (chưa tới thì vẫn là bấm nút bình thường). */
@@ -133,10 +147,12 @@ export function Dock({
   extraY,
   shiftX,
   hidden,
+  vertical = false,
+  plusHidden = false,
 }: Props) {
   const styles = useStyles(makeStyles);
 
-  const { height: H } = useWindowDimensions();
+  const { width: W, height: H } = useWindowDimensions();
   const plusRef = useRef<HostInstance>(null);
   const pressPlus = () => {
     const node = plusRef.current;
@@ -145,7 +161,9 @@ export function Dock({
   };
   const insets = useSafeAreaInsets();
   const { accent, colors } = useTheme();
-  const s = SIZES[dockStyle];
+  // Dock dọc luôn kiểu nổi (kiểu "dính đáy" không hợp với cạnh phải)
+  const s = SIZES[vertical && dockStyle === 'attached' ? 'floating' : dockStyle];
+  const side = sideDockMetrics(dockStyle, insets.right);
   const m = dockMetrics(dockStyle, insets.bottom);
   const attached = dockStyle === 'attached';
 
@@ -163,7 +181,7 @@ export function Dock({
     onZoomStart();
   };
   const zooming = useSharedValue(false);
-  const dist = H * 0.34;
+  const dist = (vertical ? W : H) * 0.34;
 
   const swipe = Gesture.Pan()
     .activeOffsetY([-10, 10])
@@ -172,39 +190,50 @@ export function Dock({
       press.value = withSpring(1, SPRING);
     })
     .onUpdate((e) => {
-      const vertical = Math.abs(e.translationY) >= Math.abs(e.translationX);
-      if (zoomEnabled && (zooming.value || (vertical && e.translationY < -4))) {
-        // Giữ dock kéo lên: dock bám theo ngón tay, trang thu nhỏ dần
+      // Trục "mở màn các thẻ": dock ngang kéo lên; dock dọc (màn ngang) kéo sang trái vào giữa màn
+      const main = vertical ? -e.translationX : -e.translationY;
+      const cross = vertical ? e.translationY : e.translationX;
+      const alongMain = Math.abs(main) >= Math.abs(cross);
+      if (zoomEnabled && (zooming.value || (alongMain && main > 4))) {
+        // Giữ dock kéo đi: dock bám theo ngón tay, trang thu nhỏ dần
         if (!zooming.value) {
           zooming.value = true;
           runOnJS(startZoom)();
         }
-        const up = Math.max(0, -e.translationY);
-        ty.value = -(up > 220 ? 220 + (up - 220) * 0.4 : up);
-        tx.value = 0;
+        const up = Math.max(0, main);
+        const moved = -(up > 220 ? 220 + (up - 220) * 0.4 : up);
+        if (vertical) {
+          tx.value = moved;
+          ty.value = 0;
+        } else {
+          ty.value = moved;
+          tx.value = 0;
+        }
         zoom.set(Math.min(1, up / dist));
         return;
       }
       if (reduceMotion) return;
-      ty.value = 0;
-      tx.value = vertical ? 0 : e.translationX * 0.35;
+      if (vertical) {
+        tx.value = 0;
+        ty.value = alongMain ? 0 : e.translationY * 0.35;
+      } else {
+        ty.value = 0;
+        tx.value = alongMain ? 0 : e.translationX * 0.35;
+      }
     })
     .onEnd((e) => {
       if (zooming.value) {
         zooming.value = false;
-        const open = zoom.value > 0.3 || e.velocityY < -650;
+        const v = vertical ? e.velocityX : e.velocityY;
+        const open = zoom.value > 0.3 || v < -650;
         zoom.set(
           reduceMotion
             ? withTiming(open ? 1 : 0, { duration: 200 }, (f) => {
                 if (f) runOnJS(onZoomEnd)(open);
               })
-            : withSpring(
-                open ? 1 : 0,
-                { ...ZOOM_SPRING, velocity: Math.max(-1.2, Math.min(1.2, -e.velocityY / dist)) },
-                (f) => {
-                  if (f) runOnJS(onZoomEnd)(open);
-                },
-              ),
+            : withSpring(open ? 1 : 0, { ...ZOOM_SPRING, velocity: Math.max(-1.2, Math.min(1.2, -v / dist)) }, (f) => {
+                if (f) runOnJS(onZoomEnd)(open);
+              }),
         );
         // Thả tay: dock nảy về chỗ cũ
         ty.value = withSpring(0, BOUNCE);
@@ -213,7 +242,10 @@ export function Dock({
       }
       const ax = Math.abs(e.translationX);
       const ay = Math.abs(e.translationY);
-      if (ax > SWIPE_SIDE && ax > ay) runOnJS(fireSide)(e.translationX < 0 ? 'next' : 'prev');
+      // Dock ngang: vuốt trái = thẻ sau · dock dọc: vuốt lên = thẻ sau
+      if (vertical) {
+        if (ay > SWIPE_SIDE && ay > ax) runOnJS(fireSide)(e.translationY < 0 ? 'next' : 'prev');
+      } else if (ax > SWIPE_SIDE && ax > ay) runOnJS(fireSide)(e.translationX < 0 ? 'next' : 'prev');
       ty.value = withSpring(0, SPRING);
       tx.value = withSpring(0, SPRING);
     })
@@ -232,6 +264,18 @@ export function Dock({
   }, [hidden, hide]);
 
   const motion = useAnimatedStyle(() => {
+    if (vertical) {
+      // Dock dọc: ẩn thì trượt sang phải; đổi thẻ thì nảy từ phải vào (dùng extraY làm độ lệch)
+      const lift = Math.min(0.06, Math.max(0, -tx.value / 600));
+      return {
+        opacity: 1 - hide.value,
+        transform: [
+          { translateX: tx.value + extraY.value * 0.5 + hide.value * 40 },
+          { translateY: ty.value },
+          { scale: reduceMotion ? 1 : 1 - press.value * 0.03 + lift - hide.value * 0.06 },
+        ],
+      };
+    }
     const lift = Math.min(0.06, Math.max(0, -ty.value / 600));
     return {
       opacity: 1 - hide.value,
@@ -244,8 +288,9 @@ export function Dock({
   });
   const wrap = (node: React.ReactElement) => <GestureDetector gesture={swipe}>{node}</GestureDetector>;
 
-  const renderButton = (id: DockButtonId) => {
+  const renderButton = (id: DockButtonId, size: number = s.button) => {
     const def = DOCK_BUTTONS[id];
+    const iconSize = Math.min(s.icon, Math.round(size * 0.5));
     if (id === 'tabs') {
       return (
         <Pressable
@@ -256,11 +301,11 @@ export function Dock({
           hitSlop={6}
           style={({ pressed }) => [
             styles.btn,
-            { width: s.button, height: s.button, borderRadius: s.button / 2 },
+            { width: size, height: size, borderRadius: size / 2 },
             pressed && styles.pressed,
           ]}
         >
-          <TabCountIcon count={tabCount} size={s.icon} />
+          <TabCountIcon count={tabCount} size={iconSize} />
         </Pressable>
       );
     }
@@ -269,8 +314,8 @@ export function Dock({
         key={id}
         icon={def.icon}
         label={def.label}
-        size={s.button}
-        iconSize={s.icon}
+        size={size}
+        iconSize={iconSize}
         disabled={(id === 'back' && !canGoBack) || (id === 'forward' && !canGoForward)}
         onPress={() => onPress(id)}
         color={id === 'shield' ? accent : colors.text}
@@ -282,11 +327,76 @@ export function Dock({
 
   const groups = groupButtons(buttons);
 
+  // Nút + ở góc trên bên phải (dock dọc): ẩn mượt khi gõ địa chỉ / ở màn các thẻ
+  const plusOff = hidden || plusHidden;
+  const plusHide = useSharedValue(plusOff ? 1 : 0);
+  useEffect(() => {
+    plusHide.value = withTiming(plusOff ? 1 : 0, { duration: plusOff ? 140 : 240 });
+  }, [plusOff, plusHide]);
+  const plusMotion = useAnimatedStyle(() => ({
+    opacity: 1 - plusHide.value,
+    transform: [{ scale: 1 - plusHide.value * 0.2 }],
+  }));
+
+  if (vertical) {
+    // Nút ít cho vừa chiều cao màn ngang: thu nhỏ nút khi nhiều nút
+    const room = H - 24 - insets.bottom;
+    const btn = Math.min(s.button, Math.floor((room - 16 - GROUP_GAP * groups.length) / Math.max(1, buttons.length)));
+    return (
+      <>
+        {wrap(
+          <Animated.View
+            pointerEvents={hidden ? 'none' : 'box-none'}
+            style={[styles.sideCol, { right: side.right, width: s.height }, motion]}
+          >
+            <Glass radius={s.height / 2} style={{ width: s.height }}>
+              <View style={[styles.colFloat, { gap: GROUP_GAP }]}>
+                {groups.map((g) => (
+                  <View key={g.join('-')} style={styles.groupCol}>
+                    {g.map((id) => (
+                      <View
+                        key={id}
+                        style={{ width: btn, height: btn, alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        {renderButton(id, btn)}
+                      </View>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            </Glass>
+          </Animated.View>,
+        )}
+        <Animated.View
+          pointerEvents={plusOff ? 'none' : 'box-none'}
+          style={[
+            styles.cornerPlus,
+            { top: Math.max(12, insets.top), right: side.right, width: s.height, height: s.height },
+            plusMotion,
+          ]}
+        >
+          <Glass radius={s.height / 2} style={{ width: s.height, height: s.height }}>
+            <Pressable
+              ref={plusRef}
+              collapsable={false}
+              onPress={pressPlus}
+              accessibilityRole="button"
+              accessibilityLabel="Thẻ mới"
+              style={({ pressed }) => [styles.plus, pressed && styles.pressed]}
+            >
+              <Ionicons name="add" size={s.icon + 5} color={accent} />
+            </Pressable>
+          </Glass>
+        </Animated.View>
+      </>
+    );
+  }
+
   const content = (
     <View style={[styles.row, { paddingHorizontal: attached ? 12 : 8 }]}>
       {groups.map((g) => (
         <View key={g.join('-')} style={styles.group}>
-          {g.map(renderButton)}
+          {g.map((id) => renderButton(id))}
         </View>
       ))}
       {attached && (
@@ -322,7 +432,7 @@ export function Dock({
         <View style={[styles.rowFloat, { gap: GROUP_GAP }]}>
           {groups.map((g) => (
             <View key={g.join('-')} style={styles.group}>
-              {g.map(renderButton)}
+              {g.map((id) => renderButton(id))}
             </View>
           ))}
         </View>
@@ -357,6 +467,10 @@ const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
     },
     row: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     group: { flexDirection: 'row', alignItems: 'center' },
+    groupCol: { flexDirection: 'column', alignItems: 'center' },
+    sideCol: { position: 'absolute', top: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' },
+    colFloat: { flexDirection: 'column', alignItems: 'center', paddingVertical: 8 },
+    cornerPlus: { position: 'absolute' },
     btn: { alignItems: 'center', justifyContent: 'center' },
     pressed: { backgroundColor: fg(0.1), transform: [{ scale: 0.94 }] },
     tabCount: { borderWidth: 2, borderColor: colors.text, alignItems: 'center', justifyContent: 'center' },

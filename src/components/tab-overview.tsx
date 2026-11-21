@@ -82,6 +82,8 @@ interface Props {
   hideId: string | null;
   layout: TabLayout;
   bottomPad: number;
+  /** Màn ngang: chừa bên phải cho dock dọc */
+  rightPad?: number;
   onLayoutChange: (l: TabLayout) => void;
   onActiveFrame: (r: Rect) => void;
   /** Tăng mỗi lần mở màn các thẻ: cuộn tới thẻ đang mở rồi đo lại vị trí của nó */
@@ -961,7 +963,7 @@ function SplitPortrait({ tabs, activeTab: active, hideId, ctx, W, H }: LayoutPro
   // Thẻ lớn luôn là thẻ đang mở; nếu nó nằm trong khung thì khung vẫn ở cột nhỏ (viền nét đứt)
   const others = tabs.filter((t) => t.id !== active.id);
   // Cân đối: lề trái = lề phải = 16, khoảng giữa 2 cột 16; chỉ có 1 thẻ thì thẻ lớn nằm giữa.
-  // Thẻ nhỏ ở bên phải cho vừa tầm ngón cái tay phải (row-reverse), nghiêng vào phía thẻ lớn.
+  // Thẻ nhỏ ở bên phải cho vừa tầm ngón cái tay phải (row-reverse), đứng thẳng (không nghiêng 3D).
   const alone = others.length === 0;
   const leftW = alone ? 0 : Math.round((W - pad * 2 - gap) * 0.34);
   const bigW = alone ? Math.round(W * 0.72) : W - pad * 2 - gap - leftW;
@@ -983,7 +985,6 @@ function SplitPortrait({ tabs, activeTab: active, hideId, ctx, W, H }: LayoutPro
               // Thẻ nhỏ nằm bên phải: vuốt sang phải (ra mép màn hình) là đóng
               dir="right"
               ctx={ctx}
-              style={{ transform: [{ perspective: 700 }, { rotateY: '-14deg' }] }}
             >
               <Card
                 tab={t}
@@ -1149,6 +1150,7 @@ function TabOverviewImpl(props: Props) {
   const styles = useStyles(makeStyles);
 
   const { phase, zoom, dockShift, activeId, hideId, layout, bottomPad, folderMode } = props;
+  const rightPad = props.rightPad ?? 0;
   // Thứ tự thẻ: dùng gần nhất trước (thẻ đang mở đầu tiên, thẻ vừa dùng/vừa mở thứ 2…), ở mọi kiểu xếp.
   // Chốt thứ tự mỗi lần mở màn này (token) để chọn thẻ xong các thẻ không nhảy chỗ trong lúc zoom vào.
   const [order, setOrder] = useState(() => ({
@@ -1316,7 +1318,7 @@ function TabOverviewImpl(props: Props) {
     activeTab,
     hideId: hideId && (split ? hideId : entryOf(hideId)),
     ctx,
-    W,
+    W: W - rightPad,
     H: bodyH,
     dockShift,
     token: props.token,
@@ -1415,7 +1417,8 @@ function TabOverviewImpl(props: Props) {
         </Pressable>
       </View>
 
-      <View style={{ flex: 1 }}>
+      {/* Màn ngang: chừa đáy (thanh địa chỉ không ở đây nên ít) và bên phải cho dock dọc — dock không che thẻ */}
+      <View style={[{ flex: 1 }, landscape && { paddingBottom: bottomPad, marginRight: rightPad }]}>
         {/* Không chạy hiệu ứng "thêm thẻ" cho các thẻ có sẵn lúc mở màn này */}
         <LayoutAnimationConfig skipEntering>
           <View key={layout} style={{ flex: 1 }}>
@@ -1600,6 +1603,7 @@ export const TabOverview = memo(TabOverviewImpl, (a, b) => {
     a.activeId === b.activeId &&
     a.layout === b.layout &&
     a.bottomPad === b.bottomPad &&
+    a.rightPad === b.rightPad &&
     a.hideId === b.hideId &&
     a.folders === b.folders &&
     a.folderMode === b.folderMode &&

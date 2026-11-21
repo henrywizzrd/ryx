@@ -50,7 +50,8 @@ import { MOTION } from '@/lib/motion';
 import { getRyxNetStatus, setRyxNetEnabled } from '@/lib/ryx-net';
 import { saveMediaToPhotos, SaveMediaError } from '@/lib/save-media';
 import { ContextMenu, type ContextMenuState, type MenuItem } from '@/components/context-menu';
-import { Dock, dockMetrics, ZOOM_SPRING } from '@/components/dock';
+import { Dock, dockMetrics, sideDockMetrics, ZOOM_SPRING } from '@/components/dock';
+import { SwipeUpZoom } from '@/components/swipe-up-zoom';
 import { TabOverview, thumbKeyOf, type FullPhase, type Rect } from '@/components/tab-overview';
 import { EdgeSwipeBack } from '@/components/edge-swipe';
 import { Glass } from '@/components/glass';
@@ -233,7 +234,7 @@ export default function BrowserScreen() {
     dockX.value = 0;
   };
   /** Bắt đầu thu nhỏ: dựng màn các thẻ bên dưới, chụp ảnh trang hiện tại cho thẻ của nó */
-  const startZoom = (how: 'kéo dock' | 'nút' = 'kéo dock') => {
+  const startZoom = (how: 'kéo dock' | 'nút' | 'vuốt thanh địa chỉ' = 'kéo dock') => {
     beginTrack(`Mở màn các thẻ (${how})`);
     setFrame({ x: W * 0.1, y: H * 0.18, w: W * 0.8, h: H * 0.6 }, false);
     dockX.value = 0;
@@ -613,11 +614,17 @@ export default function BrowserScreen() {
 
   // ---- Bố cục ----
   const dock = dockMetrics(settings.dockStyle, insets.bottom);
+  // Màn ngang: dock dọc bên phải + nút + góc trên phải (components/dock), thanh địa chỉ vẫn ở dưới, sát đáy
+  const landscape = W > H;
+  const side = sideDockMetrics(settings.dockStyle, insets.right);
+  const landBottom = Math.max(12, insets.bottom);
+  const attachedFlat = !landscape && settings.dockStyle === 'attached';
   const addrTop = settings.addressBarPosition === 'top';
   // Thanh địa chỉ: chạm để gõ thì đi lên cùng bàn phím theo từng khung hình (không nhảy cái rụp);
   // thu nhỏ thành thẻ thì trôi xuống sát đáy thẻ (dock đã ẩn)
   const kbAnim = useAnimatedKeyboard();
-  const dockTop = dock.top;
+  // Mép dưới của "vùng chrome" phía dưới (thanh địa chỉ nằm ngay trên nó, cách GAP)
+  const dockTop = landscape ? landBottom - GAP : dock.top;
   // Bàn phím đang mở là do thanh địa chỉ (không phải ô nhập trong trang web): giữ tới khi bàn phím đóng hẳn,
   // để lúc bỏ gõ thanh trôi xuống cùng bàn phím thay vì nhảy xuống trước
   const addrKb = useSharedValue(0);
@@ -632,7 +639,8 @@ export default function BrowserScreen() {
     [addrFocused],
   );
   // ---- Cuộn trang xuống: thanh địa chỉ thu thành nút kính lúp bên trái dock (kiểu Apple Music), cuộn lên thì bung lại ----
-  const canCollapse = !addrTop && settings.dockStyle !== 'attached';
+  // Màn ngang: không thu gọn khi cuộn (dock đã nằm bên cạnh, không chiếm chỗ dưới)
+  const canCollapse = !addrTop && settings.dockStyle !== 'attached' && !landscape;
   // Đổi thẻ / đổi trang / về trang chủ / gõ địa chỉ / thu nhỏ thành thẻ: thanh bung lại (trạng thái thu gọn gắn với
   // đúng "khoá" lúc thu gọn, khoá đổi là tự hết thu gọn)
   // (Không gồm màn các thẻ: đang thu gọn thì zoom out vẫn giữ dạng kính lúp)
@@ -689,10 +697,10 @@ export default function BrowserScreen() {
     const p = zoom.value;
     return { bottom: (base + (lensBottom - base) * c) * (1 - p) + CARD_ADDR_BOTTOM * p };
   });
-  const chromeBottom = addrTop ? dock.top : dock.top + GAP + ADDRESS_BAR_HEIGHT;
+  const chromeBottom = addrTop ? (landscape ? landBottom : dock.top) : dockTop + GAP + ADDRESS_BAR_HEIGHT;
   const contentTop = insets.top + (addrTop ? ADDRESS_BAR_HEIGHT + GAP * 1.2 : 0);
-  const webBottomInset = settings.dockStyle === 'attached' && addrTop ? 0 : chromeBottom + GAP;
-  const webContainerBottom = settings.dockStyle === 'attached' && addrTop ? dock.height : 0;
+  const webBottomInset = attachedFlat && addrTop ? 0 : chromeBottom + GAP;
+  const webContainerBottom = attachedFlat && addrTop ? dock.height : 0;
 
   // ---- Hành động ----
   const go = useCallback(
@@ -930,7 +938,8 @@ export default function BrowserScreen() {
         activeId={active.id}
         hideId={hideId}
         layout={settings.tabLayout}
-        bottomPad={dock.top + 14}
+        bottomPad={landscape ? landBottom : dock.top + 14}
+        rightPad={landscape ? side.pad : 0}
         onLayoutChange={(l) => {
           log.info('ui', 'Đổi kiểu thẻ', `${settings.tabLayout} → ${l}`);
           update({ tabLayout: l });
@@ -1108,20 +1117,32 @@ export default function BrowserScreen() {
           pointerEvents={fsOn ? 'none' : 'box-none'}
           style={[styles.addrWrap, addrAnim, fsOn && { opacity: 0 }]}
         >
-          <AddressBar
-            tab={active}
-            blocked={blocked.total}
-            shieldOn={shieldOn}
-            onSubmit={go}
-            onShieldPress={() => setShieldOpen(true)}
-            onReload={reload}
-            onStop={() => webRef()?.stopLoading()}
-            onFocusChange={setAddrFocused}
-            position={addrTop ? 'top' : 'bottom'}
-            collapse={collapse}
-            collapsed={addrCollapsed}
-            onExpand={() => setCollapsed(false)}
-          />
+          {/* Màn ngang: vuốt lên từ thanh địa chỉ → màn các thẻ */}
+          <SwipeUpZoom
+            enabled={landscape && !addrTop && phase === 'off' && !addrFocused && !fsOn}
+            zoom={zoom}
+            distance={H * 0.34}
+            onStart={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              startZoom('vuốt thanh địa chỉ');
+            }}
+            onEnd={zoomSettled}
+          >
+            <AddressBar
+              tab={active}
+              blocked={blocked.total}
+              shieldOn={shieldOn}
+              onSubmit={go}
+              onShieldPress={() => setShieldOpen(true)}
+              onReload={reload}
+              onStop={() => webRef()?.stopLoading()}
+              onFocusChange={setAddrFocused}
+              position={addrTop ? 'top' : 'bottom'}
+              collapse={collapse}
+              collapsed={addrCollapsed}
+              onExpand={() => setCollapsed(false)}
+            />
+          </SwipeUpZoom>
         </Animated.View>
         <Animated.View
           pointerEvents="none"
@@ -1146,6 +1167,8 @@ export default function BrowserScreen() {
         extraY={dockY}
         shiftX={dockShift}
         hidden={(addrFocused && kb > 0) || fsOn}
+        vertical={landscape}
+        plusHidden={phase !== 'off'}
         onSwipeSide={(dir) => {
           // Vuốt dock sang trái/phải: thẻ kề bên (chế độ khung: trong khung đó), theo thứ tự mở
           const i = visibleTabs.findIndex((t) => t.id === active.id);
