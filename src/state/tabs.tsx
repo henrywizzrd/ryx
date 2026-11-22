@@ -294,7 +294,15 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
       // Chế độ khung: thẻ mới vào luôn khung đó
       const tab = makeTab(url, folderModeRef.current);
       // Mở nền: đứng ngay sau thẻ đang mở trong thứ tự gần nhất (không chen lên đầu)
-      if (opts?.background) tab.lastUsed = Date.now() - 1;
+      if (opts?.background) {
+        tab.lastUsed = Date.now() - 1;
+        // Mở nền: chưa dựng WebView ngay (dựng WebView + nạp script + tải trang làm giao diện khựng 1–2 giây ngay
+        // lúc menu đang đóng). Nạp khi người dùng mở tới thẻ, giống thẻ khôi phục từ phiên cũ (xem setActiveId).
+        if (url) {
+          tab.sourceUrl = null;
+          tab.loading = false;
+        }
+      }
       setTabs((list) => [...list, tab]);
       if (!opts?.background) setActiveId(tab.id);
       return tab.id;
