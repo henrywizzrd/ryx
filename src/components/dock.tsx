@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useRef } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View, type HostInstance } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View, type HostInstance, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -87,8 +87,14 @@ interface Props {
   onSwipeSide: (dir: 'next' | 'prev') => void;
   /** Màn ngang: dock dọc bên phải, kéo dock vào giữa màn để mở màn các thẻ; nút + ra góc trên bên phải */
   vertical?: boolean;
-  /** Ẩn nút + ở góc (dock dọc) — vd đang ở màn các thẻ, ở đó đã có nút + riêng */
-  plusHidden?: boolean;
+  /** Ẩn bong bóng tròn (nút ><) — vd đang ở màn các thẻ */
+  bubbleHidden?: boolean;
+  /** 0 = dock + thanh địa chỉ đầy đủ, 1 = thu gọn vào bong bóng (chạy mượt từ index) */
+  mini: SharedValue<number>;
+  /** Đang thu gọn (để tắt chạm vào dock đã ẩn) */
+  minimized: boolean;
+  /** Bấm bong bóng: thu gọn / bung ra */
+  onToggleMini: () => void;
 }
 
 /** Ngưỡng để coi là "vuốt" (chưa tới thì vẫn là bấm nút bình thường). */
@@ -148,7 +154,10 @@ export function Dock({
   shiftX,
   hidden,
   vertical = false,
-  plusHidden = false,
+  bubbleHidden = false,
+  mini,
+  minimized,
+  onToggleMini,
 }: Props) {
   const styles = useStyles(makeStyles);
 
@@ -326,22 +335,138 @@ export function Dock({
   };
 
   const groups = groupButtons(buttons);
+  // Nút + (thẻ mới) nằm trong dock, ngay bên phải nút > (không có > thì sau <, không có cả hai thì đứng đầu)
+  const items: (DockButtonId[] | 'plus')[] = [...groups];
+  if (!attached) {
+    let at = groups.findIndex((g) => g.includes('forward'));
+    if (at < 0) at = groups.findIndex((g) => g.includes('back'));
+    items.splice(at + 1, 0, 'plus');
+  }
+  const renderPlus = (size: number = s.button) => (
+    <View key="plus" ref={plusRef} collapsable={false}>
+      <IconButton
+        icon="add"
+        label="Thẻ mới"
+        size={size}
+        iconSize={Math.min(s.icon + 3, Math.round(size * 0.56))}
+        color={accent}
+        onPress={pressPlus}
+      />
+    </View>
+  );
 
-  // Nút + ở góc trên bên phải (dock dọc): ẩn mượt khi gõ địa chỉ / ở màn các thẻ
-  const plusOff = hidden || plusHidden;
-  const plusHide = useSharedValue(plusOff ? 1 : 0);
+  // Bong bóng tròn (nút >< / bung ra): ẩn mượt khi gõ địa chỉ / ở màn các thẻ
+  const bubbleOff = hidden || bubbleHidden;
+  const bubbleHide = useSharedValue(bubbleOff ? 1 : 0);
   useEffect(() => {
-    plusHide.value = withTiming(plusOff ? 1 : 0, { duration: plusOff ? 140 : 240 });
-  }, [plusOff, plusHide]);
-  const plusMotion = useAnimatedStyle(() => ({
-    opacity: 1 - plusHide.value,
-    transform: [{ scale: 1 - plusHide.value * 0.2 }],
+    bubbleHide.value = withTiming(bubbleOff ? 1 : 0, { duration: bubbleOff ? 140 : 240 });
+  }, [bubbleOff, bubbleHide]);
+  const toggleMini = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onToggleMini();
+  };
+  // Icon trong bong bóng: >< khi đầy đủ, <> (bung ra) khi đã thu gọn — đổi chéo mờ dần
+  const iconFull = useAnimatedStyle(() => ({
+    opacity: 1 - mini.value,
+    transform: [{ scale: 1 - mini.value * 0.4 }, { rotate: `${mini.value * 90}deg` }],
+  }));
+  const iconMini = useAnimatedStyle(() => ({
+    opacity: mini.value,
+    transform: [{ scale: 0.6 + mini.value * 0.4 }, { rotate: `${(mini.value - 1) * 90}deg` }],
+  }));
+  const bubbleInner = (
+    <Pressable
+      onPress={toggleMini}
+      accessibilityRole="button"
+      accessibilityLabel={minimized ? 'Hiện lại dock và thanh địa chỉ' : 'Thu gọn dock và thanh địa chỉ'}
+      accessibilityHint="Vuốt để mở các thẻ"
+      style={({ pressed }) => [styles.plus, pressed && styles.pressed]}
+    >
+      <Animated.View style={[styles.bubbleIcon, iconFull]}>
+        <Ionicons name="contract" size={s.icon} color={colors.text} />
+      </Animated.View>
+      <Animated.View style={[styles.bubbleIcon, iconMini]}>
+        <Ionicons name="expand" size={s.icon} color={accent} />
+      </Animated.View>
+    </Pressable>
+  );
+
+  // Dock co lại rồi mờ đi về phía bong bóng (dock ngang: sang phải · dock dọc: lên góc trên)
+  const bubbleDx = useSharedValue(0);
+  const dockMini = useAnimatedStyle(() => {
+    const p = mini.value;
+    if (vertical) {
+      return { opacity: 1 - p, transform: [{ translateY: -p * H * 0.28 }, { scale: 1 - p * 0.5 }] };
+    }
+    return { opacity: 1 - p, transform: [{ translateX: p * bubbleDx.value * 0.5 }, { scale: 1 - p * 0.35 }] };
+  });
+  // Dock ngang: bong bóng trượt về góc dưới bên phải
+  const bubbleMotion = useAnimatedStyle(() => ({
+    opacity: 1 - bubbleHide.value,
+    transform: [{ translateX: mini.value * bubbleDx.value }, { scale: 1 - bubbleHide.value * 0.2 }],
+  }));
+  const rowW = W - s.margin * 2;
+  const onBubbleLayout = (e: LayoutChangeEvent) => {
+    const { x, width } = e.nativeEvent.layout;
+    bubbleDx.value = Math.max(0, rowW - width - x);
+  };
+
+  // Bong bóng góc trên phải (màn ngang): kéo sang trái / xuống (vào giữa màn) → màn các thẻ
+  const ctx = useSharedValue(0);
+  const cty = useSharedValue(0);
+  const cZoom = useSharedValue(false);
+  const cornerPan = Gesture.Pan()
+    .enabled(zoomEnabled)
+    .activeOffsetX([-12, 12])
+    .activeOffsetY([-12, 12])
+    .onUpdate((e) => {
+      const main = Math.max(-e.translationX, e.translationY);
+      if (!cZoom.value) {
+        if (main <= 4) return;
+        cZoom.value = true;
+        runOnJS(startZoom)();
+      }
+      const damp = (v: number) => (v > 220 ? 220 + (v - 220) * 0.4 : v);
+      ctx.value = -damp(Math.max(0, -e.translationX));
+      cty.value = damp(Math.max(0, e.translationY));
+      zoom.set(Math.min(1, Math.max(0, main) / dist));
+    })
+    .onEnd((e) => {
+      if (!cZoom.value) return;
+      cZoom.value = false;
+      const v = Math.max(-e.velocityX, e.velocityY);
+      const open = zoom.value > 0.3 || v > 650;
+      zoom.set(
+        reduceMotion
+          ? withTiming(open ? 1 : 0, { duration: 200 }, (f) => {
+              if (f) runOnJS(onZoomEnd)(open);
+            })
+          : withSpring(open ? 1 : 0, { ...ZOOM_SPRING, velocity: Math.max(-1.2, Math.min(1.2, v / dist)) }, (f) => {
+              if (f) runOnJS(onZoomEnd)(open);
+            }),
+      );
+    })
+    .onFinalize(() => {
+      cZoom.value = false;
+      ctx.value = withSpring(0, BOUNCE);
+      cty.value = withSpring(0, BOUNCE);
+    });
+  const cornerMotion = useAnimatedStyle(() => ({
+    opacity: 1 - bubbleHide.value,
+    transform: [
+      { translateX: ctx.value },
+      { translateY: cty.value },
+      { scale: 1 - bubbleHide.value * 0.2 },
+    ],
   }));
 
   if (vertical) {
     // Nút ít cho vừa chiều cao màn ngang: thu nhỏ nút khi nhiều nút
     const room = H - 24 - insets.bottom;
-    const btn = Math.min(s.button, Math.floor((room - 16 - GROUP_GAP * groups.length) / Math.max(1, buttons.length)));
+    const btn = Math.min(
+      s.button,
+      Math.floor((room - 16 - GROUP_GAP * items.length) / Math.max(1, buttons.length + 1)),
+    );
     return (
       <>
         {wrap(
@@ -349,45 +474,49 @@ export function Dock({
             pointerEvents={hidden ? 'none' : 'box-none'}
             style={[styles.sideCol, { right: side.right, width: s.height }, motion]}
           >
-            <Glass radius={s.height / 2} style={{ width: s.height }}>
-              <View style={[styles.colFloat, { gap: GROUP_GAP }]}>
-                {groups.map((g) => (
-                  <View key={g.join('-')} style={styles.groupCol}>
-                    {g.map((id) => (
-                      <View
-                        key={id}
-                        style={{ width: btn, height: btn, alignItems: 'center', justifyContent: 'center' }}
-                      >
-                        {renderButton(id, btn)}
+            <Animated.View
+              pointerEvents={minimized ? 'none' : 'box-none'}
+              style={[{ transformOrigin: 'top center' }, dockMini]}
+            >
+              <Glass radius={s.height / 2} style={{ width: s.height }}>
+                <View style={[styles.colFloat, { gap: GROUP_GAP }]}>
+                  {items.map((g) =>
+                    g === 'plus' ? (
+                      <View key="plus" style={{ width: btn, height: btn, alignItems: 'center', justifyContent: 'center' }}>
+                        {renderPlus(btn)}
                       </View>
-                    ))}
-                  </View>
-                ))}
-              </View>
-            </Glass>
+                    ) : (
+                      <View key={g.join('-')} style={styles.groupCol}>
+                        {g.map((id) => (
+                          <View
+                            key={id}
+                            style={{ width: btn, height: btn, alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            {renderButton(id, btn)}
+                          </View>
+                        ))}
+                      </View>
+                    ),
+                  )}
+                </View>
+              </Glass>
+            </Animated.View>
           </Animated.View>,
         )}
-        <Animated.View
-          pointerEvents={plusOff ? 'none' : 'box-none'}
-          style={[
-            styles.cornerPlus,
-            { top: Math.max(12, insets.top), right: side.right, width: s.height, height: s.height },
-            plusMotion,
-          ]}
-        >
-          <Glass radius={s.height / 2} style={{ width: s.height, height: s.height }}>
-            <Pressable
-              ref={plusRef}
-              collapsable={false}
-              onPress={pressPlus}
-              accessibilityRole="button"
-              accessibilityLabel="Thẻ mới"
-              style={({ pressed }) => [styles.plus, pressed && styles.pressed]}
-            >
-              <Ionicons name="add" size={s.icon + 5} color={accent} />
-            </Pressable>
-          </Glass>
-        </Animated.View>
+        <GestureDetector gesture={cornerPan}>
+          <Animated.View
+            pointerEvents={bubbleOff ? 'none' : 'box-none'}
+            style={[
+              styles.cornerPlus,
+              { top: Math.max(12, insets.top), right: side.right, width: s.height, height: s.height },
+              cornerMotion,
+            ]}
+          >
+            <Glass radius={s.height / 2} style={{ width: s.height, height: s.height }}>
+              {bubbleInner}
+            </Glass>
+          </Animated.View>
+        </GestureDetector>
       </>
     );
   }
@@ -427,28 +556,34 @@ export function Dock({
       pointerEvents={hidden ? 'none' : 'box-none'}
       style={[styles.floatRow, { left: s.margin, right: s.margin, bottom: m.bottom, height: s.height }, motion]}
     >
-      {/* Dock nổi chỉ rộng vừa đủ chứa các nút */}
-      <Glass radius={s.height / 2} style={{ height: s.height }}>
-        <View style={[styles.rowFloat, { gap: GROUP_GAP }]}>
-          {groups.map((g) => (
-            <View key={g.join('-')} style={styles.group}>
-              {g.map((id) => renderButton(id))}
-            </View>
-          ))}
-        </View>
-      </Glass>
-      <Glass radius={s.height / 2} style={{ width: s.height, height: s.height, marginLeft: 10 }}>
-        <Pressable
-          ref={plusRef}
-          collapsable={false}
-          onPress={pressPlus}
-          accessibilityRole="button"
-          accessibilityLabel="Thẻ mới"
-          style={({ pressed }) => [styles.plus, pressed && styles.pressed]}
-        >
-          <Ionicons name="add" size={s.icon + 5} color={accent} />
-        </Pressable>
-      </Glass>
+      {/* Dock nổi chỉ rộng vừa đủ chứa các nút; thu gọn thì co lại, mờ đi về phía bong bóng */}
+      <Animated.View
+        pointerEvents={minimized ? 'none' : 'box-none'}
+        style={[{ transformOrigin: 'right center' }, dockMini]}
+      >
+        <Glass radius={s.height / 2} style={{ height: s.height }}>
+          <View style={[styles.rowFloat, { gap: GROUP_GAP }]}>
+            {items.map((g) =>
+              g === 'plus' ? (
+                renderPlus()
+              ) : (
+                <View key={g.join('-')} style={styles.group}>
+                  {g.map((id) => renderButton(id))}
+                </View>
+              ),
+            )}
+          </View>
+        </Glass>
+      </Animated.View>
+      <Animated.View
+        onLayout={onBubbleLayout}
+        pointerEvents={bubbleOff ? 'none' : 'box-none'}
+        style={[{ marginLeft: 10 }, bubbleMotion]}
+      >
+        <Glass radius={s.height / 2} style={{ width: s.height, height: s.height }}>
+          {bubbleInner}
+        </Glass>
+      </Animated.View>
     </Animated.View>,
   );
 }
@@ -475,4 +610,5 @@ const makeStyles = (colors: Palette, fg: (alpha: number) => string) =>
     pressed: { backgroundColor: fg(0.1), transform: [{ scale: 0.94 }] },
     tabCount: { borderWidth: 2, borderColor: colors.text, alignItems: 'center', justifyContent: 'center' },
     plus: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    bubbleIcon: { position: 'absolute' },
   });

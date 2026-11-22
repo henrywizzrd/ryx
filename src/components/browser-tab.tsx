@@ -217,9 +217,11 @@ function BrowserTabImpl({
 
   // Gắn bộ lọc tầng mạng vào WebView của thẻ này (WebView có thể vào màn hình trễ một chút)
   // Vùng trên/dưới bị giao diện app che: native báo cho WebKit (obscuredContentInsets, tràn viền kiểu Safari)
+  // Chỉ báo vùng che phía TRÊN cho WebKit. Báo cả phía dưới thì WebKit coi nguyên dải ngang từ thanh địa chỉ xuống
+  // đáy là "bị che" → chạm vào phần trang nằm cạnh dock không ăn. Khoảng cuộn phía dưới vẫn giữ nhờ prop contentInset.
   useEffect(() => {
-    setWebInsets(insetTop, insetBottom);
-  }, [insetTop, insetBottom]);
+    setWebInsets(insetTop, 0);
+  }, [insetTop]);
 
   useEffect(() => {
     attachContentBlocker();

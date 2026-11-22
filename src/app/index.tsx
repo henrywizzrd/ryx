@@ -640,7 +640,16 @@ export default function BrowserScreen() {
   );
   // ---- Cuộn trang xuống: thanh địa chỉ thu thành nút kính lúp bên trái dock (kiểu Apple Music), cuộn lên thì bung lại ----
   // Màn ngang: không thu gọn khi cuộn (dock đã nằm bên cạnh, không chiếm chỗ dưới)
-  const canCollapse = !addrTop && settings.dockStyle !== 'attached' && !landscape;
+  // ---- Bấm bong bóng >< : dock + thanh địa chỉ thu gọn vào bong bóng (góc dưới phải; màn ngang: góc trên phải) ----
+  // Giữ thu gọn khi đổi thẻ / đổi trang; vào màn các thẻ thì dock hiện lại, quay về trang lại thu gọn.
+  const [dockMinOn, setDockMinOn] = useState(false);
+  const dockMin =
+    dockMinOn && (landscape || settings.dockStyle !== 'attached') && (phase === 'off' || phase === 'drag') && !fsOn;
+  const mini = useSharedValue(0);
+  useEffect(() => {
+    mini.set(reduceMotion ? withTiming(dockMin ? 1 : 0, { duration: 200 }) : withSpring(dockMin ? 1 : 0, MOTION.smooth));
+  }, [dockMin, mini, reduceMotion]);
+  const canCollapse = !addrTop && settings.dockStyle !== 'attached' && !landscape && !dockMin;
   // Đổi thẻ / đổi trang / về trang chủ / gõ địa chỉ / thu nhỏ thành thẻ: thanh bung lại (trạng thái thu gọn gắn với
   // đúng "khoá" lúc thu gọn, khoá đổi là tự hết thu gọn)
   // (Không gồm màn các thẻ: đang thu gọn thì zoom out vẫn giữ dạng kính lúp)
@@ -691,11 +700,17 @@ export default function BrowserScreen() {
   const lensBottom = dock.bottom + (dock.height - ADDRESS_BAR_HEIGHT) / 2;
 
   const addrAnim = useAnimatedStyle(() => {
-    if (addrTop) return { top: insets.top + 4 };
+    // Thu gọn vào bong bóng: thanh co lại, mờ đi về phía góc phải
+    const m = mini.get();
+    const shrink = {
+      opacity: 1 - m,
+      transform: [{ translateX: m * 48 }, { translateY: m * (addrTop ? -12 : 16) }, { scale: 1 - m * 0.2 }],
+    };
+    if (addrTop) return { top: insets.top + 4, ...shrink };
     const base = addrKb.get() ? Math.max(dockTop, kbAnim.height.value) + GAP : dockTop + GAP;
     const c = collapse.get();
     const p = zoom.value;
-    return { bottom: (base + (lensBottom - base) * c) * (1 - p) + CARD_ADDR_BOTTOM * p };
+    return { bottom: (base + (lensBottom - base) * c) * (1 - p) + CARD_ADDR_BOTTOM * p, ...shrink };
   });
   const chromeBottom = addrTop ? (landscape ? landBottom : dock.top) : dockTop + GAP + ADDRESS_BAR_HEIGHT;
   const contentTop = insets.top + (addrTop ? ADDRESS_BAR_HEIGHT + GAP * 1.2 : 0);
@@ -1020,7 +1035,7 @@ export default function BrowserScreen() {
                 onDownload={(url, referer) => download(url, referer)}
                 diag={settings.diagVideo}
                 insetTop={fsOn ? 0 : contentTop}
-                insetBottom={fsOn ? 0 : webBottomInset}
+                insetBottom={fsOn || dockMin ? 0 : webBottomInset}
               />
             ))}
             {active.home && (
@@ -1114,8 +1129,8 @@ export default function BrowserScreen() {
         {/* Thanh địa chỉ nằm ngoài vùng chụp ảnh thẻ (ảnh thẻ tự vẽ thanh tĩnh ở đúng chỗ, xem tab-overview), nhưng vẫn
           trong lớp thu nhỏ: zoom out thì thanh co lại cùng trang và trôi xuống sát đáy thẻ, dock ẩn đi */}
         <Animated.View
-          pointerEvents={fsOn ? 'none' : 'box-none'}
-          style={[styles.addrWrap, addrAnim, fsOn && { opacity: 0 }]}
+          pointerEvents={fsOn || dockMin ? 'none' : 'box-none'}
+          style={[styles.addrWrap, { transformOrigin: 'right bottom' }, addrAnim, fsOn && { opacity: 0 }]}
         >
           {/* Màn ngang: vuốt lên từ thanh địa chỉ → màn các thẻ */}
           <SwipeUpZoom
@@ -1168,7 +1183,13 @@ export default function BrowserScreen() {
         shiftX={dockShift}
         hidden={(addrFocused && kb > 0) || fsOn}
         vertical={landscape}
-        plusHidden={phase !== 'off'}
+        bubbleHidden={phase !== 'off' && phase !== 'drag'}
+        mini={mini}
+        minimized={dockMin}
+        onToggleMini={() => {
+          log.info('ui', dockMinOn ? 'Bung dock + thanh địa chỉ' : 'Thu gọn dock + thanh địa chỉ vào bong bóng');
+          setDockMinOn((v) => !v);
+        }}
         onSwipeSide={(dir) => {
           // Vuốt dock sang trái/phải: thẻ kề bên (chế độ khung: trong khung đó), theo thứ tự mở
           const i = visibleTabs.findIndex((t) => t.id === active.id);
