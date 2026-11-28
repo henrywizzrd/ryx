@@ -495,8 +495,8 @@ export default function BrowserScreen() {
       setNotice({
         key: noticeKey(),
         icon: 'play-circle-outline',
-        title: 'Không ẩn được phần của trình phát video',
-        subtitle: 'Ryx luôn giữ video, thanh thời gian và nút điều khiển',
+        title: 'Đây là video hoặc khung chứa video',
+        subtitle: 'Chạm đúng vào lớp quảng cáo đè lên video để ẩn — Ryx không bao giờ ẩn video',
         autoHide: 3000,
       });
       return;
@@ -593,6 +593,11 @@ export default function BrowserScreen() {
   // ---- Trình phát toàn màn hình của Ryx (lib/inject → window.__ryxFs, components/ryx-player) ----
   const fs = usePlayerOn();
   const fsOn = fs.on && fs.tabId === active.id;
+  // Cho hiệu ứng của thanh địa chỉ biết đang phát toàn màn hình (style động điều khiển opacity, style tĩnh không đè được)
+  const fsSV = useSharedValue(0);
+  useEffect(() => {
+    fsSV.set(fsOn ? 1 : 0);
+  }, [fsOn, fsSV]);
   // Đổi sang thẻ khác thì tắt trình phát
   useEffect(() => {
     const st = playerStore.get();
@@ -700,7 +705,7 @@ export default function BrowserScreen() {
     // Thu gọn vào bong bóng: thanh co lại, mờ đi về phía góc phải
     const m = mini.get();
     const shrink = {
-      opacity: 1 - m,
+      opacity: fsSV.get() ? 0 : 1 - m,
       // Màn ngang: bong bóng ở góc dưới bên trái → thanh trôi sang trái
       transform: [
         { translateX: m * (landscape ? -48 : 48) },

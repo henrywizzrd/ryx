@@ -154,13 +154,35 @@ function isKept(el){
   return !!el.closest('[data-ryx-keepbox]') && !el.closest('[data-ryx-adish]');
 }
 
+/* Mục người dùng tự ẩn: được ẩn cả thứ nằm TRONG khung trình phát (quảng cáo đè lên player),
+   nhưng không bao giờ trúng video, iframe trình phát, khung player hay bất kỳ khung nào chứa video. */
+var USER_KEEP = ':not([data-ryx-keep]):not([data-ryx-keepbox]):not(video):not(:has(video))';
+function pickKept(el){
+  if (!el || el.nodeType !== 1) return false;
+  if (el.__ryxKeep || el.tagName === 'VIDEO' || playerIframe(el)) return true;
+  if (el.hasAttribute('data-ryx-keep') || el.hasAttribute('data-ryx-keepbox')) return true;
+  try { if (el.querySelector('video')) return true; } catch (e) {}
+  return false;
+}
+/* Chạm trúng khung player (iframe bị tắt chạm lúc chọn nên chạm xuyên xuống) → tìm iframe quảng cáo nằm đè ở chỗ chạm */
+function adFrameAt(x, y){
+  var fs = document.getElementsByTagName('iframe'), best = null, area = Infinity;
+  for (var i = 0; i < fs.length; i++) {
+    var f = fs[i];
+    if (pickKept(f)) continue;
+    var r = f.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8 || x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+    if (r.width * r.height < area) { area = r.width * r.height; best = f; }
+  }
+  return best;
+}
 function applyHide(){
   var css = '';
   ['ads','gambling','popups'].forEach(function(k){
     if (P[k] && SEL[k]) css += ':is(' + SEL[k] + ')' + KEEP + '{display:none!important;visibility:hidden!important;}';
   });
   var mine = valid((CFG.hides || {})[HKEY] || []);
-  if (mine) css += ':is(' + mine + ')' + KEEP + '{display:none!important;}';
+  if (mine) css += ':is(' + mine + ')' + USER_KEEP + '{display:none!important;}';
   styleEl('ryx-hide').textContent = css;
 }
 
@@ -643,7 +665,11 @@ window.addEventListener('click', function(e){
   if (already) { pickSet.splice(pickSet.indexOf(already), 1); setMark(already, false); }
   else {
     try { guardVideos(); } catch (e2) {}
-    if (isKept(t)) { send({ type: 'ryx:pick', kind: 'blocked' }); return; }
+    if (pickKept(t)) {
+      var ad = adFrameAt(pickX, pickY);
+      if (!ad) { send({ type: 'ryx:pick', kind: 'blocked' }); return; }
+      t = ad;
+    }
     pickAdd(t);
   }
   pickCount();
@@ -775,7 +801,7 @@ window.__ryx = {
     var h = pickHeld, p = h && h.parentElement;
     if (!h || !p || p === document.body || p === root || p === document.documentElement) return;
     try { guardVideos(); } catch (e) {}
-    if (isKept(p)) { send({ type: 'ryx:pick', kind: 'blocked' }); return; }
+    if (pickKept(p)) { send({ type: 'ryx:pick', kind: 'blocked' }); return; }
     pickSet.splice(pickSet.indexOf(h), 1); setMark(h, false);
     pickAdd(p); pickHeld = p; pickCount();
   },
@@ -784,7 +810,7 @@ window.__ryx = {
   pickHide: function(){
     var sels = [], labels = [];
     for (var i = 0; i < pickSet.length; i++) {
-      if (isKept(pickSet[i])) continue;
+      if (pickKept(pickSet[i])) continue;
       var x = selFor(pickSet[i]);
       if (x && sels.indexOf(x) < 0) { sels.push(x); labels.push(pickLabel(pickSet[i])); }
     }
