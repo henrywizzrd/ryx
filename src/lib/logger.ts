@@ -32,6 +32,53 @@ const MAX_DETAIL = 4000;
 
 export const SESSION_ID = Date.now().toString(36);
 
+/* ------------------------------------------------------------------ */
+/* Quyền riêng tư: nhật ký chỉ giữ vấn đề (cảnh báo, lỗi, crash, giật), */
+/* không giữ hoạt động (mở trang, bấm nút…). Mọi đường link và tên miền */
+/* bị thay bằng mã "trang-xxxx" ngay lúc ghi → không lộ lịch sử duyệt   */
+/* web, nhưng vẫn biết các lỗi có cùng một trang hay không.             */
+/* ------------------------------------------------------------------ */
+
+const KEEP_LEVELS: ReadonlySet<LogLevel> = new Set<LogLevel>(['warn', 'error', 'crash', 'perf']);
+
+/** Mã ngắn ổn định cho một tên miền (FNV-1a) — cùng trang thì cùng mã, không đoán ngược ra tên. */
+function siteCode(host: string): string {
+  let h = 0x811c9dc5;
+  const s = host.toLowerCase().replace(/^www\./, '');
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `trang-${h.toString(36).slice(-4)}`;
+}
+
+// Link có lược đồ (https://…, blob:…, data:…, file:…)
+const URL_RE = /\b(?:https?|wss?|ftp|blob|file|data|about|intent|itms[\w-]*):(?:\/\/)?([^\s"'`<>()[\]{}]*)/gi;
+// Tên miền trần (vd "ads.abc.com") — chỉ các đuôi tên miền phổ biến để không xoá nhầm tên hàm trong stack
+const HOST_RE =
+  /\b((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|net|org|info|io|co|tv|me|vn|xyz|top|site|online|club|live|app|dev|cc|to|ru|jp|kr|cn|uk|us|de|fr|br|biz|pro|vip|fun|link|win|bet|casino|asia|world|today|space|website|stream|video|watch|porn|xxx|sex|ws|su|ph|th|id|my|sg|hk|tw|la|kh|in|eu|ai|gg|so|ly|pw|lol|wtf|cam|tube|movie|shop|store|best|cloud|host|icu|cfd|sbs|bond|click|buzz|rest))\b/gi;
+const IP_RE = /\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g;
+
+const JS_OBJ = /^(?:window|document|self|globalThis|this|location|navigator|history)\./i;
+
+function hostOf(rest: string): string {
+  // blob:https://… → lấy tên miền bên trong
+  const inner = rest.replace(/^[a-z][\w+.-]*:\/\//i, '');
+  const h = inner.split(/[/?#]/)[0].split('@').pop() ?? '';
+  return h.split(':')[0];
+}
+
+/** Bỏ mọi link / tên miền / IP khỏi một chuỗi log. */
+export function redact(text: string): string {
+  return text
+    .replace(URL_RE, (_m, rest: string) => {
+      const host = hostOf(rest);
+      return host ? `[link ${siteCode(host)}]` : '[link]';
+    })
+    .replace(HOST_RE, (m: string) => (JS_OBJ.test(m) ? m : siteCode(m)))
+    .replace(IP_RE, '[ip]');
+}
+
 let entries: LogEntry[] = [];
 let nextId = 1;
 const listeners = new Set<() => void>();
@@ -84,9 +131,11 @@ async function persistNow() {
 }
 
 export function addLog(level: LogLevel, tag: string, msg: string, detail?: unknown) {
+  if (!KEEP_LEVELS.has(level)) return;
   let d = stringify(detail);
   if (d && d.length > MAX_DETAIL) d = d.slice(0, MAX_DETAIL) + '…';
-  const entry: LogEntry = { id: nextId++, t: Date.now(), level, tag, msg, detail: d, session: SESSION_ID };
+  if (d) d = redact(d);
+  const entry: LogEntry = { id: nextId++, t: Date.now(), level, tag, msg: redact(msg), detail: d, session: SESSION_ID };
   entries = entries.length >= MAX_ENTRIES ? [...entries.slice(-(MAX_ENTRIES - 1)), entry] : [...entries, entry];
   notify();
   schedulePersist(level === 'crash' || level === 'error');
@@ -235,7 +284,10 @@ export function initLogging() {
   AsyncStorage.getItem(STORAGE_KEY)
     .then((raw) => {
       if (!raw) return;
-      const saved = JSON.parse(raw) as LogEntry[];
+      // Log cũ (trước bản giữ riêng tư): bỏ dòng hoạt động, xoá link / tên miền
+      const saved = (JSON.parse(raw) as LogEntry[])
+        .filter((e) => KEEP_LEVELS.has(e.level))
+        .map((e) => ({ ...e, msg: redact(e.msg), detail: e.detail ? redact(e.detail) : e.detail }));
       const maxId = saved.reduce((m, e) => Math.max(m, e.id), 0);
       // Đánh lại id cho log mới của phiên này để không trùng
       const fresh = entries.map((e, i) => ({ ...e, id: maxId + 1 + i }));
@@ -254,5 +306,6 @@ export function initLogging() {
   hookConsole();
   hookGlobalErrors();
   hookAppState();
-  log.info('app', 'Mở app');
+  // Ghi đè ngay bản đã lưu bằng bản đã làm sạch (khỏi còn link cũ trong bộ nhớ máy)
+  setTimeout(() => schedulePersist(true), 3000);
 }

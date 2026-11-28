@@ -248,7 +248,12 @@ export default function BrowserScreen() {
   };
   /** Chạm một thẻ: trang của thẻ đó phóng từ khung thẻ ra toàn màn hình; đổi thẻ thì dock nảy từ dưới lên */
   const pickTab = (id: string, r: Rect | null) => {
-    beginTrack(id === active.id ? 'Quay lại thẻ đang mở' : 'Chuyển sang thẻ khác');
+    const target = tabs.find((t) => t.id === id);
+    // Ghi rõ thẻ đích đã nạp trang chưa (chưa nạp → phải dựng WebView mới lúc này) để log giật biết nguyên nhân
+    const cold = !!target && !target.sourceUrl && !target.home && !!target.url;
+    beginTrack(
+      id === active.id ? 'Quay lại thẻ đang mở' : `Chuyển sang thẻ khác (${cold ? 'thẻ chưa nạp trang' : 'thẻ đã nạp'})`,
+    );
     uiTrack.current.measured = !!r;
     if (r) setFrame(r, false);
     zoom.value = 1;
