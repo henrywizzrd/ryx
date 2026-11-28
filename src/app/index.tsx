@@ -18,7 +18,6 @@ import {
 import Animated, {
   Easing,
   runOnJS,
-  useDerivedValue,
   useAnimatedKeyboard,
   useAnimatedReaction,
   useAnimatedStyle,
@@ -640,7 +639,7 @@ export default function BrowserScreen() {
   );
   // ---- Cuộn trang xuống: thanh địa chỉ thu thành nút kính lúp bên trái dock (kiểu Apple Music), cuộn lên thì bung lại ----
   // Màn ngang: không thu gọn khi cuộn (dock đã nằm bên cạnh, không chiếm chỗ dưới)
-  // ---- Bấm bong bóng >< : dock + thanh địa chỉ thu gọn vào bong bóng (góc dưới phải; màn ngang: góc trên phải) ----
+  // ---- Bấm bong bóng >< : dock + thanh địa chỉ thu gọn vào bong bóng (góc dưới phải; màn ngang: góc dưới trái) ----
   // Giữ thu gọn khi đổi thẻ / đổi trang; vào màn các thẻ thì dock hiện lại, quay về trang lại thu gọn.
   const [dockMinOn, setDockMinOn] = useState(false);
   const dockMin =
@@ -668,8 +667,6 @@ export default function BrowserScreen() {
     },
     [collapse],
   );
-  // Dock dịch sang phải cùng lúc để nhường chỗ cho nút kính lúp (không đè lên nhau)
-  const dockShift = useDerivedValue(() => collapse.get() * 28);
   const scrollRef = useRef({ last: 0, acc: 0 });
   const onScrollY = useCallback(
     (y: number) => {
@@ -704,7 +701,12 @@ export default function BrowserScreen() {
     const m = mini.get();
     const shrink = {
       opacity: 1 - m,
-      transform: [{ translateX: m * 48 }, { translateY: m * (addrTop ? -12 : 16) }, { scale: 1 - m * 0.2 }],
+      // Màn ngang: bong bóng ở góc dưới bên trái → thanh trôi sang trái
+      transform: [
+        { translateX: m * (landscape ? -48 : 48) },
+        { translateY: m * (addrTop ? -12 : 16) },
+        { scale: 1 - m * 0.2 },
+      ],
     };
     if (addrTop) return { top: insets.top + 4, ...shrink };
     const base = addrKb.get() ? Math.max(dockTop, kbAnim.height.value) + GAP : dockTop + GAP;
@@ -1130,7 +1132,12 @@ export default function BrowserScreen() {
           trong lớp thu nhỏ: zoom out thì thanh co lại cùng trang và trôi xuống sát đáy thẻ, dock ẩn đi */}
         <Animated.View
           pointerEvents={fsOn || dockMin ? 'none' : 'box-none'}
-          style={[styles.addrWrap, { transformOrigin: 'right bottom' }, addrAnim, fsOn && { opacity: 0 }]}
+          style={[
+            styles.addrWrap,
+            { transformOrigin: landscape ? 'left bottom' : 'right bottom' },
+            addrAnim,
+            fsOn && { opacity: 0 },
+          ]}
         >
           {/* Màn ngang: vuốt lên từ thanh địa chỉ → màn các thẻ */}
           <SwipeUpZoom
@@ -1180,7 +1187,7 @@ export default function BrowserScreen() {
         onZoomEnd={zoomSettled}
         extraX={dockX}
         extraY={dockY}
-        shiftX={dockShift}
+        lens={collapse}
         hidden={(addrFocused && kb > 0) || fsOn}
         vertical={landscape}
         bubbleHidden={phase !== 'off' && phase !== 'drag'}

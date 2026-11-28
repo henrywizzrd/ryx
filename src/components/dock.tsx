@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { DockButtonId, DockStyle } from '@/state/settings';
 import { useTheme, useStyles, type Palette } from '@/theme';
+import { ADDRESS_BAR_HEIGHT } from './address-bar';
 import { Glass } from './glass';
 import { IconButton, type IconName } from './icon-button';
 import { MOTION } from '@/lib/motion';
@@ -80,7 +81,8 @@ interface Props {
   extraX: SharedValue<number>;
   extraY: SharedValue<number>;
   /** Dịch dock sang phải (nhường chỗ nút kính lúp khi thanh địa chỉ thu gọn) */
-  shiftX?: SharedValue<number>;
+  /** Thanh địa chỉ thu thành nút kính lúp bên trái dock (0..1): dock nhường chỗ, không đè lên nhau */
+  lens?: SharedValue<number>;
   /** Ẩn mượt (vd khi đang gõ địa chỉ) */
   hidden: boolean;
   /** Vuốt ngang trên dock → thẻ bên cạnh (dock dọc: vuốt lên/xuống) */
@@ -151,7 +153,7 @@ export function Dock({
   onZoomEnd,
   extraX,
   extraY,
-  shiftX,
+  lens,
   hidden,
   vertical = false,
   bubbleHidden = false,
@@ -272,6 +274,24 @@ export function Dock({
     hide.value = withTiming(hidden ? 1 : 0, { duration: hidden ? 160 : 260 });
   }, [hidden, hide]);
 
+  // ---- Nhường chỗ cho nút kính lúp (dock ngang) ----
+  // Kính lúp nằm sát mép trái (16 → 16 + ADDRESS_BAR_HEIGHT). Dock dịch sang phải vừa đủ; hết chỗ bên phải thì dock
+  // co lại (neo mép phải) cho vừa khoảng giữa kính lúp và bong bóng. Đo vị trí thật nên thêm/bớt nút vẫn đúng.
+  const dockLX = useSharedValue(0);
+  const dockLW = useSharedValue(0);
+  const bubLX = useSharedValue(0);
+  const bubLW = useSharedValue(0);
+  const fitFor = (c: number) => {
+    'worklet';
+    if (c <= 0 || dockLW.value <= 0) return { shift: 0, scale: 1 };
+    const need = Math.max(0, 16 + ADDRESS_BAR_HEIGHT + 8 - (s.margin + dockLX.value));
+    const room = Math.max(0, W - s.margin - (s.margin + bubLX.value + bubLW.value));
+    const shift = Math.min(need, room);
+    const rest = need - shift;
+    const fit = Math.max(0.72, (dockLW.value - rest) / dockLW.value);
+    return { shift: shift * c, scale: 1 - (1 - fit) * c };
+  };
+
   const motion = useAnimatedStyle(() => {
     if (vertical) {
       // Dock dọc: ẩn thì trượt sang phải; đổi thẻ thì nảy từ phải vào (dùng extraY làm độ lệch)
@@ -290,7 +310,7 @@ export function Dock({
       opacity: 1 - hide.value,
       transform: [
         { translateY: ty.value + extraY.value + hide.value * 40 },
-        { translateX: tx.value + extraX.value * zoom.value + (shiftX?.value ?? 0) },
+        { translateX: tx.value + extraX.value * zoom.value + fitFor(lens?.value ?? 0).shift },
         { scale: reduceMotion ? 1 : 1 - press.value * 0.03 + lift - hide.value * 0.06 },
       ],
     };
@@ -391,14 +411,15 @@ export function Dock({
     </Pressable>
   );
 
-  // Dock co lại rồi mờ đi về phía bong bóng (dock ngang: sang phải · dock dọc: lên góc trên)
+  // Dock co lại rồi mờ đi về phía bong bóng (dock ngang: sang phải · dock dọc: co tại chỗ, chìm xuống)
   const bubbleDx = useSharedValue(0);
   const dockMini = useAnimatedStyle(() => {
     const p = mini.value;
     if (vertical) {
-      return { opacity: 1 - p, transform: [{ translateY: -p * H * 0.28 }, { scale: 1 - p * 0.5 }] };
+      return { opacity: 1 - p, transform: [{ translateY: p * H * 0.12 }, { scale: 1 - p * 0.4 }] };
     }
-    return { opacity: 1 - p, transform: [{ translateX: p * bubbleDx.value * 0.5 }, { scale: 1 - p * 0.35 }] };
+    const fit = fitFor(lens?.value ?? 0).scale;
+    return { opacity: 1 - p, transform: [{ translateX: p * bubbleDx.value * 0.5 }, { scale: (1 - p * 0.35) * fit }] };
   });
   // Dock ngang: bong bóng trượt về góc dưới bên phải
   const bubbleMotion = useAnimatedStyle(() => ({
@@ -409,46 +430,62 @@ export function Dock({
   const onBubbleLayout = (e: LayoutChangeEvent) => {
     const { x, width } = e.nativeEvent.layout;
     bubbleDx.value = Math.max(0, rowW - width - x);
+    bubLX.value = x;
+    bubLW.value = width;
+  };
+  const onDockLayout = (e: LayoutChangeEvent) => {
+    dockLX.value = e.nativeEvent.layout.x;
+    dockLW.value = e.nativeEvent.layout.width;
   };
 
-  // Bong bóng góc trên phải (màn ngang): kéo sang trái / xuống (vào giữa màn) → màn các thẻ
+  // Bong bóng góc dưới bên trái (màn ngang): vuốt lên → màn các thẻ · vuốt trái/phải → thẻ bên cạnh (như dock)
   const ctx = useSharedValue(0);
   const cty = useSharedValue(0);
   const cZoom = useSharedValue(false);
+  const cDist = H * 0.45;
   const cornerPan = Gesture.Pan()
-    .enabled(zoomEnabled)
-    .activeOffsetX([-12, 12])
-    .activeOffsetY([-12, 12])
+    .activeOffsetX([-14, 14])
+    .activeOffsetY([-10, 10])
     .onUpdate((e) => {
-      const main = Math.max(-e.translationX, e.translationY);
-      if (!cZoom.value) {
-        if (main <= 4) return;
-        cZoom.value = true;
-        runOnJS(startZoom)();
+      const up = -e.translationY;
+      const alongUp = Math.abs(e.translationY) >= Math.abs(e.translationX);
+      if (zoomEnabled && (cZoom.value || (alongUp && up > 4))) {
+        if (!cZoom.value) {
+          cZoom.value = true;
+          ctx.value = 0;
+          runOnJS(startZoom)();
+        }
+        const u = Math.max(0, up);
+        cty.value = -(u > 160 ? 160 + (u - 160) * 0.4 : u);
+        zoom.set(Math.min(1, u / cDist));
+        return;
       }
-      const damp = (v: number) => (v > 220 ? 220 + (v - 220) * 0.4 : v);
-      ctx.value = -damp(Math.max(0, -e.translationX));
-      cty.value = damp(Math.max(0, e.translationY));
-      zoom.set(Math.min(1, Math.max(0, main) / dist));
+      if (reduceMotion) return;
+      cty.value = 0;
+      ctx.value = alongUp ? 0 : e.translationX * 0.35;
     })
     .onEnd((e) => {
-      if (!cZoom.value) return;
-      cZoom.value = false;
-      const v = Math.max(-e.velocityX, e.velocityY);
-      const open = zoom.value > 0.3 || v > 650;
-      zoom.set(
-        reduceMotion
-          ? withTiming(open ? 1 : 0, { duration: 200 }, (f) => {
-              if (f) runOnJS(onZoomEnd)(open);
-            })
-          : withSpring(open ? 1 : 0, { ...ZOOM_SPRING, velocity: Math.max(-1.2, Math.min(1.2, v / dist)) }, (f) => {
-              if (f) runOnJS(onZoomEnd)(open);
-            }),
-      );
+      if (cZoom.value) {
+        cZoom.value = false;
+        const v = e.velocityY;
+        const open = zoom.value > 0.3 || v < -650;
+        zoom.set(
+          reduceMotion
+            ? withTiming(open ? 1 : 0, { duration: 200 }, (f) => {
+                if (f) runOnJS(onZoomEnd)(open);
+              })
+            : withSpring(open ? 1 : 0, { ...ZOOM_SPRING, velocity: Math.max(-1.2, Math.min(1.2, -v / cDist)) }, (f) => {
+                if (f) runOnJS(onZoomEnd)(open);
+              }),
+        );
+        return;
+      }
+      const ax = Math.abs(e.translationX);
+      if (ax > SWIPE_SIDE && ax > Math.abs(e.translationY)) runOnJS(fireSide)(e.translationX < 0 ? 'next' : 'prev');
     })
     .onFinalize(() => {
       cZoom.value = false;
-      ctx.value = withSpring(0, BOUNCE);
+      ctx.value = withSpring(0, SPRING);
       cty.value = withSpring(0, BOUNCE);
     });
   const cornerMotion = useAnimatedStyle(() => ({
@@ -476,7 +513,7 @@ export function Dock({
           >
             <Animated.View
               pointerEvents={minimized ? 'none' : 'box-none'}
-              style={[{ transformOrigin: 'top center' }, dockMini]}
+              style={[{ transformOrigin: 'center' }, dockMini]}
             >
               <Glass radius={s.height / 2} style={{ width: s.height }}>
                 <View style={[styles.colFloat, { gap: GROUP_GAP }]}>
@@ -508,7 +545,13 @@ export function Dock({
             pointerEvents={bubbleOff ? 'none' : 'box-none'}
             style={[
               styles.cornerPlus,
-              { top: Math.max(12, insets.top), right: side.right, width: s.height, height: s.height },
+              {
+                // Góc dưới bên trái, thẳng hàng với thanh địa chỉ (thanh ở màn ngang cách đáy max(12, inset dưới))
+                bottom: Math.max(12, insets.bottom) + (ADDRESS_BAR_HEIGHT - s.height) / 2,
+                left: Math.max(16, insets.left),
+                width: s.height,
+                height: s.height,
+              },
               cornerMotion,
             ]}
           >
@@ -558,6 +601,7 @@ export function Dock({
     >
       {/* Dock nổi chỉ rộng vừa đủ chứa các nút; thu gọn thì co lại, mờ đi về phía bong bóng */}
       <Animated.View
+        onLayout={onDockLayout}
         pointerEvents={minimized ? 'none' : 'box-none'}
         style={[{ transformOrigin: 'right center' }, dockMini]}
       >
