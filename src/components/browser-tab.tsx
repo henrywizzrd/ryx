@@ -15,6 +15,7 @@ import { buildUpdateCall, FRAME_MEDIA_SCRIPT, type InjectConfig } from '@/lib/in
 import { PageError } from '@/components/page-error';
 import { attachContentBlocker } from '@/lib/content-blocker';
 import { applyEdgeEffects, setWebInsets } from '@/lib/edge';
+import { markWebViewMount } from '@/lib/perf-monitor';
 import { describeDiag, FRAME_DIAG_SCRIPT } from '@/lib/frame-diag';
 import { log } from '@/lib/logger';
 import { playerStore } from '@/lib/player-store';
@@ -224,6 +225,7 @@ function BrowserTabImpl({
   }, [insetTop]);
 
   useEffect(() => {
+    markWebViewMount();
     attachContentBlocker();
     applyEdgeEffects(16);
     const t = setTimeout(() => {

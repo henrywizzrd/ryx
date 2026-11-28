@@ -73,13 +73,36 @@ function stop() {
   rafId = null;
 }
 
+/* ---- Đứng hình ở luồng giao diện (iOS) — đo bằng khung hình của Reanimated ở app/index.tsx ---- */
+let lastWebViewMount = 0;
+let lastActiveAt = Date.now();
+/** Gọi khi một thẻ vừa dựng WebView (components/browser-tab). */
+export function markWebViewMount() {
+  lastWebViewMount = Date.now();
+}
+/** Ghi log khi luồng giao diện đứng hình (bỏ qua khoảng app vừa quay lại từ nền). */
+export function reportUiStall(ms: number) {
+  if (AppState.currentState !== 'active' || Date.now() - lastActiveAt < 1500) return;
+  const since = Date.now() - lastWebViewMount;
+  log.perf(
+    'perf',
+    `Giao diện đứng hình ${Math.round(ms)} ms`,
+    since < 8000 ? `Ngay sau khi một thẻ dựng trang (${since} ms trước)` : 'Không có thẻ nào vừa dựng trang',
+  );
+}
+
 let initialized = false;
 
 export function initPerfMonitor() {
   if (initialized) return;
   initialized = true;
   if (AppState.currentState === 'active') start();
-  AppState.addEventListener('change', (s) => (s === 'active' ? start() : stop()));
+  AppState.addEventListener('change', (s) => {
+    if (s === 'active') {
+      lastActiveAt = Date.now();
+      start();
+    } else stop();
+  });
 }
 
 export function getPerfSnapshot(): PerfSnapshot {

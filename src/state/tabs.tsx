@@ -43,6 +43,9 @@ export interface TabFolder {
 let seq = 0;
 const newId = () => `tab-${Date.now().toString(36)}-${seq++}`;
 
+/** Thẻ chưa nạp trang: chờ hiệu ứng chuyển thẻ (thu nhỏ/phóng to, nảy dock) chạy xong rồi mới dựng WebView */
+const LOAD_AFTER_SWITCH_MS = 520;
+
 export function makeTab(url: string | null = null, folderId: string | null = null): Tab {
   return {
     lastUsed: Date.now(),
@@ -256,7 +259,9 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
     folderModeRef.current = folderMode;
   }, [folders, folderMode]);
 
-  /** Chuyển thẻ: ghi lần dùng (thứ tự gần nhất); thẻ khôi phục từ phiên cũ chưa nạp trang thì nạp lúc này */
+  /** Chuyển thẻ: ghi lần dùng (thứ tự gần nhất); thẻ chưa nạp trang (khôi phục từ phiên cũ / mở nền) thì nạp sau
+   *  khi hiệu ứng chuyển thẻ chạy xong — dựng WebView ngay lúc trang đang bay ra làm giao diện đứng hình 1–2 giây */
+  const pendingLoad = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setActiveId = useCallback((next: string | ((cur: string) => string)) => {
     setActiveIdRaw((cur) => {
       const id = typeof next === 'function' ? next(cur) : next;
@@ -264,10 +269,21 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
       setTabs((list) =>
         list.map((x) => {
           if (x.id !== id) return x;
-          const load = !x.sourceUrl && !x.home && x.url ? { sourceUrl: x.url, loading: true } : null;
-          return { ...x, lastUsed: now, ...load };
+          // Thẻ chưa nạp: hiện thanh tiến trình ngay, còn WebView dựng sau
+          const cold = !x.sourceUrl && !x.home && x.url ? { loading: true, progress: 0.05 } : null;
+          return { ...x, lastUsed: now, ...cold };
         }),
       );
+      // Lướt nhanh qua nhiều thẻ thì chỉ nạp thẻ dừng lại cuối cùng
+      if (pendingLoad.current) clearTimeout(pendingLoad.current);
+      pendingLoad.current = setTimeout(() => {
+        pendingLoad.current = null;
+        setTabs((list) =>
+          list.map((x) =>
+            x.id === id && !x.sourceUrl && !x.home && x.url ? { ...x, sourceUrl: x.url, loading: true } : x,
+          ),
+        );
+      }, LOAD_AFTER_SWITCH_MS);
       return id;
     });
   }, []);

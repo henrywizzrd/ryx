@@ -43,6 +43,7 @@ import { configureContentBlocker, refreshContentBlocker } from '@/lib/content-bl
 import { applyBackgroundPlay } from '@/lib/background-play';
 import { buildCookieScript } from '@/lib/cookie-consent';
 import { log } from '@/lib/logger';
+import { reportUiStall } from '@/lib/perf-monitor';
 import { playerStore, usePlayerOn } from '@/lib/player-store';
 import { RyxPlayer } from '@/components/ryx-player';
 import { MOTION } from '@/lib/motion';
@@ -129,9 +130,11 @@ export default function BrowserScreen() {
   const tracking = useSharedValue(false);
   const jank = useSharedValue({ frames: 0, slow: 0, max: 0 });
   useFrameCallback((f) => {
-    if (!tracking.value) return;
     const dt = f.timeSincePreviousFrame ?? 0;
     if (dt <= 0) return;
+    // Luồng giao diện đứng hình (vd dựng WebView) — luồng JS không thấy được nên đo ở đây
+    if (dt > 400 && dt < 15000) runOnJS(reportUiStall)(dt);
+    if (!tracking.value) return;
     const j = jank.value;
     jank.value = { frames: j.frames + 1, slow: j.slow + (dt > 25 ? 1 : 0), max: Math.max(j.max, dt) };
   });
@@ -149,7 +152,8 @@ export default function BrowserScreen() {
     const detail =
       `${result} sau ${Date.now() - t} ms · ${j.frames} khung hình, ${j.slow} khung bị giật (chậm nhất ${Math.round(j.max)} ms)` +
       `\nKiểu thẻ: ${settings.tabLayout} · Đo được vị trí thẻ: ${measured ? 'có' : 'không'} · Số thẻ: ${visibleTabs.length}`;
-    if (j.slow > 2) log.perf('ui', `${what}: hiệu ứng bị giật`, detail);
+    // Một lần đứng hình dài cũng tính là giật (trước chỉ đếm số khung chậm → đứng liền 2 giây bị bỏ qua)
+    if (j.slow > 2 || j.max >= 200) log.perf('ui', `${what}: hiệu ứng bị giật`, detail);
     else log.info('ui', what, detail);
     if (what.startsWith('Mở màn các thẻ') && result === 'Mở' && !measured)
       log.warn('ui', 'Không đo được vị trí thẻ đang mở, trang bay vào vị trí mặc định', settings.tabLayout);
